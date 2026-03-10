@@ -77,7 +77,7 @@
 #define SERVER_LISTEN_SECURE_PORT UIP_HTONS(COAP_DEFAULT_SECURE_PORT)
 
 #ifdef WITH_DTLS
-static struct uip_udp_conn *dtls_conn = NULL;
+struct uip_udp_conn *dtls_conn = NULL;
 static const coap_keystore_t *dtls_keystore = NULL;
 #ifdef COAP_DTLS_CONF_WITH_PSK
 static int coap_ep_get_dtls_psk_info(const coap_endpoint_t *ep,
@@ -87,6 +87,10 @@ static int coap_ep_get_dtls_psk_info(const coap_endpoint_t *ep,
 static int coap_ep_get_dtls_cert_info(const coap_endpoint_t *ep,
     coap_keystore_cert_entry_t *info);
 #endif /* COAP_DTLS_CONF_WITH_CERT */
+#ifdef COAP_DTLS_CONF_WITH_C509
+static int coap_ep_get_dtls_c509_info(const coap_endpoint_t *ep,
+    coap_keystore_c509_entry_t *info);
+#endif /* COAP_DTLS_CONF_WITH_C509 */
 #endif /* WITH_DTLS */
 
 
@@ -94,6 +98,16 @@ PROCESS(coap_engine, "CoAP Engine");
 
 static struct uip_udp_conn *udp_conn = NULL;
 
+/*---------------------------------------------------------------------------*/
+const coap_keystore_t *
+coap_get_keystore(void)
+{
+#ifdef WITH_DTLS
+  return dtls_keystore;
+#else
+  return NULL;
+#endif
+}
 /*---------------------------------------------------------------------------*/
 void
 coap_endpoint_log(const coap_endpoint_t *ep)
@@ -291,6 +305,9 @@ coap_endpoint_connect(coap_endpoint_t *ep)
 #ifdef COAP_DTLS_CONF_WITH_CERT
   static coap_keystore_cert_entry_t cert_info;
 #endif /* COAP_DTLS_CONF_WITH_CERT */
+#ifdef COAP_DTLS_CONF_WITH_C509
+  static coap_keystore_c509_entry_t c509_info;
+#endif /* COAP_DTLS_CONF_WITH_C509 */
 #endif /* COAP_DTLS_CONF_WITH_CLIENT */
 #endif /* WITH_DTLS */
 
@@ -317,6 +334,15 @@ coap_endpoint_connect(coap_endpoint_t *ep)
     return coap_ep_dtls_connect(ep, COAP_DTLS_SEC_MODE_CERT, &cert_info);
   }
 #endif /* COAP_DTLS_CONF_WITH_CERT */
+#ifdef COAP_DTLS_CONF_WITH_C509
+  printf("DEBUG: calling coap_ep_get_dtls_c509_info\n");
+  if(coap_ep_get_dtls_c509_info(ep, &c509_info) == 1) {
+    printf("DEBUG: calling coap_ep_dtls_connect\n");
+    int res = coap_ep_dtls_connect(ep, COAP_DTLS_SEC_MODE_C509, &c509_info);
+    printf("DEBUG: coap_ep_dtls_connect returned %d\n", res);
+    return res;
+  }
+#endif /* COAP_DTLS_CONF_WITH_C509 */
   LOG_ERR("Unable to retrieve DTLS authorization info for \n");
   LOG_ERR_COAP_EP(ep);
   LOG_ERR_("\n");
@@ -332,24 +358,35 @@ int
 coap_secure_server_setup(void)
 {
   coap_endpoint_t ep;
+  memset(&ep, 0, sizeof(ep));
 #ifdef COAP_DTLS_CONF_WITH_CERT
-  static coap_keystore_cert_entry_t cert_info;
+  static coap_keystore_cert_entry_t ks_cert_info;
 #endif /* COAP_DTLS_CONF_WITH_CERT */
 #ifdef COAP_DTLS_CONF_WITH_PSK
-  static coap_keystore_psk_entry_t psk_info;
+  static coap_keystore_psk_entry_t ks_psk_info;
 #endif /* COAP_DTLS_CONF_WITH_PSK */
 
+#ifdef COAP_DTLS_CONF_WITH_C509
+  static coap_keystore_c509_entry_t ks_c509_info;
+#endif /* COAP_DTLS_CONF_WITH_C509 */
+
 #ifdef COAP_DTLS_CONF_WITH_PSK
-  if(coap_ep_get_dtls_psk_info(&ep, &psk_info) == 1) {
-    return coap_dtls_server_setup(COAP_DTLS_SEC_MODE_PSK, &psk_info);
+  if(coap_ep_get_dtls_psk_info(&ep, &ks_psk_info) == 1) {
+    return coap_dtls_server_setup(COAP_DTLS_SEC_MODE_PSK, &ks_psk_info);
   }
 #endif /* COAP_DTLS_CONF_WITH_PSK */
 
 #ifdef COAP_DTLS_CONF_WITH_CERT
-  if(coap_ep_get_dtls_cert_info(&ep, &cert_info) == 1) {
-    return coap_dtls_server_setup(COAP_DTLS_SEC_MODE_CERT, &cert_info);
+  if(coap_ep_get_dtls_cert_info(&ep, &ks_cert_info) == 1) {
+    return coap_dtls_server_setup(COAP_DTLS_SEC_MODE_CERT, &ks_cert_info);
   }
 #endif /* COAP_DTLS_CONF_WITH_CERT */
+
+#ifdef COAP_DTLS_CONF_WITH_C509
+  if(coap_ep_get_dtls_c509_info(&ep, &ks_c509_info) == 1) {
+    return coap_dtls_server_setup(COAP_DTLS_SEC_MODE_C509, &ks_c509_info);
+  }
+#endif /* COAP_DTLS_CONF_WITH_C509 */
   return 0;
 }
 #endif /* COAP_DTLS_CONF_WITH_SERVER */
@@ -483,8 +520,10 @@ PROCESS_THREAD(coap_engine, ev, data)
 #endif /* WITH_DTLS */
     if(ev == tcpip_event) {
       if(uip_newdata()) {
+        printf("DEBUG: newdata, lport=%u, rport=%u, len=%u\n",
+               uip_ntohs(uip_udp_conn->lport), uip_ntohs(uip_udp_conn->rport), uip_datalen());
 #ifdef WITH_DTLS
-        if(uip_udp_conn == dtls_conn) {
+        if(uip_udp_conn->lport == SERVER_LISTEN_SECURE_PORT) {
           process_secure_data();
           continue;
         }
@@ -536,6 +575,18 @@ coap_ep_get_dtls_cert_info(const coap_endpoint_t *ep,
   return 0;
 }
 #endif /* COAP_DTLS_CONF_WITH_CERT */
+
+#ifdef COAP_DTLS_CONF_WITH_C509
+static int
+coap_ep_get_dtls_c509_info(const coap_endpoint_t *ep,
+    coap_keystore_c509_entry_t *info)
+{
+  if(dtls_keystore != NULL && dtls_keystore->coap_get_c509_info != NULL) {
+    return dtls_keystore->coap_get_c509_info(ep, info);
+  }
+  return 0;
+}
+#endif /* COAP_DTLS_CONF_WITH_C509 */
 
 /*---------------------------------------------------------------------------*/
 #endif /* WITH_DTLS */

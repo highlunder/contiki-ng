@@ -139,4 +139,11 @@
  */
 /* #define COAP_MBEDTLS_CONF_USE_ALL_CIPHERSUITES */
 
+/* Enable C509 support if defined */
+#ifdef COAP_DTLS_CONF_WITH_C509
+#define COAP_DTLS_WITH_C509 COAP_DTLS_CONF_WITH_C509
+#else
+#define COAP_DTLS_WITH_C509 0
+#endif
+
 #endif /* DTLS_SUPPORT_CONFIG_H */

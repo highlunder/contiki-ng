@@ -88,6 +88,11 @@
 #endif
 #endif /* COAP_DTLS_CONF_WITH_CERT */
 
+#ifdef COAP_DTLS_CONF_WITH_C509
+#include "c509.h"
+#include "x509_encode.h"
+#endif /* COAP_DTLS_CONF_WITH_C509 */
+
 #if !defined(COAP_DTLS_PRNG_INSECURE) && !CSPRNG_ENABLED
 #error CSPRNG module needs to be enabled for DTLS. Set CSPRNG_CONF_ENABLED to 1.
 #endif
@@ -435,6 +440,20 @@ coap_ep_mbedtls_recv(void *ctx, unsigned char *buf, size_t len)
   return uip_datalen();
 }
 /*---------------------------------------------------------------------------*/
+#ifdef COAP_DTLS_CONF_WITH_C509
+static void
+debug_hex_dump(const char *label, const uint8_t *data, size_t len)
+{
+  printf("%s (%zu bytes):\n", label, len);
+  for(size_t i = 0; i < len; i++) {
+    printf("%02x ", data[i]);
+    if((i + 1) % 16 == 0) printf("\n");
+  }
+  printf("\n");
+  fflush(stdout);
+}
+#endif
+
 static coap_dtls_session_info_t *
 setup_session(const coap_mbedtls_role_t role,
               const coap_dtls_sec_mode_t sec_mode,
@@ -472,6 +491,16 @@ setup_session(const coap_mbedtls_role_t role,
     mbedtls_pk_init(&session_info->pkey);
   }
 #endif /* COAP_DTLS_CONF_WITH_CERT */
+
+#ifdef COAP_DTLS_CONF_WITH_C509
+  if(sec_mode == COAP_DTLS_SEC_MODE_C509) {
+    mbedtls_x509_crt_init(&session_info->ca_cert);
+    mbedtls_x509_crt_init(&session_info->own_cert);
+    mbedtls_pk_init(&session_info->pkey);
+    session_info->ca_der = NULL;
+    session_info->own_der = NULL;
+  }
+#endif /* COAP_DTLS_CONF_WITH_C509 */
 
 #ifdef COAP_DTLS_CONF_WITH_SERVER
   /* Initialization for server side only */
@@ -512,6 +541,11 @@ setup_session(const coap_mbedtls_role_t role,
     session_info->ciphersuite = MBEDTLS_TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8;
   }
 #endif /* COAP_DTLS_CONF_WITH_CERT */
+#ifdef COAP_DTLS_CONF_WITH_C509
+  if(sec_mode == COAP_DTLS_SEC_MODE_C509) {
+    session_info->ciphersuite = MBEDTLS_TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8;
+  }
+#endif /* COAP_DTLS_CONF_WITH_C509 */
 #ifdef COAP_DTLS_CONF_WITH_PSK
   if(sec_mode == COAP_DTLS_SEC_MODE_PSK) {
     session_info->ciphersuite = MBEDTLS_TLS_PSK_WITH_AES_256_CCM_8;
@@ -579,6 +613,97 @@ setup_session(const coap_mbedtls_role_t role,
     }
   } else
 #endif /* COAP_DTLS_CONF_WITH_CERT */
+#ifdef COAP_DTLS_CONF_WITH_C509
+  if(sec_mode == COAP_DTLS_SEC_MODE_C509) {
+    printf("DEBUG: setup_session C509 start\n");
+    coap_keystore_c509_entry_t *ks =
+      (coap_keystore_c509_entry_t *)keystore_entry;
+    if(ks->ca_cert == NULL || ks->own_cert == NULL || ks->priv_key == NULL) {
+      LOG_ERR("C509 Certificate or private key missing!\n");
+      goto clean_and_ret_err;
+    }
+
+    c509_cert_t c509;
+    size_t offset;
+
+    /* Convert CA Cert */
+    printf("DEBUG: setup_session converting CA cert\n");
+    session_info->ca_der = heapmem_alloc(1024);
+    if(session_info->ca_der == NULL) {
+      LOG_ERR("Failed to allocate memory for CA DER\n");
+      goto clean_and_ret_err;
+    }
+    if(c509_parse_cert(&c509, ks->ca_cert, ks->ca_cert_len) != CBOR_ERR_NONE) {
+      LOG_ERR("Failed to parse C509 CA cert\n");
+      goto clean_and_ret_err;
+    }
+    offset = 0;
+    if(x509_encode_full_cert(session_info->ca_der, 1024, &offset, &c509) < 0) {
+      LOG_ERR("Failed to encode X.509 CA cert\n");
+      goto clean_and_ret_err;
+    }
+    debug_hex_dump("CA DER", session_info->ca_der, offset);
+
+    printf("DEBUG: setup_session parsing CA cert with mbedtls\n");
+    ret = mbedtls_x509_crt_parse(&session_info->ca_cert,
+                                 (const unsigned char *)session_info->ca_der,
+                                 offset);
+    if(ret < 0) {
+      LOG_ERR("mbedtls_x509_crt_parse failed for CA cert (error %d)\n", ret);
+      goto clean_and_ret_err;
+    }
+
+    mbedtls_ssl_conf_ca_chain(&session_info->conf, &session_info->ca_cert,
+                              NULL);
+
+    /* Convert Own Cert */
+    printf("DEBUG: setup_session converting Own cert\n");
+    session_info->own_der = heapmem_alloc(1024);
+    if(session_info->own_der == NULL) {
+      LOG_ERR("Failed to allocate memory for Own DER\n");
+      goto clean_and_ret_err;
+    }
+    if(c509_parse_cert(&c509, ks->own_cert, ks->own_cert_len) != CBOR_ERR_NONE) {
+      LOG_ERR("Failed to parse C509 own cert\n");
+      goto clean_and_ret_err;
+    }
+    offset = 0;
+    if(x509_encode_full_cert(session_info->own_der, 1024, &offset, &c509) < 0) {
+      LOG_ERR("Failed to encode X.509 own cert\n");
+      goto clean_and_ret_err;
+    }
+    debug_hex_dump("Own DER", session_info->own_der, offset);
+
+    printf("DEBUG: setup_session parsing Own cert with mbedtls\n");
+    ret = mbedtls_x509_crt_parse(&session_info->own_cert,
+                                 (const unsigned char *)session_info->own_der,
+                                 offset);
+    if(ret < 0) {
+      LOG_ERR("mbedtls_x509_crt_parse for own cert (error %d)\n", ret);
+      goto clean_and_ret_err;
+    }
+
+    printf("DEBUG: setup_session parsing private key\n");
+    ret = mbedtls_pk_parse_key(&session_info->pkey,
+                               (const unsigned char *)ks->priv_key,
+                               ks->priv_key_len, NULL, 0,
+                               mbedtls_entropy_func, NULL);
+    if(ret < 0) {
+      LOG_DBG("mbedtls_pk_parse_key returned %d\n", ret);
+      goto clean_and_ret_err;
+    }
+
+    printf("DEBUG: setup_session configuring own cert\n");
+    ret = mbedtls_ssl_conf_own_cert(&session_info->conf,
+                                    &session_info->own_cert,
+                                    &session_info->pkey);
+    if(ret != 0) {
+      LOG_ERR("mbedtls_ssl_conf_own_cert returned %d\n", ret);
+      goto clean_and_ret_err;
+    }
+    printf("DEBUG: setup_session C509 complete\n");
+  } else
+#endif /* COAP_DTLS_CONF_WITH_C509 */
 #ifdef COAP_DTLS_CONF_WITH_PSK
   if(sec_mode == COAP_DTLS_SEC_MODE_PSK) {
 
@@ -660,6 +785,10 @@ setup_session(const coap_mbedtls_role_t role,
   return session_info;
 
  clean_and_ret_err:
+#ifdef COAP_DTLS_CONF_WITH_C509
+  if(session_info->ca_der != NULL) heapmem_free(session_info->ca_der);
+  if(session_info->own_der != NULL) heapmem_free(session_info->own_der);
+#endif
   list_remove(dtls_context.sessions, session_info);
   memb_free(&dtls_session_info_memb, session_info);
   return NULL;
@@ -714,7 +843,7 @@ coap_ep_dtls_connect(const coap_endpoint_t *ep,
 /*---------------------------------------------------------------------------*/
 #ifdef COAP_DTLS_CONF_WITH_SERVER
 int
-coap_mbedtls_server_setup(const coap_dtls_sec_mode_t sec_mode,
+coap_dtls_server_setup(const coap_dtls_sec_mode_t sec_mode,
                           const void *keystore_entry)
 {
   /* Create and setup session info. */
@@ -832,6 +961,17 @@ coap_ep_dtls_disconnect(const coap_endpoint_t *ep)
   coap_dtls_session_info_t *info = coap_ep_get_dtls_session_info(ep);
   if(info != NULL) {
     mbedtls_ssl_close_notify(&info->ssl);
+#ifdef COAP_DTLS_CONF_WITH_C509
+    if(info->ca_der != NULL) {
+      heapmem_free(info->ca_der);
+      info->ca_der = NULL;
+    }
+    if(info->own_der != NULL) {
+      heapmem_free(info->own_der);
+      info->own_der = NULL;
+    }
+#endif /* COAP_DTLS_CONF_WITH_C509 */
+
 #ifdef COAP_DTLS_CONF_WITH_CLIENT
     if(info->role == COAP_MBEDTLS_ROLE_CLIENT) {
       list_remove(dtls_context.sessions, info);

@@ -67,13 +67,17 @@
 
 #include "dtls-support-config.h"
 
+#include "lib/list.h"
 #include "coap-endpoint.h"
 #include "coap-keystore.h"
+
+extern struct uip_udp_conn *dtls_conn;
 
 typedef enum coap_dtls_sec_mode_e {
   COAP_DTLS_SEC_MODE_NONE = 0,
   COAP_DTLS_SEC_MODE_PSK = 1,
   COAP_DTLS_SEC_MODE_CERT = 2,
+  COAP_DTLS_SEC_MODE_C509 = 3,
 } coap_dtls_sec_mode_t;
 
 typedef enum coap_mbedtls_role_e {
@@ -112,6 +116,10 @@ typedef struct coap_dtls_session_info {
   mbedtls_x509_crt own_cert; /* Our (Client/Server) certificate */
   mbedtls_pk_context pkey; /* Our (Client/Server) private key */
 #endif /* COAP_DTLS_CONF_WITH_CERT */
+#ifdef COAP_DTLS_CONF_WITH_C509
+  uint8_t *ca_der; /* Converted CA DER */
+  uint8_t *own_der; /* Converted Own DER */
+#endif /* COAP_DTLS_CONF_WITH_C509 */
 #ifdef COAP_DTLS_CONF_WITH_SERVER
   bool in_use; /* Determines if this server session is in use by a client. */
   mbedtls_ssl_cookie_ctx cookie_ctx;

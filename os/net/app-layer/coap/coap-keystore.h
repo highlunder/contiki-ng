@@ -78,6 +78,18 @@ typedef struct {
 } coap_keystore_cert_entry_t;
 
 /**
+ * The structure of a CoAP C509 certificate info.
+ */
+typedef struct {
+  const uint8_t *ca_cert;
+  const uint8_t *own_cert;
+  const uint8_t *priv_key;
+  uint16_t ca_cert_len;
+  uint16_t own_cert_len;
+  uint16_t priv_key_len;
+} coap_keystore_c509_entry_t;
+
+/**
  * The structure of a CoAP keystore.
  *
  * The keystore implementation provides a function callback for each type of
@@ -88,6 +100,8 @@ typedef struct {
                             coap_keystore_psk_entry_t *info);
   int (* coap_get_cert_info)(const coap_endpoint_t *address_info,
                             coap_keystore_cert_entry_t *info);
+  int (* coap_get_c509_info)(const coap_endpoint_t *address_info,
+                            coap_keystore_c509_entry_t *info);
 } coap_keystore_t;
 
 /**

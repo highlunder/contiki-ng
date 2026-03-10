@@ -1,38 +1,47 @@
-# C509 Service for Contiki-NG
+# C509 Integration for Contiki-NG
 
-This service provides support for CBOR Encoded X.509 Certificates (C509), as defined in the IETF draft `draft-ietf-cose-cbor-encoded-cert`.
+This service enables CBOR Encoded X.509 (C509) certificate support within the Contiki-NG CoAP/DTLS stack. It provides a transparent conversion layer that allows Mbed TLS to use highly compressed C509 certificates as if they were standard X.509 DER certificates.
 
-## Features
-- Low-footprint CBOR decoder tailored for C509.
-- Structural parsing of C509 certificates.
-- Conversion from C509 to X.509 DER format.
-- Integration with MbedTLS for cryptographic operations.
+## Architecture
 
-## Usage
-To use this service in your Contiki-NG application, add it to your `Makefile`:
+The integration consists of:
+1.  **C509 Parser/Encoder**: Core logic located in `os/services/c509`.
+2.  **DTLS Interceptor**: Modifications in `os/net/app-layer/coap/mbedtls-support/mbedtls-support.c` that catch `COAP_DTLS_SEC_MODE_C509` and perform the conversion before passing credentials to Mbed TLS.
+3.  **Keystore API Extension**: Updated `coap_keystore_t` to support C509 specific retrieval callbacks.
 
-```makefile
-MODULES += os/services/c509
-```
+## Test Server Setup
 
-Since C509 often requires cryptographic operations, you should also enable MbedTLS. The recommended way is via the CoAP module with DTLS:
+A standalone test server is provided in `secure-endpoint-test-server/`. It uses OpenSSL `s_server` to provide a robust DTLS 1.2 endpoint.
 
-```makefile
-MODULES += os/net/app-layer/coap
-MAKE_WITH_DTLS = 1
-MAKE_COAP_DTLS_WITH_CERT = 1
-```
-
-## Testing
-A test application is available in `tests/07-c509`. To run it:
-
+### Running the Server
+To run the server in a private network namespace (bypassing host-level permission issues):
 ```bash
-cd tests/07-c509
-make TARGET=native
-./build/native/test-c509.native
+./secure-endpoint-test-server/run-server.sh
 ```
 
-## Implementation Details
-- **CBOR Decoder**: A zero-copy decoder that minimizes memory usage.
-- **X.509 Encoder**: Reconstructs standard DER-encoded X.509 certificates from C509 representation.
-- **MbedTLS Integration**: Uses MbedTLS for SHA-256 and ECDSA operations.
+## Test Cases
+
+### 1. C509 Secure Handshake
+*   **Objective**: Verify end-to-end DTLS 1.2 handshake using C509 certificates.
+*   **Configuration**:
+    *   `WITH_DTLS=1`
+    *   `COAP_DTLS_CONF_WITH_C509=1`
+    *   `COAP_DTLS_CONF_DEFAULT_MODE=COAP_DTLS_SEC_MODE_C509`
+*   **Success Criteria**: Client logs "Handshake starting" followed by a successful CoAP response (if using a full CoAP server) or the server receiving the encrypted record (if using OpenSSL).
+
+### 2. Standard X.509 (Regression)
+*   **Objective**: Ensure standard PKI still works without regressions.
+*   **Configuration**:
+    *   `WITH_DTLS=1`
+    *   `COAP_DTLS_CONF_WITH_CERT=1`
+*   **Success Criteria**: Normal X.509 handshake completes successfully.
+
+### 3. PSK (Regression)
+*   **Objective**: Ensure Pre-Shared Key mode remains functional.
+*   **Configuration**:
+    *   `WITH_DTLS=1`
+    *   `COAP_DTLS_CONF_WITH_PSK=1`
+*   **Success Criteria**: PSK handshake completes successfully.
+
+## Connectivity Requirements
+For `native` target testing, a `tun0` device is required. Use the provided namespace scripts to avoid `sudo` requirements.
