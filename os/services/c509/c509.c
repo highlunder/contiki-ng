@@ -3,7 +3,7 @@
  * @brief Structural parser for C509 certificates.
  */
 
-#include "c509.h"
+#include "c509/c509.h"
 
 #include <stdio.h>
 
@@ -44,7 +44,7 @@ cbor_error_t c509_parse_cert(c509_cert_t *cert, const uint8_t *buffer, size_t si
     CONSUME_FIELD(cert->subject_pk);
     CONSUME_FIELD(cert->extensions);
 
-    // TBS ends exactly after the 10th field (extensions).
+    // TBS ends exactly after the 10th field.
     cert->tbs_len = (size_t)(&buffer[ctx.offset] - cert->tbs_ptr);
 
     CONSUME_FIELD(cert->signature);

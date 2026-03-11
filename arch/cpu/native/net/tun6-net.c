@@ -61,7 +61,7 @@
 /* Log configuration */
 #include "sys/log.h"
 #define LOG_MODULE "Tun6"
-#define LOG_LEVEL LOG_LEVEL_WARN
+#define LOG_LEVEL LOG_LEVEL_DBG
 
 #ifdef __APPLE__
 /* utun0-3 are in use on Big Sur, so use utun10 as default */
@@ -223,7 +223,7 @@ cleanup(void)
   system(buf);
 #endif /* __APPLE__ */
 
-  strcpy(buf, "ifconfig ");
+  strcpy(buf, "ip link set ");
   /* Will not overflow, but null-terminate to avoid spurious warnings. */
   buf[TMPBUFSIZE - 1] = '\0';
   strncat(buf, config_tundev, TMPBUFSIZE - strlen(buf) - 1);
@@ -261,8 +261,8 @@ static void
 ifconf_setup(void)
 {
 #ifdef linux
-  ssystem("ifconfig %s inet `hostname` mtu %d up", config_tundev, config_mtu);
-  ssystem("ifconfig %s add %s", config_tundev, config_ipaddr);
+  ssystem("ip link set %s up mtu %d", config_tundev, config_mtu);
+  ssystem("ip addr add %s dev %s", config_ipaddr, config_tundev);
 #elif defined(__APPLE__)
   ssystem("ifconfig %s inet6 mtu %d up", config_tundev, config_mtu);
   ssystem("ifconfig %s inet6 %s add", config_tundev, config_ipaddr );
@@ -511,6 +511,14 @@ tun_input(void)
 {
   int size = tun6_net_input(uip_buf, sizeof(uip_buf));
   LOG_DBG("TUN data incoming read:%d\n", size);
+  if(size > 0) {
+    printf("DEBUG: TUN packet (%d bytes):\n", size);
+    for(int i=0; i<size; i++) {
+      printf("%02x ", uip_buf[i]);
+      if((i+1)%16 == 0) printf("\n");
+    }
+    printf("\n");
+  }
   uip_len = size;
   tcpip_input();
 }

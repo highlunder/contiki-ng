@@ -998,6 +998,15 @@ uip_process(uint8_t flag)
   uint8_t *last_header;
   uint8_t protocol;
   uint8_t *next_header;
+
+  printf("DEBUG: uip_process, uip_len=%u\n", uip_len);
+  if(uip_len > 40) {
+    printf("DEBUG: uip_process src=");
+    LOG_INFO_6ADDR(&UIP_IP_BUF->srcipaddr);
+    printf(" dest=");
+    LOG_INFO_6ADDR(&UIP_IP_BUF->destipaddr);
+    printf(" next_hdr=%u\n", UIP_IP_BUF->proto);
+  }
   struct uip_ext_hdr *ext_ptr;
 #if UIP_TCP
   int c;
@@ -1318,12 +1327,18 @@ uip_process(uint8_t flag)
     }
   }
 #else /* UIP_CONF_ROUTER */
-  if(!uip_ds6_is_my_addr(&UIP_IP_BUF->destipaddr) &&
-     !uip_ds6_is_my_maddr(&UIP_IP_BUF->destipaddr) &&
-     !uip_is_addr_mcast(&UIP_IP_BUF->destipaddr)) {
-    LOG_ERR("Dropping packet, not for me\n");
-    UIP_STAT(++uip_stat.ip.drop);
-    goto drop;
+  {
+    bool is_my = uip_ds6_is_my_addr(&UIP_IP_BUF->destipaddr);
+    bool is_my_m = uip_ds6_is_my_maddr(&UIP_IP_BUF->destipaddr);
+    bool is_mcast = uip_is_addr_mcast(&UIP_IP_BUF->destipaddr);
+    printf("DEBUG: dest_check: is_my=%d, is_my_m=%d, is_mcast=%d, dest=", is_my, is_my_m, is_mcast);
+    LOG_INFO_6ADDR(&UIP_IP_BUF->destipaddr);
+    printf("\n");
+    if(!is_my && !is_my_m && !is_mcast) {
+      LOG_ERR("Dropping packet, not for me\n");
+      UIP_STAT(++uip_stat.ip.drop);
+      goto drop;
+    }
   }
 #endif /* UIP_CONF_ROUTER */
 
@@ -1471,6 +1486,7 @@ uip_process(uint8_t flag)
 
   /* Process upper-layer input */
   if(next_header != NULL) {
+    printf("DEBUG: uip_process, protocol=%u\n", protocol);
     switch(protocol) {
 #if UIP_TCP
     case UIP_PROTO_TCP:
@@ -1489,6 +1505,7 @@ uip_process(uint8_t flag)
   }
 
   bad_hdr:
+  printf("DEBUG: uip_process bad_hdr\n");
   /*
    * RFC 2460 send error message parameterr problem, code unrecognized
    * next header, pointing to the next header field
@@ -1551,6 +1568,7 @@ uip_process(uint8_t flag)
 #if UIP_UDP
   /* UDP input processing. */
   udp_input:
+  printf("DEBUG: uip_process udp_input\n");
 
   uip_remove_ext_hdr();
 
@@ -1608,6 +1626,7 @@ uip_process(uint8_t flag)
   goto send;
 
   udp_found:
+  printf("DEBUG: uip_process udp_found\n");
   LOG_DBG("In udp_found\n");
   UIP_STAT(++uip_stat.udp.recv);
 
@@ -2335,6 +2354,7 @@ uip_process(uint8_t flag)
   return;
 
   drop:
+  printf("DEBUG: uip_process drop\n");
   uipbuf_clear();
   uip_ext_bitmap = 0;
   uip_flags = 0;

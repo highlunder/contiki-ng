@@ -1121,6 +1121,15 @@ discard:
   return;
 }
 #endif /* !UIP_CONF_ROUTER */
+/*---------------------------------------------------------------------------*/
+static void
+rs_input_discard(void)
+{
+  uipbuf_clear();
+}
+/*---------------------------------------------------------------------------*/
+UIP_ICMP6_HANDLER(rs_input_handler_discard, ICMP6_RS, UIP_ICMP6_HANDLER_CODE_ANY,
+                  rs_input_discard);
 /*------------------------------------------------------------------*/
 /* ICMPv6 input handlers */
 #if UIP_ND6_SEND_NA
@@ -1159,6 +1168,9 @@ uip_nd6_init()
 #if UIP_CONF_ROUTER && UIP_ND6_SEND_RA
   /* Only accept RS if we are a router and happy to send out RAs */
   uip_icmp6_register_input_handler(&rs_input_handler);
+#else
+  /* Silently discard RS if we are not a router or RA sending is disabled */
+  uip_icmp6_register_input_handler(&rs_input_handler_discard);
 #endif
 
 #if !UIP_CONF_ROUTER

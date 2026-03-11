@@ -3,7 +3,7 @@
  * @brief Lightweight DER encoder implementation.
  */
 
-#include "der.h"
+#include "c509/der.h"
 #include <string.h>
 
 int der_write_tag_len(uint8_t *buffer, size_t size, size_t *offset, uint8_t tag, size_t len) {

@@ -519,6 +519,7 @@ PROCESS_THREAD(coap_engine, ev, data)
     }
 #endif /* WITH_DTLS */
     if(ev == tcpip_event) {
+      printf("DEBUG: tcpip_event, uip_len=%u, uip_newdata=%d\n", uip_len, uip_newdata());
       if(uip_newdata()) {
         printf("DEBUG: newdata, lport=%u, rport=%u, len=%u\n",
                uip_ntohs(uip_udp_conn->lport), uip_ntohs(uip_udp_conn->rport), uip_datalen());

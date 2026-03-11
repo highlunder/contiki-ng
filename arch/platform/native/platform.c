@@ -45,6 +45,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include <sys/select.h>
 #include <errno.h>
 
@@ -236,6 +237,13 @@ platform_init_stage_one()
   gpio_hal_init();
   button_hal_init();
   leds_init();
+
+  const char *node_id_env = getenv("CONTIKI_NODE_ID");
+  if(node_id_env) {
+    uint16_t id = atoi(node_id_env);
+    mac_addr[7] = id & 0xff;
+    mac_addr[6] = (id >> 8) & 0xff;
+  }
 #if CSPRNG_ENABLED
   struct csprng_seed seed;
 #ifdef __APPLE__

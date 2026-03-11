@@ -131,7 +131,7 @@ typedef struct coap_dtls_session_info {
 
 /* DTLS message info */
 typedef struct coap_dtls_send_message {
-  struct coap_mbedtls_send_message *next;
+  struct coap_dtls_send_message *next;
   coap_endpoint_t ep;
   unsigned char send_buf[COAP_MBEDTLS_MTU];
   size_t len;

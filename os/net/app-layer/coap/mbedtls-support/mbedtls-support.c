@@ -341,15 +341,17 @@ coap_dtls_event_handler(void)
      */
 
     coap_dtls_session_info_t *info = coap_ep_get_dtls_session_info(&send_message->ep);
-    uint32_t elapsed_ms = mbedtls_timing_get_timer(&info->timer.MBEDTLS_PRIVATE(timer),
-                                          0);
-    if(info->timer.MBEDTLS_PRIVATE(fin_ms) > 0) {
-      uint32_t time_left_ms = info->timer.MBEDTLS_PRIVATE(fin_ms) - elapsed_ms;
-      if(time_left_ms > 0) {
-        LOG_DBG("Updating re-transmission timer to %u ms\n",
-                (unsigned int)time_left_ms);
-        etimer_set(&info->retransmission_et,
-                   (time_left_ms * CLOCK_SECOND) / 1000);
+    if(info != NULL) {
+      uint32_t elapsed_ms = mbedtls_timing_get_timer(&info->timer.MBEDTLS_PRIVATE(timer),
+                                            0);
+      if(info->timer.MBEDTLS_PRIVATE(fin_ms) > 0) {
+        uint32_t time_left_ms = info->timer.MBEDTLS_PRIVATE(fin_ms) - elapsed_ms;
+        if(time_left_ms > 0) {
+          LOG_DBG("Updating re-transmission timer to %u ms\n",
+                  (unsigned int)time_left_ms);
+          etimer_set(&info->retransmission_et,
+                     (time_left_ms * CLOCK_SECOND) / 1000);
+        }
       }
     }
 
@@ -397,6 +399,10 @@ coap_ep_mbedtls_sendto(void *ctx, const unsigned char *buf, size_t len)
   }
 
   coap_dtls_session_info_t *session_info = (coap_dtls_session_info_t *)ctx;
+  if(len > COAP_MBEDTLS_MTU) {
+    LOG_ERR("DTLS message too large: %zu > %d\n", len, COAP_MBEDTLS_MTU);
+    return MBEDTLS_ERR_NET_SEND_FAILED;
+  }
   memcpy(&send_message->ep, &session_info->ep, sizeof(coap_endpoint_t));
   memcpy(send_message->send_buf, buf, len);
   send_message->len = len;

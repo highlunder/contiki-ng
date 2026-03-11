@@ -6,28 +6,23 @@
 #ifndef C509_X509_ENCODE_H
 #define C509_X509_ENCODE_H
 
-#include "c509.h"
-#include "der.h"
+#include "c509/c509.h"
+#include "c509/der.h"
 
 /**
- * @brief Encodes a C509 algorithm identifier to DER OID.
+ * @brief Encodes a C509 AlgorithmIdentifier to X.509 DER.
  */
 int x509_encode_algorithm_identifier(uint8_t *buffer, size_t size, size_t *offset, int64_t alg_id);
 
 /**
- * @brief Encodes a C509 subject/issuer name to DER.
+ * @brief Encodes a C509 Name to X.509 DER.
  */
-int x509_encode_name(uint8_t *buffer, size_t size, size_t *offset, const cbor_value_t *name);
+int x509_encode_name(uint8_t *buffer, size_t size, size_t *offset, const cbor_value_t *name, const cbor_value_t *subject);
 
 /**
- * @brief Encodes a C509 timestamp to DER UTCTime.
+ * @brief Encodes a C509 Validity to X.509 DER.
  */
 int x509_encode_validity(uint8_t *buffer, size_t size, size_t *offset, const cbor_value_t *time_val);
-
-/**
- * @brief Reconstructs the X.509 TBS (To-Be-Signed) structure from a C509 cert.
- */
-int x509_encode_tbs(uint8_t *buffer, size_t size, size_t *offset, const c509_cert_t *cert);
 
 /**
  * @brief Assembles the full X.509 DER certificate.

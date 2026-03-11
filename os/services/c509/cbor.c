@@ -3,7 +3,7 @@
  * @brief Implementation of the low-footprint CBOR decoder.
  */
 
-#include "cbor.h"
+#include "c509/cbor.h"
 
 void cbor_init(cbor_context_t *ctx, const uint8_t *buffer, size_t size) {
     ctx->buffer = buffer;
