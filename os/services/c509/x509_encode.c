@@ -103,16 +103,16 @@ static int decompress_key(mbedtls_ecp_group_id grp_id, const uint8_t *input, siz
     mbedtls_ecp_group_init(&grp);
     mbedtls_ecp_point_init(&pt);
     ret = mbedtls_ecp_group_load(&grp, grp_id);
-    if (ret != 0) goto exit;
+    if (ret != 0) goto cleanup;
     uint8_t tmp[65];
     if (input[0] == 0xFE) tmp[0] = 0x02;
     else if (input[0] == 0xFD) tmp[0] = 0x03;
     else tmp[0] = input[0];
     memcpy(tmp + 1, input + 1, ilen - 1);
     ret = mbedtls_ecp_point_read_binary(&grp, &pt, tmp, ilen);
-    if (ret != 0) goto exit;
+    if (ret != 0) goto cleanup;
     ret = mbedtls_ecp_point_write_binary(&grp, &pt, MBEDTLS_ECP_PF_UNCOMPRESSED, olen, output, 65);
-exit:
+cleanup:
     mbedtls_ecp_group_free(&grp);
     mbedtls_ecp_point_free(&pt);
     return ret;

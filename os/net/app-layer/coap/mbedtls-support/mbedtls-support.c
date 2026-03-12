@@ -621,7 +621,6 @@ setup_session(const coap_mbedtls_role_t role,
 #endif /* COAP_DTLS_CONF_WITH_CERT */
 #ifdef COAP_DTLS_CONF_WITH_C509
   if(sec_mode == COAP_DTLS_SEC_MODE_C509) {
-    printf("DEBUG: setup_session C509 start\n");
     coap_keystore_c509_entry_t *ks =
       (coap_keystore_c509_entry_t *)keystore_entry;
     if(ks->ca_cert == NULL || ks->own_cert == NULL || ks->priv_key == NULL) {
@@ -633,7 +632,6 @@ setup_session(const coap_mbedtls_role_t role,
     size_t offset;
 
     /* Convert CA Cert */
-    printf("DEBUG: setup_session converting CA cert\n");
     session_info->ca_der = heapmem_alloc(1024);
     if(session_info->ca_der == NULL) {
       LOG_ERR("Failed to allocate memory for CA DER\n");
@@ -650,7 +648,6 @@ setup_session(const coap_mbedtls_role_t role,
     }
     debug_hex_dump("CA DER", session_info->ca_der, offset);
 
-    printf("DEBUG: setup_session parsing CA cert with mbedtls\n");
     ret = mbedtls_x509_crt_parse(&session_info->ca_cert,
                                  (const unsigned char *)session_info->ca_der,
                                  offset);
@@ -663,7 +660,6 @@ setup_session(const coap_mbedtls_role_t role,
                               NULL);
 
     /* Convert Own Cert */
-    printf("DEBUG: setup_session converting Own cert\n");
     session_info->own_der = heapmem_alloc(1024);
     if(session_info->own_der == NULL) {
       LOG_ERR("Failed to allocate memory for Own DER\n");
@@ -680,7 +676,6 @@ setup_session(const coap_mbedtls_role_t role,
     }
     debug_hex_dump("Own DER", session_info->own_der, offset);
 
-    printf("DEBUG: setup_session parsing Own cert with mbedtls\n");
     ret = mbedtls_x509_crt_parse(&session_info->own_cert,
                                  (const unsigned char *)session_info->own_der,
                                  offset);
@@ -689,7 +684,6 @@ setup_session(const coap_mbedtls_role_t role,
       goto clean_and_ret_err;
     }
 
-    printf("DEBUG: setup_session parsing private key\n");
     ret = mbedtls_pk_parse_key(&session_info->pkey,
                                (const unsigned char *)ks->priv_key,
                                ks->priv_key_len, NULL, 0,
@@ -699,7 +693,6 @@ setup_session(const coap_mbedtls_role_t role,
       goto clean_and_ret_err;
     }
 
-    printf("DEBUG: setup_session configuring own cert\n");
     ret = mbedtls_ssl_conf_own_cert(&session_info->conf,
                                     &session_info->own_cert,
                                     &session_info->pkey);
@@ -707,7 +700,6 @@ setup_session(const coap_mbedtls_role_t role,
       LOG_ERR("mbedtls_ssl_conf_own_cert returned %d\n", ret);
       goto clean_and_ret_err;
     }
-    printf("DEBUG: setup_session C509 complete\n");
   } else
 #endif /* COAP_DTLS_CONF_WITH_C509 */
 #ifdef COAP_DTLS_CONF_WITH_PSK
