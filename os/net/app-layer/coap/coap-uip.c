@@ -297,6 +297,19 @@ coap_endpoint_is_connected(const coap_endpoint_t *ep)
 int
 coap_endpoint_connect(coap_endpoint_t *ep)
 {
+  printf("DEBUG: entering coap_endpoint_connect\n");
+#ifdef WITH_DTLS
+  printf("DEBUG: WITH_DTLS is defined\n");
+#else
+  printf("DEBUG: WITH_DTLS is NOT defined\n");
+#endif
+
+#ifdef COAP_DTLS_CONF_WITH_CLIENT
+  printf("DEBUG: COAP_DTLS_CONF_WITH_CLIENT is defined\n");
+#else
+  printf("DEBUG: COAP_DTLS_CONF_WITH_CLIENT is NOT defined\n");
+#endif
+
 #ifdef WITH_DTLS
 #ifdef COAP_DTLS_CONF_WITH_CLIENT
 #ifdef COAP_DTLS_CONF_WITH_PSK
@@ -349,6 +362,7 @@ coap_endpoint_connect(coap_endpoint_t *ep)
 #endif /* COAP_DTLS_CONF_WITH_CLIENT */
 #endif /* WITH_DTLS */
 
+  printf("DEBUG: coap_endpoint_connect falling through to return 0\n");
   return 0;
 }
 /*---------------------------------------------------------------------------*/

@@ -70,6 +70,7 @@ static void
 rtc_handler(nrf_drv_rtc_int_type_t int_type)
 {
   if(int_type == NRF_DRV_RTC_INT_TICK) {
+    if(ticks % 128 == 0) printf("DEBUG: RTC Tick %lu\n", ticks);
     clock_update();
   }
 }

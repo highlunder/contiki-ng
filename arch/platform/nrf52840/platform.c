@@ -64,6 +64,8 @@
 /*---------------------------------------------------------------------------*/
 /* Nordic semi OUI */
 #define NORDIC_SEMI_VENDOR_OUI 0xF4CE36
+
+uint32_t node_id_override = 0;
 /*---------------------------------------------------------------------------*/
 static void
 populate_link_address(void)
@@ -79,10 +81,23 @@ populate_link_address(void)
   device_address[0] = (NORDIC_SEMI_VENDOR_OUI) >> 16 & 0xFF;
   device_address[1] = (NORDIC_SEMI_VENDOR_OUI) >> 8 & 0xFF;
   device_address[2] = NORDIC_SEMI_VENDOR_OUI & 0xFF;
+#ifdef NODE_ID_OFFSET
+  device_address[3] = 0;
+  device_address[4] = 0;
+  device_address[5] = 0;
+  device_address[6] = 0;
+  device_address[7] = (uint8_t)NODE_ID_OFFSET;
+#else
   device_address[3] = NRF_FICR->DEVICEADDR[1] & 0xFF;
-
   device_address_low = NRF_FICR->DEVICEADDR[0];
+
+  if(node_id_override != 0) {
+    device_address_low = node_id_override;
+    device_address[3] = 0;
+  }
+
   memcpy(&device_address[4], &device_address_low, 4);
+#endif
 
   memcpy(&linkaddr_node_addr, &device_address[8 - LINKADDR_SIZE],
          LINKADDR_SIZE);
