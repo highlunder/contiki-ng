@@ -77,7 +77,7 @@ uart0_writeb(unsigned char c)
   nrf_uart_txd_set(UART_INSTANCE, c);
 
   /* Block if previous TX is ongoing */
-  while(nrf_uart_event_check(UART_INSTANCE, NRF_UART_EVENT_TXDRDY) == false);
+  // while(nrf_uart_event_check(UART_INSTANCE, NRF_UART_EVENT_TXDRDY) == false);
   nrf_uart_event_clear(UART_INSTANCE, NRF_UART_EVENT_TXDRDY);
 }
 /*---------------------------------------------------------------------------*/

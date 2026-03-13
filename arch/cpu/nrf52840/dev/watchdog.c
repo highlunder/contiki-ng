@@ -74,9 +74,12 @@ watchdog_init(void)
 void
 watchdog_start(void)
 {
+  /* Disabled for Renode simulation to prevent unwanted resets */
+  /*
   if(wdt_initialized) {
     nrfx_wdt_enable();
   }
+  */
 }
 /*---------------------------------------------------------------------------*/
 void

@@ -41,4 +41,19 @@
 
 #define LOG_LEVEL_APP LOG_LEVEL_DBG
 
+/* Enable heapmem */
+#define HEAPMEM_CONF_ARENA_SIZE 8192
+
+/* Enable DTLS support */
+#define WITH_DTLS 1
+#define COAP_DTLS_CONF_WITH_CERT 1
+#define COAP_DTLS_CONF_WITH_PSK 1
+
+/* Enable CSPRNG */
+#define CSPRNG_CONF_ENABLED 1
+
+/* Mbed TLS configuration */
+#define MBEDTLS_KEY_EXCHANGE_PSK_ENABLED
+#define MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED
+
 #endif /* PROJECT_CONF_H_ */

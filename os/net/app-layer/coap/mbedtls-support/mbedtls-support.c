@@ -102,13 +102,13 @@
 #include "nrf_crypto.h"
 #endif /* MBEDTLS_ECDSA_VERIFY_ALT ||
           MBEDTLS_ECDH_COMPUTE_SHARED_ALT */
-
 /* Log configuration */
 #include "sys/log.h"
 #define LOG_MODULE "DTLS"
 #define LOG_LEVEL LOG_LEVEL_DTLS
 
 MEMB(dtls_session_info_memb, coap_dtls_session_info_t,
+
      COAP_DTLS_MAX_SESSIONS);
 
 static coap_dtls_context_t dtls_context;
@@ -953,22 +953,42 @@ perform_handshake:
   return 0;
 }
 /*---------------------------------------------------------------------------*/
+static void
+free_session_resources(coap_dtls_session_info_t *info)
+{
+  mbedtls_ssl_free(&info->ssl);
+  mbedtls_ssl_config_free(&info->conf);
+  mbedtls_ctr_drbg_free(&info->ctr_drbg);
+#if !defined(MBEDTLS_NO_PLATFORM_ENTROPY)
+  mbedtls_entropy_free(&info->entropy);
+#endif
+
+#if defined(COAP_DTLS_CONF_WITH_CERT) || defined(COAP_DTLS_CONF_WITH_C509)
+  mbedtls_x509_crt_free(&info->ca_cert);
+  mbedtls_x509_crt_free(&info->own_cert);
+  mbedtls_pk_free(&info->pkey);
+#endif
+
+#ifdef COAP_DTLS_CONF_WITH_C509
+  if(info->ca_der != NULL) {
+    heapmem_free(info->ca_der);
+    info->ca_der = NULL;
+  }
+  if(info->own_der != NULL) {
+    heapmem_free(info->own_der);
+    info->own_der = NULL;
+  }
+#endif
+}
+
 void
 coap_ep_dtls_disconnect(const coap_endpoint_t *ep)
 {
   coap_dtls_session_info_t *info = coap_ep_get_dtls_session_info(ep);
   if(info != NULL) {
     mbedtls_ssl_close_notify(&info->ssl);
-#ifdef COAP_DTLS_CONF_WITH_C509
-    if(info->ca_der != NULL) {
-      heapmem_free(info->ca_der);
-      info->ca_der = NULL;
-    }
-    if(info->own_der != NULL) {
-      heapmem_free(info->own_der);
-      info->own_der = NULL;
-    }
-#endif /* COAP_DTLS_CONF_WITH_C509 */
+    
+    free_session_resources(info);
 
 #ifdef COAP_DTLS_CONF_WITH_CLIENT
     if(info->role == COAP_MBEDTLS_ROLE_CLIENT) {
@@ -978,7 +998,9 @@ coap_ep_dtls_disconnect(const coap_endpoint_t *ep)
 #endif /* COAP_DTLS_CONF_WITH_CLIENT */
 #ifdef COAP_DTLS_CONF_WITH_SERVER
     if(info->role == COAP_MBEDTLS_ROLE_SERVER) {
-      mbedtls_ssl_session_reset(&info->ssl);
+      /* On server we might want to keep the session info struct but it must be ready for next client */
+      mbedtls_ssl_init(&info->ssl);
+      mbedtls_ssl_config_init(&info->conf);
       info->in_use = false;
       memset(&info->ep, 0, sizeof(coap_endpoint_t));
       etimer_stop(&info->retransmission_et);
