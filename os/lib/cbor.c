@@ -480,17 +480,13 @@ cbor_get_remaining(cbor_reader_state_t *state)
 bool
 cbor_skip_next(cbor_reader_state_t *state)
 {
-  cbor_major_type_t major_type;
-  uint64_t value;
-  size_t i;
-
-  if(!state || !state->cbor_size) {
+  if(!state->cbor_size) {
     return false;
   }
 
-  major_type = cbor_peek_next(state);
+  uint64_t value;
 
-  switch(major_type) {
+  switch(cbor_peek_next(state)) {
   case CBOR_MAJOR_TYPE_UNSIGNED:
   case CBOR_MAJOR_TYPE_SIGNED:
     /* Skip unsigned or signed integer */
@@ -514,7 +510,7 @@ cbor_skip_next(cbor_reader_state_t *state)
     if(cbor_read_unsigned(state, &value) == CBOR_SIZE_NONE) {
       return false;
     }
-    for(i = 0; i < value; i++) {
+    for(uint64_t i = 0; i < value; i++) {
       if(!cbor_skip_next(state)) {
         return false;
       }
@@ -526,7 +522,7 @@ cbor_skip_next(cbor_reader_state_t *state)
     if(cbor_read_unsigned(state, &value) == CBOR_SIZE_NONE) {
       return false;
     }
-    for(i = 0; i < value * 2; i++) { /* Maps have key-value pairs */
+    for(uint64_t i = 0; i < value * 2; i++) { /* Maps have key-value pairs */
       if(!cbor_skip_next(state)) {
         return false;
       }
