@@ -468,13 +468,13 @@ cbor_read_map(cbor_reader_state_t *state)
 const uint8_t *
 cbor_get_position(cbor_reader_state_t *state)
 {
-  return state ? state->cbor : NULL;
+  return state->cbor;
 }
 /*---------------------------------------------------------------------------*/
 size_t
 cbor_get_remaining(cbor_reader_state_t *state)
 {
-  return state ? state->cbor_size : 0;
+  return state->cbor_size;
 }
 /*---------------------------------------------------------------------------*/
 bool
