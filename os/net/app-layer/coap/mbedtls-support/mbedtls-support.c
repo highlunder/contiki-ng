@@ -651,6 +651,8 @@ setup_session(const coap_mbedtls_role_t role,
     ret = mbedtls_x509_crt_parse(&session_info->ca_cert,
                                  (const unsigned char *)session_info->ca_der,
                                  offset);
+    printf("DEBUG: mbedtls_x509_crt_parse(CA) returned %d\n", ret);
+    fflush(stdout);
     if(ret < 0) {
       LOG_ERR("mbedtls_x509_crt_parse failed for CA cert (error %d)\n", ret);
       goto clean_and_ret_err;

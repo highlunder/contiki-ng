@@ -62,6 +62,7 @@
 
 /* The HEAPMEM_CONF_ARENA_SIZE parameter determines the size of the
    space that will be statically allocated in this module. */
+#undef HEAPMEM_ARENA_SIZE
 #define HEAPMEM_ARENA_SIZE HEAPMEM_CONF_ARENA_SIZE
 
 /*
