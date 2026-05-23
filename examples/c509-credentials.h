@@ -1,13 +1,45 @@
 /*
- * C509 test credentials shared by the c509-hw-test example applications.
+ * Copyright (c) 2024, RISE Research Institutes of Sweden.
+ * All rights reserved.
  *
- * This is a self-signed secp256r1 certificate encoded as a Type 3 C509
- * (reconstructable DER-equivalent, draft-ietf-cose-cbor-encoded-cert).
- * Both the server and client use the same certificate so that each node
- * acts as its own CA for the loopback test -- the same pattern used by the
- * native Linux DTLS integration tests in secure-endpoint-test-server/.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. Neither the name of the copyright holder nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
- * DO NOT use these credentials outside of testing.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+ * FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE
+ * COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+ * OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/**
+ * \file
+ *         Test credentials shared by the c509-hw-test example applications.
+ *
+ *         Self-signed secp256r1 certificate encoded as Type 3 C509
+ *         (draft-ietf-cose-cbor-encoded-cert).  Both server and client use
+ *         the same certificate so each node acts as its own CA -- the same
+ *         loopback pattern as the native Linux DTLS integration tests.
+ *
+ *         DO NOT use these credentials outside of testing.
+ * \author
+ *         Joel Hoglund <joel.hoglund@ri.se>
  */
 
 #ifndef C509_CREDENTIALS_H_
@@ -35,7 +67,7 @@ static const uint8_t test_c509_cert[] = {
   0x56, 0xC7, 0x92, 0x47, 0x4D, 0xB8, 0x58, 0x25, 0xBB, 0x19
 };
 
-/* ECPrivateKey (RFC 5915) for the certificate above (secp256r1). */
+/* ECPrivateKey (RFC 5915) matching the certificate above. */
 static const uint8_t test_priv_key[] = {
   0x30, 0x77, 0x02, 0x01, 0x01, 0x04, 0x20, 0x1f, 0x31, 0x83, 0x60, 0x02,
   0xf4, 0x85, 0x86, 0x69, 0x04, 0xce, 0xde, 0x3b, 0x91, 0x36, 0x97, 0xac,

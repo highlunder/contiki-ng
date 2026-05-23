@@ -450,13 +450,15 @@ coap_ep_mbedtls_recv(void *ctx, unsigned char *buf, size_t len)
 static void
 debug_hex_dump(const char *label, const uint8_t *data, size_t len)
 {
-  printf("%s (%zu bytes):\n", label, len);
-  for(size_t i = 0; i < len; i++) {
-    printf("%02x ", data[i]);
-    if((i + 1) % 16 == 0) printf("\n");
+  size_t i;
+  LOG_DBG("%s (%zu bytes):\n", label, len);
+  for(i = 0; i < len; i++) {
+    LOG_DBG_("%02x ", data[i]);
+    if((i + 1) % 16 == 0) {
+      LOG_DBG_("\n");
+    }
   }
-  printf("\n");
-  fflush(stdout);
+  LOG_DBG_("\n");
 }
 #endif
 
@@ -651,8 +653,7 @@ setup_session(const coap_mbedtls_role_t role,
     ret = mbedtls_x509_crt_parse(&session_info->ca_cert,
                                  (const unsigned char *)session_info->ca_der,
                                  offset);
-    printf("DEBUG: mbedtls_x509_crt_parse(CA) returned %d\n", ret);
-    fflush(stdout);
+    LOG_DBG("mbedtls_x509_crt_parse(CA) returned %d\n", ret);
     if(ret < 0) {
       LOG_ERR("mbedtls_x509_crt_parse failed for CA cert (error %d)\n", ret);
       goto clean_and_ret_err;

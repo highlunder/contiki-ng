@@ -92,12 +92,12 @@ populate_link_address(void)
     device_address[3] = NRF_FICR->DEVICEADDR[1] & 0xFF;
     device_address_low = NRF_FICR->DEVICEADDR[0];
 
-  if(node_id_override != 0) {
-    device_address_low = node_id_override;
-    device_address[3] = 0;
-  }
+    if(node_id_override != 0) {
+      device_address_low = node_id_override;
+      device_address[3] = 0;
+    }
 
-  memcpy(&device_address[4], &device_address_low, 4);
+    memcpy(&device_address[4], &device_address_low, 4);
   }
 #endif
 
