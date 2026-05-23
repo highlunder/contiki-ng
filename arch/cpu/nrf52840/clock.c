@@ -59,22 +59,36 @@ const nrf_drv_rtc_t rtc = NRF_DRV_RTC_INSTANCE(PLATFORM_RTC_INSTANCE_ID); /**< R
 /*---------------------------------------------------------------------------*/
 static volatile uint32_t ticks;
 void clock_update(void);
-
-#define TICKS (RTC1_CONFIG_FREQUENCY / CLOCK_CONF_SECOND)
-
+/*---------------------------------------------------------------------------*/
+/*
+ * RTC prescaler is set to 255, giving LFCLK (32768 Hz) / 256 = 128 Hz.
+ * CLOCK_CONF_SECOND is 128 on ARM targets, so one RTC counter unit equals
+ * exactly one Contiki clock tick.
+ *
+ * The CC0 COMPARE channel is used instead of the TICK interrupt because some
+ * simulators (including Renode) do not implement the TICK event in the RTC
+ * peripheral model.  COMPARE events are universally supported.
+ */
+#define RTC_CC_INTERVAL 1
+/*---------------------------------------------------------------------------*/
 /**
- * \brief Function for handling the RTC0 interrupts
- * \param int_type Type of interrupt to be handled
+ * \brief Handle RTC compare interrupts and advance the Contiki clock.
+ * \param int_type Type of interrupt delivered by the nrf_drv_rtc driver.
  */
 static void
 rtc_handler(nrf_drv_rtc_int_type_t int_type)
 {
-  if(int_type == NRF_DRV_RTC_INT_TICK) {
-    if(ticks % 128 == 0) printf("DEBUG: RTC Tick %lu\n", ticks);
+  if(int_type == NRF_DRV_RTC_INT_COMPARE0) {
+    /* Reload CC0 relative to the current counter value to stay phase-accurate
+     * across the 24-bit counter wrap boundary. */
+    uint32_t next = nrf_drv_rtc_counter_get(&rtc) + RTC_CC_INTERVAL;
+    nrf_drv_rtc_cc_set(&rtc, 0, next & 0xFFFFFF, true);
     clock_update();
   }
 }
-/** \brief Function starting the internal LFCLK XTAL oscillator.
+/*---------------------------------------------------------------------------*/
+/**
+ * \brief Start the internal LFCLK crystal oscillator.
  */
 static void
 lfclk_config(void)
@@ -83,15 +97,17 @@ lfclk_config(void)
   APP_ERROR_CHECK(err_code);
   nrf_drv_clock_lfclk_request(NULL);
 }
+/*---------------------------------------------------------------------------*/
 /**
- * \brief Function initialization and configuration of RTC driver instance.
+ * \brief Initialise and start the RTC driver instance used for the platform
+ *        clock.
  */
 static void
 rtc_config(void)
 {
   uint32_t err_code;
 
-  /*Initialize RTC instance */
+  /* Prescaler 255 -> 32768/256 = 128 Hz; priority 6 is below SoftDevice. */
   nrf_drv_rtc_config_t config = NRF_DRV_RTC_DEFAULT_CONFIG;
   config.prescaler = 255;
   config.interrupt_priority = 6;
@@ -100,10 +116,10 @@ rtc_config(void)
   err_code = nrf_drv_rtc_init(&rtc, &config, rtc_handler);
   APP_ERROR_CHECK(err_code);
 
-  /*Enable tick event & interrupt */
-  nrf_drv_rtc_tick_enable(&rtc, true);
+  /* Arm the first CC0 compare event to fire after one counter unit. */
+  nrf_drv_rtc_cc_set(&rtc, 0, RTC_CC_INTERVAL, true);
 
-  /*Power on RTC instance */
+  /* Power on RTC instance */
   nrf_drv_rtc_enable(&rtc);
 }
 /*---------------------------------------------------------------------------*/

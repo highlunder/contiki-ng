@@ -133,6 +133,16 @@ PROCESS(nrf52840_ieee_rf_process, "nRF52840 IEEE RF driver");
 #ifndef NRF52840_CCA_CORR_COUNT
 #define NRF52840_CCA_CORR_COUNT 0x02
 #endif
+
+/*
+ * Maximum iterations to busy-wait for a CCA result.  On real hardware the CCA
+ * procedure completes in ~128 us (8192 cycles at 64 MHz), so 1 000 000
+ * iterations gives a safe margin while still protecting against simulator
+ * environments (e.g. Renode) that never raise CCABUSY/CCAIDLE events.
+ */
+#ifndef NRF52840_CCA_TIMEOUT_ITERATIONS
+#define NRF52840_CCA_TIMEOUT_ITERATIONS 1000000UL
+#endif
 /*---------------------------------------------------------------------------*/
 /*
  * .15.4-compliant CRC:
@@ -467,6 +477,7 @@ static int
 channel_clear(void)
 {
   bool busy, idle;
+  uint32_t cca_timeout;
 
   LOG_DBG("channel_clear\n");
 
@@ -482,8 +493,18 @@ channel_clear(void)
   /* We are now in RX. Send CCASTART */
   nrf_radio_task_trigger(NRF_RADIO_TASK_CCASTART);
 
+  /*
+   * Wait for the hardware to report a CCA result.  The timeout is a safety net
+   * for simulator environments (e.g. Renode) that do not implement the CCA
+   * state machine; on real hardware the result arrives well within 1 ms.
+   */
+  cca_timeout = NRF52840_CCA_TIMEOUT_ITERATIONS;
   while((nrf_radio_event_check(NRF_RADIO_EVENT_CCABUSY) == false) &&
-        (nrf_radio_event_check(NRF_RADIO_EVENT_CCAIDLE) == false));
+        (nrf_radio_event_check(NRF_RADIO_EVENT_CCAIDLE) == false) &&
+        --cca_timeout > 0);
+  if(cca_timeout == 0) {
+    LOG_WARN("CCA timed out; assuming channel idle\n");
+  }
 
   busy = nrf_radio_event_check(NRF_RADIO_EVENT_CCABUSY);
   idle = nrf_radio_event_check(NRF_RADIO_EVENT_CCAIDLE);
