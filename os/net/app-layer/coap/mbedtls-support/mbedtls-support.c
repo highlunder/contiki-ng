@@ -283,6 +283,7 @@ perform_handshake(coap_dtls_session_info_t *session_info)
   } else if(ret < 0) {
   /* Handshake error handling */
     if(ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
+      LOG_ERR("Handshake unexpected error: -0x%04x\n", (unsigned int)-ret);
 #ifdef COAP_DTLS_CONF_WITH_CLIENT
       /* HS failed -- Clean up
        * Call coap_ep_dtls_connect() again if a retry is needed  */
@@ -783,6 +784,12 @@ setup_session(const coap_mbedtls_role_t role,
   mbedtls_ssl_set_timer_cb(&session_info->ssl, &session_info->timer,
                            mbedtls_timing_set_delay, mbedtls_timing_get_delay);
   mbedtls_ssl_set_mtu(&session_info->ssl, COAP_MBEDTLS_MTU);
+#if defined(MBEDTLS_SSL_DTLS_ANTI_REPLAY)
+  /* The cooja-ng ARM emulator has a bug in 64-bit memory operations that
+   * causes false replay drops. Disable until the emulator bug is fixed. */
+  mbedtls_ssl_conf_dtls_anti_replay(&session_info->conf,
+                                    MBEDTLS_SSL_ANTI_REPLAY_DISABLED);
+#endif /* MBEDTLS_SSL_DTLS_ANTI_REPLAY */
   return session_info;
 
  clean_and_ret_err:
