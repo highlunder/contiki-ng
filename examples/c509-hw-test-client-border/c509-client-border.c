@@ -67,15 +67,19 @@
 /*---------------------------------------------------------------------------*/
 /*
  * Wait for RPL to form a route before attempting to connect.
- * 60 s gives the border-router time to push DIO, the client time to form a
- * parent, and DAO registration to complete — at real-time simulation speed.
+ * Override in project-conf.h for topologies with more hops (longer convergence).
+ * 60 s is sufficient for 1-hop; use 120 s+ for 3-hop chains.
  */
+#ifndef CONNECT_DELAY_S
 #define CONNECT_DELAY_S     60
+#endif
 /*
  * Timeout waiting for the DTLS handshake.  secp256r1 on nRF52840 takes ~3 s
  * per operation; the full handshake takes ~9 s.  Allow 120 s headroom.
  */
+#ifndef HANDSHAKE_TIMEOUT_S
 #define HANDSHAKE_TIMEOUT_S 120
+#endif
 /*---------------------------------------------------------------------------*/
 static int
 get_c509_info(const coap_endpoint_t *ep, coap_keystore_c509_entry_t *info)
