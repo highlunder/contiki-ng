@@ -70,16 +70,20 @@ mbedtls_timing_get_delay(void *data)
     return -1;
   }
 
-  if(elapsed_ms > ctx->MBEDTLS_PRIVATE(fin_ms)) {
+  /* Use >= not >: the Contiki etimer is set for exactly (fin_ms - elapsed_at_set)
+   * ticks, so it fires at elapsed_ms == fin_ms due to integer arithmetic
+   * cancellation.  Strict > would always return 1 here, preventing Mbed TLS
+   * from ever detecting the timeout and retransmitting the DTLS flight. */
+  if(elapsed_ms >= ctx->MBEDTLS_PRIVATE(fin_ms)) {
     /* The final delay has passed. */
-    LOG_DBG("%s: the final delay has passed. %lu > %"PRIu32"\n",
+    LOG_DBG("%s: the final delay has passed. %lu >= %"PRIu32"\n",
             __func__, elapsed_ms, ctx->MBEDTLS_PRIVATE(fin_ms));
     return 2;
   }
 
-  if(elapsed_ms > ctx->MBEDTLS_PRIVATE(int_ms)) {
+  if(elapsed_ms >= ctx->MBEDTLS_PRIVATE(int_ms)) {
     /* The intermediate delay has passed. */
-    LOG_DBG("%s: the intermediate delay has passed. %lu > %"PRIu32"\n",
+    LOG_DBG("%s: the intermediate delay has passed. %lu >= %"PRIu32"\n",
             __func__, elapsed_ms, ctx->MBEDTLS_PRIVATE(int_ms));
     return 1;
   }
