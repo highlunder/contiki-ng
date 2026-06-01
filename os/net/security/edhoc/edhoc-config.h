@@ -51,15 +51,21 @@
 
 /**
  * \brief Optimized buffer sizes for credentials based on COSE standard analysis
- * CRED_X: 84-120 bytes typical → 128 bytes (safe margin)
- * ID_CRED_X: 4-7 bytes (KID mode) or 84-120 bytes (include mode)
+ * CRED_X: 84-120 bytes typical for CCS; up to ~200 bytes for C509 → 256 bytes
+ * ID_CRED_X: 4-7 bytes (KID), ~15 bytes (c5t), or full cert (c5c/include mode)
  */
-#define EDHOC_MAX_CRED_LEN 128
-
-#if EDHOC_AUTHENT_TYPE == EDHOC_CRED_KID
-#define EDHOC_MAX_ID_CRED_LEN 16    /* KID mode: 4-7 bytes typical → 16 bytes (safe) */
+#ifdef EDHOC_CONF_MAX_CRED_LEN
+#define EDHOC_MAX_CRED_LEN EDHOC_CONF_MAX_CRED_LEN
 #else
-#define EDHOC_MAX_ID_CRED_LEN 128   /* Include mode: same as credential size */
+#define EDHOC_MAX_CRED_LEN 256
+#endif
+
+#if (EDHOC_AUTHENT_TYPE == EDHOC_CRED_KID) || (EDHOC_AUTHENT_TYPE == EDHOC_CRED_C509_C5T)
+#define EDHOC_MAX_ID_CRED_LEN 32    /* KID/c5t: ≤ 16 bytes typical → 32 bytes (safe) */
+#elif (EDHOC_AUTHENT_TYPE == EDHOC_CRED_C509_C5C)
+#define EDHOC_MAX_ID_CRED_LEN 256   /* c5c: full cert inline */
+#else
+#define EDHOC_MAX_ID_CRED_LEN 256   /* Include mode / fallback */
 #endif
 
 /**
@@ -211,11 +217,22 @@
 /* Credential type/usage */
 #define EDHOC_CRED_KID 2
 #define EDHOC_CRED_INCLUDE 3
+/* C509 certificate by hash reference (ID_CRED_x = {22: COSE_CertHash}) */
+#define EDHOC_CRED_C509_C5T 4
+/* C509 certificate by value (ID_CRED_x = {25: COSE_C509})              */
+#define EDHOC_CRED_C509_C5C 5
 
 /* COSE header labels for ID_CRED_X identification methods */
 #define COSE_HEADER_LABEL_COMPACT_ENCODING 0  /* Compact encoding (bare KID) */
 #define COSE_HEADER_LABEL_CRED_FULL 1         /* Full credential inclusion */
 #define COSE_HEADER_LABEL_KID 4               /* Key ID in map format {4: kid} */
+/* C509 COSE header parameters (draft-ietf-cose-cbor-encoded-cert-11) */
+#define COSE_HEADER_LABEL_C5T 22  /* C509 hash-by-reference              */
+#define COSE_HEADER_LABEL_C5C 25  /* C509 by-value (ordered chain)       */
+/* SHA-256/64 (8-byte truncated SHA-256) COSE algorithm ID for c5t      */
+#define COSE_HASH_ALG_SHA256_64  (-15)
+/* Recommended truncated hash length for c5t per RFC 9528 §9.3          */
+#define EDHOC_C5T_HASH_LEN 8
 
 /**
  * \brief Set the authentication credential type/usage

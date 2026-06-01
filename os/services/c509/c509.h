@@ -37,7 +37,7 @@ typedef struct {
 
 /**
  * @brief Parses a C509 certificate from a CBOR buffer.
- * 
+ *
  * @param cert Pointer to the structure to fill.
  * @param buffer Source CBOR data.
  * @param size Size of the source data.

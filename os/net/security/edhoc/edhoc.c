@@ -48,6 +48,7 @@
 #include "edhoc-config.h"
 #include "edhoc-msgs.h"
 #include "edhoc-trace.h"
+#include "edhoc-cred-c509.h"
 #include "cose.h"
 #include <assert.h>
 
@@ -209,6 +210,13 @@ edhoc_set_config_from_suite(edhoc_context_t *ctx, uint8_t suite)
 size_t
 edhoc_generate_cred_x(const cose_key_t *cose, uint8_t *cred, size_t cred_sz)
 {
+  /* C509 credential: CRED_x = raw C509 bytes (RFC 9528 §3.5.2) */
+  if(EDHOC_AUTHENT_TYPE == EDHOC_CRED_C509_C5T ||
+     EDHOC_AUTHENT_TYPE == EDHOC_CRED_C509_C5C) {
+    return edhoc_c509_generate_cred_x(cose, cred, cred_sz);
+  }
+
+  /* CCS credential: CRED_x = CBOR CWT Claims Set with embedded COSE_Key */
   cbor_writer_state_t writer;
   cbor_init_writer(&writer, cred, cred_sz);
   cbor_open_map(&writer);
@@ -241,11 +249,21 @@ edhoc_generate_cred_x(const cose_key_t *cose, uint8_t *cred, size_t cred_sz)
 size_t
 edhoc_generate_id_cred_x(const cose_key_t *cose, uint8_t *cred, size_t cred_sz)
 {
+  /* C509 by hash-reference: {22: [-15, h'<8-byte SHA-256/64>'] } */
+  if(EDHOC_AUTHENT_TYPE == EDHOC_CRED_C509_C5T) {
+    return edhoc_c509_generate_id_cred_c5t(cose, cred, cred_sz);
+  }
+
+  /* C509 by value: {25: h'<C509 bytes>'} */
+  if(EDHOC_AUTHENT_TYPE == EDHOC_CRED_C509_C5C) {
+    return edhoc_c509_generate_id_cred_c5c(cose, cred, cred_sz);
+  }
+
   LOG_DBG("kid (%i bytes): ", cose->kid_sz);
   LOG_DBG_BYTES(cose->kid, cose->kid_sz);
   LOG_DBG_("\n");
 
-  /* Include KID */
+  /* Include KID: {4: kid} */
   if(EDHOC_AUTHENT_TYPE == EDHOC_CRED_KID) {
     cbor_writer_state_t writer;
     cbor_init_writer(&writer, cred, cred_sz);

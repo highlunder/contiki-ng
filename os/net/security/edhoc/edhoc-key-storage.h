@@ -66,6 +66,11 @@ typedef struct cose_key {
   uint8_t kty;
   uint8_t crv;
   ecc_key_t ecc;
+  /* Optional C509 certificate reference (pointer into application-owned
+   * static buffer; EDHOC does not own or free this memory).
+   * NULL when not a certificate-based credential entry. */
+  const uint8_t *c509_data;
+  size_t c509_len;
 } cose_key_t;
 
 /**
@@ -199,5 +204,20 @@ edhoc_error_t edhoc_validate_key_setup(void);
  */
 edhoc_error_t edhoc_setup_key_pair(cose_key_t *own_key, cose_key_t *peer_key,
                                    const char *own_label, const char *peer_label);
+
+/**
+ * \brief Return the first key in the key storage list.
+ * \param key Output pointer; set to the first entry or NULL if empty.
+ * \return EDHOC_SUCCESS always (NULL key_out means empty list).
+ */
+edhoc_error_t edhoc_get_first_key(cose_key_t **key);
+
+/**
+ * \brief Return the next key after the given entry.
+ * \param current The current list entry.
+ * \param next    Output: next entry, or NULL if current was the last.
+ * \return EDHOC_SUCCESS always (NULL next means end of list).
+ */
+edhoc_error_t edhoc_get_next_key(cose_key_t *current, cose_key_t **next);
 
 #endif

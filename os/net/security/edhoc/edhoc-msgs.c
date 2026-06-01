@@ -38,6 +38,7 @@
  */
 #include "contiki-lib.h"
 #include "edhoc-msgs.h"
+#include "edhoc-cred-c509.h"
 #include "lib/cbor.h"
 #include <assert.h>
 #include <inttypes.h>
@@ -606,6 +607,94 @@ parse_full_credential(cbor_reader_state_t *reader, cose_key_t *key)
   return EDHOC_SUCCESS;
 }
 /*---------------------------------------------------------------------------*/
+/* Parse ID_CRED_x for c5t: value is COSE_CertHash = [alg_id, hash_bstr].
+ * Looks up the matching key in the key store by the truncated hash. */
+static edhoc_error_t
+parse_c5t_credential(cbor_reader_state_t *reader, cose_key_t *key)
+{
+  /* Reader is positioned after the map key (22); read the array value */
+  size_t array_len = cbor_read_array(reader);
+  if(array_len == SIZE_MAX || array_len != 2) {
+    LOG_ERR("c5t: expected COSE_CertHash array of 2\n");
+    return EDHOC_ERR_ID_CRED_MALFORMED;
+  }
+
+  /* Read hash algorithm ID (expected: -15 = SHA-256/64) */
+  int64_t alg_id;
+  if(cbor_read_signed(reader, &alg_id) == CBOR_SIZE_NONE) {
+    LOG_ERR("c5t: failed to read hash alg id\n");
+    return EDHOC_ERR_ID_CRED_MALFORMED;
+  }
+  if(alg_id != COSE_HASH_ALG_SHA256_64) {
+    LOG_ERR("c5t: unsupported hash alg %d (expected %d)\n",
+            (int)alg_id, COSE_HASH_ALG_SHA256_64);
+    return EDHOC_ERR_ID_CRED_MALFORMED;
+  }
+
+  /* Read hash bytes */
+  size_t hash_sz;
+  const uint8_t *hash = cbor_read_data(reader, &hash_sz);
+  if(!hash || hash_sz == 0 || hash_sz > EDHOC_C5T_HASH_LEN) {
+    LOG_ERR("c5t: invalid hash bstr (sz=%zu)\n", hash_sz);
+    return EDHOC_ERR_ID_CRED_MALFORMED;
+  }
+
+  /* Lookup matching key store entry by hash */
+  cose_key_t *found = NULL;
+  edhoc_error_t result = edhoc_c509_lookup_by_hash(hash, hash_sz, &found);
+  if(result != EDHOC_SUCCESS || found == NULL) {
+    LOG_ERR("c5t: no key found for given cert hash\n");
+    return EDHOC_ERR_KEY_NOT_FOUND;
+  }
+
+  /* Extract public key from the stored C509 cert */
+  result = edhoc_c509_extract_pub_key(found->c509_data, found->c509_len, key);
+  if(result != EDHOC_SUCCESS) {
+    LOG_ERR("c5t: failed to extract public key from cert\n");
+    return result;
+  }
+
+  /* Preserve identity and KID from the found store entry */
+  memcpy(key->kid, found->kid, found->kid_sz);
+  key->kid_sz = found->kid_sz;
+  memcpy(key->identity, found->identity, found->identity_sz);
+  key->identity_sz = found->identity_sz;
+  key->c509_data = found->c509_data;
+  key->c509_len  = found->c509_len;
+
+  LOG_DBG("c5t: peer key found via cert hash\n");
+  return EDHOC_SUCCESS;
+}
+/*---------------------------------------------------------------------------*/
+/* Parse ID_CRED_x for c5c: value is COSE_C509 = bstr (single cert).
+ * Extracts the public key inline from the received cert bytes. */
+static edhoc_error_t
+parse_c5c_credential(cbor_reader_state_t *reader, cose_key_t *key)
+{
+  /* Reader is positioned after the map key (25); read the bstr value */
+  size_t cert_sz;
+  const uint8_t *cert = cbor_read_data(reader, &cert_sz);
+  if(!cert || cert_sz == 0) {
+    LOG_ERR("c5c: missing or empty cert bstr\n");
+    return EDHOC_ERR_ID_CRED_MALFORMED;
+  }
+
+  /* Extract public key directly from the inline C509 bytes */
+  edhoc_error_t result = edhoc_c509_extract_pub_key(cert, cert_sz, key);
+  if(result != EDHOC_SUCCESS) {
+    LOG_ERR("c5c: failed to extract public key from inline cert\n");
+    return result;
+  }
+
+  /* Store a reference to the cert data (it lives in the receive buffer
+   * for the duration of the EDHOC session) */
+  key->c509_data = cert;
+  key->c509_len  = cert_sz;
+
+  LOG_DBG("c5c: peer key extracted from inline C509 (%zu bytes)\n", cert_sz);
+  return EDHOC_SUCCESS;
+}
+/*---------------------------------------------------------------------------*/
 static uint8_t
 determine_credential_label(cbor_reader_state_t *reader)
 {
@@ -689,6 +778,12 @@ edhoc_get_key_id_cred_x(cbor_reader_state_t *reader, uint8_t *out_id_cred_x,
     break;
   case COSE_HEADER_LABEL_CRED_FULL:
     key_sz = parse_full_credential(reader, key);
+    break;
+  case COSE_HEADER_LABEL_C5T:
+    key_sz = parse_c5t_credential(reader, key);
+    break;
+  case COSE_HEADER_LABEL_C5C:
+    key_sz = parse_c5c_credential(reader, key);
     break;
   default:
     LOG_ERR("Unknown credential label %d\n", label);

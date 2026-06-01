@@ -366,3 +366,17 @@ edhoc_setup_key_pair(cose_key_t *own_key, cose_key_t *peer_key,
   return EDHOC_SUCCESS;
 }
 /*---------------------------------------------------------------------------*/
+edhoc_error_t
+edhoc_get_first_key(cose_key_t **key)
+{
+  *key = list_head(key_list);
+  return EDHOC_SUCCESS;
+}
+/*---------------------------------------------------------------------------*/
+edhoc_error_t
+edhoc_get_next_key(cose_key_t *current, cose_key_t **next)
+{
+  *next = (current != NULL) ? list_item_next(current) : NULL;
+  return EDHOC_SUCCESS;
+}
+/*---------------------------------------------------------------------------*/

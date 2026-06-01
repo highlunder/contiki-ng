@@ -3,9 +3,7 @@
  * @brief Structural parser for C509 certificates.
  */
 
-#include "c509/c509.h"
-
-#include <stdio.h>
+#include "c509.h"
 
 cbor_error_t c509_parse_cert(c509_cert_t *cert, const uint8_t *buffer, size_t size) {
     cbor_context_t ctx;
@@ -30,7 +28,6 @@ cbor_error_t c509_parse_cert(c509_cert_t *cert, const uint8_t *buffer, size_t si
         ctx.offset = _start; \
         _err = cbor_skip_item(&ctx); \
         if (_err != CBOR_ERR_NONE) return _err; \
-        printf("DEBUG: Consumed Field %s: type=%d, val=%llu, next_offset=%zu\n", #f, (f).type, (unsigned long long)(f).val, ctx.offset); \
     } while(0)
 
     CONSUME_FIELD(cert->type);
@@ -52,3 +49,4 @@ cbor_error_t c509_parse_cert(c509_cert_t *cert, const uint8_t *buffer, size_t si
 
     return CBOR_ERR_NONE;
 }
+
