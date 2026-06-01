@@ -8,9 +8,14 @@
 
 /* C509 cert can be up to 256 bytes */
 #define EDHOC_CONF_MAX_CRED_LEN 256
+/* TH input = TH(34) + PLAINTEXT(~80) + CRED(~159) = ~273 bytes */
+#define EDHOC_CONF_MAX_BUFFER 384
 
 /* Large payload to avoid block-wise for C509 cred */
 #define COAP_MAX_CHUNK_SIZE 300
+
+/* KID used by edhoc_get_own_auth_key() to find the server's own key */
+#define EDHOC_AUTH_KID 0x01
 
 #define EDHOC_CONF_ROLE EDHOC_RESPONDER
 

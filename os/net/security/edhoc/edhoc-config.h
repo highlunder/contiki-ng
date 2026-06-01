@@ -45,9 +45,15 @@
 #define _EDHOC_CONFIG_H_
 
 /**
- * \brief The max size of the buffers
+ * \brief The max size of the transcript hash input buffer.
+ * Must be >= CBOR_BYTE_STRING_SIZE(HASH_LEN) + PLAINTEXT_sz + CRED_sz.
+ * With C509 certs (~159 bytes) and Method 0 PLAINTEXT (~80 bytes): ~273 bytes min.
  */
+#ifdef EDHOC_CONF_MAX_BUFFER
+#define EDHOC_MAX_BUFFER EDHOC_CONF_MAX_BUFFER
+#else
 #define EDHOC_MAX_BUFFER 256
+#endif
 
 /**
  * \brief Optimized buffer sizes for credentials based on COSE standard analysis

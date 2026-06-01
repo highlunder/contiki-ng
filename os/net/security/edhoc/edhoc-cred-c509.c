@@ -150,18 +150,20 @@ edhoc_c509_extract_pub_key(const uint8_t *c509, size_t c509_len,
     return EDHOC_ERR_NULL_POINTER;
   }
 
-  /* C509 is a CBOR array. Field layout (0-indexed):
+  /* C509 cert fields (0-indexed):
    *   0: type, 1: serial, 2: issuer_alg, 3: issuer,
    *   4: not_before, 5: not_after, 6: subject,
    *   7: pk_alg (int), 8: subject_pk (bstr), 9: extensions, 10: signature
    *
-   * We skip fields 0-6, read pk_alg, read subject_pk. */
+   * Cert bytes may or may not start with a CBOR array header (major type 4).
+   * Without header (format used in this workspace): first byte is type uint.
+   * With header: first byte encodes the array. Skip header if present. */
   cbor_reader_state_t r;
   cbor_init_reader(&r, c509, c509_len);
 
-  if(cbor_read_array(&r) == SIZE_MAX) {
-    LOG_ERR("extract_pub_key: not a CBOR array\n");
-    return EDHOC_ERR_CREDENTIAL_NOT_FOUND;
+  if(c509_len > 0 && (c509[0] >> 5) == 4) {
+    /* Outer CBOR array header present — consume it */
+    cbor_read_array(&r);
   }
 
   for(int i = 0; i < 7; i++) {

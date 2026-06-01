@@ -98,14 +98,20 @@ gen_plaintext(edhoc_context_t *ctx, const uint8_t *auth_data, size_t auth_data_s
 
   size_t num = cbor_read_map(&reader);
   if(num == 1) {
-    uint64_t value;
-    cbor_read_unsigned(&reader, &value);
-    const uint8_t *data = cbor_read_data(&reader, &num);
-    if(!data || !num) {
-      LOG_ERR("error to get bytes\n");
-      return 0;
+    uint64_t label;
+    cbor_read_unsigned(&reader, &label);
+    if(label == 4) {
+      /* KID compact encoding: map value is a bstr kid, written as identifier */
+      const uint8_t *data = cbor_read_data(&reader, &num);
+      if(!data || !num) {
+        LOG_ERR("error to get bytes\n");
+        return 0;
+      }
+      edhoc_write_byte_identifier(&writer, data, num);
+    } else {
+      /* Non-KID single-entry map (e.g. c5t=22, c5c=25): write full map as-is */
+      cbor_write_object(&writer, ctx->buffers.id_cred_x, ctx->buffers.id_cred_x_sz);
     }
-    edhoc_write_byte_identifier(&writer, data, num);
   } else {
     cbor_write_object(&writer, ctx->buffers.id_cred_x, ctx->buffers.id_cred_x_sz);
   }

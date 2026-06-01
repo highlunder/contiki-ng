@@ -489,13 +489,13 @@ cbor_skip_next(cbor_reader_state_t *state)
   switch(cbor_peek_next(state)) {
   case CBOR_MAJOR_TYPE_UNSIGNED:
   case CBOR_MAJOR_TYPE_SIGNED:
-    /* Skip unsigned or signed integer */
-    return cbor_read_unsigned(state, &value) != CBOR_SIZE_NONE;
+    /* Skip unsigned or signed integer — use read_unsigned to consume header */
+    return read_unsigned(state, &value) != CBOR_SIZE_NONE;
 
   case CBOR_MAJOR_TYPE_BYTE_STRING:
   case CBOR_MAJOR_TYPE_TEXT_STRING:
-    /* Skip byte string or text string */
-    if(cbor_read_unsigned(state, &value) == CBOR_SIZE_NONE) {
+    /* Skip byte string or text string — read_unsigned extracts length from header */
+    if(read_unsigned(state, &value) == CBOR_SIZE_NONE) {
       return false;
     }
     if(value > state->cbor_size) {
@@ -506,8 +506,8 @@ cbor_skip_next(cbor_reader_state_t *state)
     return true;
 
   case CBOR_MAJOR_TYPE_ARRAY:
-    /* Skip array - recursively skip all elements */
-    if(cbor_read_unsigned(state, &value) == CBOR_SIZE_NONE) {
+    /* Skip array — read_unsigned extracts element count from header */
+    if(read_unsigned(state, &value) == CBOR_SIZE_NONE) {
       return false;
     }
     for(uint64_t i = 0; i < value; i++) {
@@ -518,8 +518,8 @@ cbor_skip_next(cbor_reader_state_t *state)
     return true;
 
   case CBOR_MAJOR_TYPE_MAP:
-    /* Skip map - recursively skip all key-value pairs */
-    if(cbor_read_unsigned(state, &value) == CBOR_SIZE_NONE) {
+    /* Skip map — read_unsigned extracts pair count from header */
+    if(read_unsigned(state, &value) == CBOR_SIZE_NONE) {
       return false;
     }
     for(uint64_t i = 0; i < value * 2; i++) { /* Maps have key-value pairs */

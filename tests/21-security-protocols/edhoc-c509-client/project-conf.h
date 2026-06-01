@@ -15,9 +15,14 @@
 
 /* C509 cert can be up to 256 bytes */
 #define EDHOC_CONF_MAX_CRED_LEN 256
+/* TH input = TH(34) + PLAINTEXT(~80) + CRED(~159) = ~273 bytes */
+#define EDHOC_CONF_MAX_BUFFER 384
 
 /* CoAP server endpoint in Cooja */
 #define EDHOC_CONF_SERVER_EP "coap://[fd00::202:2:2:2]"
+
+/* KID used by edhoc_get_own_auth_key() to find the client's own key */
+#define EDHOC_AUTH_KID 0x02
 
 #define EDHOC_CONF_ROLE EDHOC_INITIATOR
 
