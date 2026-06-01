@@ -36,7 +36,7 @@ jobs:
         fail-fast: false
         matrix:
             os: [ ubuntu-latest, macos-15-intel ]
-            test: [ documentation, compile-base, compile-arm-ports, rpl-lite, rpl-classic, renode-simulation, simulation-base, ipv6, ieee802154, tun-rpl-br, script-base, native-runs, ipv6-nbr, coap-lwm2m, packet-parsing ]
+            test: [ documentation, compile-base, compile-arm-ports, rpl-lite, rpl-classic, renode-simulation, simulation-base, ipv6, ieee802154, tun-rpl-br, script-base, native-runs, ipv6-nbr, coap-lwm2m, packet-parsing, security-protocols ]
             exclude:
               # Renode tests done by Linux (more CI runners available).
               - os: macos-15-intel
@@ -174,7 +174,7 @@ jobs:
     #
     # IMPORTANT: cache size must also be updated in the "Execute tests" section.
     - name: ccache
-      uses: hendrikmuhs/ccache-action@v1.2.20
+      uses: hendrikmuhs/ccache-action@v1.2.22
       with:
         key: compilation-${{ matrix.test }}
         max-size: 160M
