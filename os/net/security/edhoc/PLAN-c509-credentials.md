@@ -92,7 +92,7 @@ ID_CRED_x = { 25: h'<raw C509 bytes>' }   (c5c = COSE header param 25)
 
 **File:** `os/net/security/edhoc/edhoc-key-storage.h`
 
-- [ ] Add `const uint8_t *c509_data;` pointer field to `cose_key_t`
+- [x] Add `const uint8_t *c509_data;` pointer field to `cose_key_t`
   - Points into application-owned static buffer; EDHOC does not own the memory
   - `NULL` means no C509 cert associated (CCS key entry)
 - [ ] Add `size_t c509_len;` length field
@@ -103,15 +103,15 @@ ID_CRED_x = { 25: h'<raw C509 bytes>' }   (c5c = COSE header param 25)
 
 **File:** `os/net/security/edhoc/edhoc-config.h`
 
-- [ ] Add `EDHOC_CRED_C509_C5T 4` auth type constant
-- [ ] Increase `EDHOC_MAX_CRED_LEN` default: 128 → 256 (or add
+- [x] Add `EDHOC_CRED_C509_C5T 4` auth type constant
+- [x] Increase `EDHOC_MAX_CRED_LEN` default: 128 → 256 (or add
   `#ifndef EDHOC_CONF_MAX_CRED_LEN` override)
   - Rationale: typical secp256r1 C509 cert is 100-200 bytes; 256 gives margin
 - [ ] For c5t mode, `EDHOC_MAX_ID_CRED_LEN` stays small (c5t is ~15 bytes), already
   covered by the KID-mode path (16 bytes). If using INCLUDE mode, 15 bytes fits.
   No change needed for Phase A.
-- [ ] Add `EDHOC_C5T_HASH_LEN 8` constant (SHA-256 truncated to 64 bits)
-- [ ] Add `EDHOC_COSE_HEADER_C5T 22` (COSE header param for c5t)
+- [x] Add `EDHOC_C5T_HASH_LEN 8` constant (SHA-256 truncated to 64 bits)
+- [x] Add `EDHOC_COSE_HEADER_C5T 22` (COSE header param for c5t)
 - [ ] Add `EDHOC_COSE_HASH_ALG_SHA256_64 (-15)` (SHA-256/64 alg id in COSE)
 
 #### A3 — New file: `edhoc-cred-c509.h` / `edhoc-cred-c509.c`
@@ -120,20 +120,20 @@ ID_CRED_x = { 25: h'<raw C509 bytes>' }   (c5c = COSE header param 25)
 
 This module wraps the c509 service for EDHOC use.
 
-- [ ] `edhoc_c509_generate_cred_x(const cose_key_t *key, uint8_t *out, size_t out_sz)`
+- [x] `edhoc_c509_generate_cred_x(const cose_key_t *key, uint8_t *out, size_t out_sz)`
   - Returns `key->c509_data` bytes copied to `out` (= raw C509)
   - Returns 0 if `key->c509_data == NULL`
   
-- [ ] `edhoc_c509_generate_id_cred_c5t(const cose_key_t *key, uint8_t *out, size_t out_sz)`
+- [x] `edhoc_c509_generate_id_cred_c5t(const cose_key_t *key, uint8_t *out, size_t out_sz)`
   - Computes SHA-256 over `key->c509_data`, truncates to 8 bytes
   - Builds CBOR: `{ 22: [-15, h'<8 bytes>'] }`
   - Returns byte length of encoded map
 
-- [ ] `edhoc_c509_hash_cert(const uint8_t *c509, size_t len, uint8_t *hash_out, size_t hash_trunc_len)`
+- [x] `edhoc_c509_hash_cert(const uint8_t *c509, size_t len, uint8_t *hash_out, size_t hash_trunc_len)`
   - SHA-256 via Contiki's crypto layer (`os/lib/sha256.c` or Mbed TLS SHA-256)
   - Truncates to `hash_trunc_len` bytes
   
-- [ ] `edhoc_c509_extract_pub_key(const uint8_t *c509, size_t len, cose_key_t *key_out)`
+- [x] `edhoc_c509_extract_pub_key(const uint8_t *c509, size_t len, cose_key_t *key_out)`
   - Calls `c509_parse_cert()` → gets `cert.subject_pk` CBOR value
   - C509 encodes compressed EC point as `0xFD` + 32-byte x (secp256r1)
   - Recovers y-coordinate using ECC point decompression (see `x509_encode.c`)
@@ -141,7 +141,7 @@ This module wraps the c509 service for EDHOC use.
   - Sets `key_out->kty` and `key_out->crv` from the parsed pk_alg
   - Returns `EDHOC_SUCCESS` or error code
 
-- [ ] `edhoc_c509_lookup_by_hash(const uint8_t *hash, size_t hash_len, cose_key_t **key_out)`
+- [x] `edhoc_c509_lookup_by_hash(const uint8_t *hash, size_t hash_len, cose_key_t **key_out)`
   - Iterates the key storage list
   - For each entry with `c509_data != NULL`, calls `edhoc_c509_hash_cert()`
   - Compares truncated hash; returns matching entry or `EDHOC_ERR_KEY_NOT_FOUND`
@@ -150,17 +150,17 @@ This module wraps the c509 service for EDHOC use.
 
 **File:** `os/net/security/edhoc/edhoc.c`
 
-- [ ] In `edhoc_generate_cred_x()`: add branch for `EDHOC_AUTHENT_TYPE == EDHOC_CRED_C509_C5T`
+- [x] In `edhoc_generate_cred_x()`: add branch for `EDHOC_AUTHENT_TYPE == EDHOC_CRED_C509_C5T`
   - Call `edhoc_c509_generate_cred_x()` — returns raw C509 bytes
 
-- [ ] In `edhoc_generate_id_cred_x()`: add branch for `EDHOC_AUTHENT_TYPE == EDHOC_CRED_C509_C5T`
+- [x] In `edhoc_generate_id_cred_x()`: add branch for `EDHOC_AUTHENT_TYPE == EDHOC_CRED_C509_C5T`
   - Call `edhoc_c509_generate_id_cred_c5t()` — returns `{ 22: [-15, hash] }`
 
 #### A5 — Extend receive path
 
 **File:** `os/net/security/edhoc/edhoc-msgs.c`
 
-- [ ] In `edhoc_get_key_id_cred_x()`: add map-key dispatch for `22` (c5t)
+- [x] In `edhoc_get_key_id_cred_x()`: add map-key dispatch for `22` (c5t)
   - `parse_c5t_credential(reader, key)`:
     - Read COSE_CertHash: CBOR array `[alg_id, hash_bstr]`
     - Validate alg_id is -15 (SHA-256/64) and hash is 8 bytes
@@ -172,7 +172,7 @@ This module wraps the c509 service for EDHOC use.
 
 **File:** `os/net/security/edhoc/edhoc-config.h`
 
-- [ ] `EDHOC_MAX_CRED_LEN`: increase default to 256 (C509 cert fits; guarded by
+- [x] `EDHOC_MAX_CRED_LEN`: increase default to 256 (C509 cert fits; guarded by
   `#ifndef EDHOC_CONF_MAX_CRED_LEN` so existing deployments can override down)
 - [ ] Verify `EDHOC_MAX_PAYLOAD_LEN` (default 256) covers MSG_2/3 with C509 CRED
   (CRED_x is not transmitted inline in c5t mode, so payload stays small)
@@ -204,7 +204,7 @@ This module wraps the c509 service for EDHOC use.
 **File:** `os/net/security/edhoc/edhoc-config.h`
 
 - [ ] Add `EDHOC_CRED_C509_C5C 5` auth type constant
-- [ ] Add `EDHOC_COSE_HEADER_C5C 25` (c5c = 25 from C509 draft-11 IANA table)
+- [x] Add `EDHOC_COSE_HEADER_C5C 25` (c5c = 25 from C509 draft-11 IANA table)
 - [ ] `EDHOC_MAX_ID_CRED_LEN` for c5c mode must accommodate full cert:
   - When `EDHOC_AUTHENT_TYPE == EDHOC_CRED_C509_C5C`, set default `EDHOC_MAX_ID_CRED_LEN` to 256
   - The existing `#if EDHOC_AUTHENT_TYPE == EDHOC_CRED_KID` guard in edhoc-config.h
@@ -220,15 +220,15 @@ This module wraps the c509 service for EDHOC use.
 
 **File:** `os/net/security/edhoc/edhoc.c`
 
-- [ ] In `edhoc_generate_id_cred_x()`: add branch for `EDHOC_CRED_C509_C5C`
+- [x] In `edhoc_generate_id_cred_x()`: add branch for `EDHOC_CRED_C509_C5C`
   - Call `edhoc_c509_generate_id_cred_c5c()` — returns `{ -1: cert_bytes }`
-- [ ] In `edhoc_generate_cred_x()`: same as c5t — return raw C509 bytes
+- [x] In `edhoc_generate_cred_x()`: same as c5t — return raw C509 bytes
 
 #### B3 — Extend receive path for c5c
 
 **File:** `os/net/security/edhoc/edhoc-msgs.c`
 
-- [ ] In `edhoc_get_key_id_cred_x()`: add map-key dispatch for `-1` (c5c)
+- [x] In `edhoc_get_key_id_cred_x()`: add map-key dispatch for `-1` (c5c)
   - `parse_c5c_credential(reader, key)`:
     - Read COSE_C509: bstr (single cert) or CBOR array of bstr (chain — take index 0)
     - Call `edhoc_c509_extract_pub_key()` to get EC public key
