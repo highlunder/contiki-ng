@@ -194,8 +194,9 @@ This module wraps the c509 service for EDHOC use.
   - Both apps use `edhoc-cred-c509-test.h` (cert from vectors.h, same cert for both peers)
 - [x] Add Cooja sim script `04-edhoc-c509-c5t.csc` (Method 0, TIMEOUT 120s)
 - [x] Both binaries build warning-free for cooja target
-- [ ] Cooja end-to-end run: verify MSG_1/2/3 exchange, c5t peer key found by hash,
-  OSCORE context derived (requires Cooja runtime; testOK script wired up)
+- [x] Cooja end-to-end run: PASSED (20s sim). Both nodes report "c5t: peer key found
+  via cert hash". OSCORE Master Secret matches: 9e 05 8b 38 3f 03 80 4e e1 31 89 80 7e 80 63 44.
+  Three bugs fixed in the process (see commit 102deba87).
 
 ---
 
@@ -346,7 +347,7 @@ of scope.
 
 - [x] `07-c509` unit tests still pass (3/3 SUCCESS, no warnings)
 - [ ] `21-security-protocols/01-edhoc-tests-cooja-method0.csc` still passes (needs Cooja run)
-- [ ] New `04-edhoc-c509-c5t.csc` test passes: full MSG_1/2/3 exchange with c5t (needs Cooja run)
+- [x] New `edhoc-c509-c5t.json` cooja-ng test PASSES: full MSG_1/2/3, c5t lookup both sides, OSCORE match
 - [x] No new compiler warnings (client + server build clean for cooja target)
 - [ ] `EDHOC_MAX_CRED_LEN` increase verified safe on nRF52840 stack profile
 
