@@ -129,4 +129,30 @@ edhoc_error_t edhoc_c509_extract_pub_key(const uint8_t *c509, size_t c509_len,
 edhoc_error_t edhoc_c509_lookup_by_hash(const uint8_t *hash, size_t hash_len,
                                          cose_key_t **key_out);
 
+/**
+ * \brief Sample edhoc_cert_validator_fn for self-signed C509 certificates.
+ *
+ * Validates that the peer's inline C509 certificate is structurally sound and,
+ * where possible, that the signature is self-consistent:
+ *
+ * - **Type 0, 1, 3** (DER-equivalent / reconstructed from X.509 DER): only a
+ *   structural check is performed (public key extraction must succeed).
+ *   Full ECDSA verification would require reconstructing the DER
+ *   TBSCertificate, which is out of scope for this implementation.
+ *
+ * - **Type 2** (natively signed C509): SHA-256(CBOR TBS fields 0-9) is
+ *   computed and the ECDSA-P-256 signature in field 10 is verified against
+ *   the public key in field 8.
+ *
+ * Suitable as a quick sanity check for test deployments and as a template
+ * for application-specific validators.  Not a full PKI chain check.
+ * app_ctx is ignored.
+ *
+ * \return EDHOC_SUCCESS if the cert is valid,
+ *         EDHOC_ERR_CERTIFICATE_REJECTED otherwise.
+ */
+edhoc_error_t edhoc_c509_validate_self_signed(const uint8_t *c509,
+                                               size_t c509_len,
+                                               void *app_ctx);
+
 #endif /* EDHOC_CRED_C509_H_ */

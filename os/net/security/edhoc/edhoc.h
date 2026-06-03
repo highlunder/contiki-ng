@@ -75,6 +75,22 @@
 #define EDHOC_MAC_2 2
 #define EDHOC_MAC_3 3
 
+/**
+ * \brief Application callback for validating an inline C509 peer certificate.
+ *
+ * Called during MSG_2 (Responder cert) or MSG_3 (Initiator cert) processing
+ * when the peer delivers a certificate via c5c (by-value) credential mode.
+ * Return EDHOC_SUCCESS to accept, EDHOC_ERR_CERTIFICATE_REJECTED to abort.
+ * NULL = trust-on-first-use (no validation, default behaviour).
+ *
+ * \param c509      Raw C509 certificate bytes.
+ * \param c509_len  Length of \p c509.
+ * \param app_ctx   Opaque pointer set by edhoc_set_cert_validator().
+ */
+typedef edhoc_error_t (*edhoc_cert_validator_fn)(const uint8_t *c509,
+                                                  size_t c509_len,
+                                                  void *app_ctx);
+
 typedef struct edhoc_config {
   uint8_t role;
   uint8_t method;
@@ -84,6 +100,10 @@ typedef struct edhoc_config {
   uint8_t mac_len;
   uint8_t ecdh_curve;
   uint8_t sign_alg;
+  /* Optional certificate validator called for inline c5c peer certs.
+   * NULL = accept without validation (trust-on-first-use). */
+  edhoc_cert_validator_fn cert_validator;
+  void *cert_validator_ctx;
 } edhoc_config_t;
 
 typedef struct edhoc_state {
@@ -135,6 +155,20 @@ extern edhoc_context_t *edhoc_ctx;
  * Used by both Initiator and Responder EDHOC roles to reserve memory
  */
 void edhoc_storage_init(void);
+
+/**
+ * \brief Register a certificate validator for inline c5c peer certs.
+ *
+ * The validator is called after the peer's C509 certificate has been decoded
+ * from an incoming MSG_2 or MSG_3.  Return EDHOC_SUCCESS to accept or
+ * EDHOC_ERR_CERTIFICATE_REJECTED to abort the handshake.
+ *
+ * Calling with fn == NULL restores the default trust-on-first-use behaviour.
+ *
+ * \param fn       Validator callback; NULL = disable validation.
+ * \param app_ctx  Opaque pointer forwarded to every \p fn call.
+ */
+void edhoc_set_cert_validator(edhoc_cert_validator_fn fn, void *app_ctx);
 
 /**
  * \brief Create a new EDHOC context

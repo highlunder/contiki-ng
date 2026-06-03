@@ -63,6 +63,12 @@
 edhoc_context_t *edhoc_ctx;
 
 MEMB(edhoc_context_storage, edhoc_context_t, 1);
+
+/* Pending validator — set before edhoc_new() is called, copied into every
+ * new context by edhoc_new().  Allows the app to register the hook before
+ * the client process starts (which is when edhoc_ctx is first assigned). */
+static edhoc_cert_validator_fn s_pending_cert_validator;
+static void *s_pending_cert_validator_ctx;
 /*---------------------------------------------------------------------------*/
 void
 edhoc_storage_init(void)
@@ -76,6 +82,8 @@ edhoc_new(void)
   edhoc_context_t *ctx = memb_alloc(&edhoc_context_storage);
   if(ctx) {
     memset(ctx, 0, sizeof(edhoc_context_t));
+    ctx->config.cert_validator = s_pending_cert_validator;
+    ctx->config.cert_validator_ctx = s_pending_cert_validator_ctx;
   }
   return ctx;
 }
@@ -84,6 +92,18 @@ void
 edhoc_finalize(edhoc_context_t *ctx)
 {
   memb_free(&edhoc_context_storage, ctx);
+}
+/*---------------------------------------------------------------------------*/
+void
+edhoc_set_cert_validator(edhoc_cert_validator_fn fn, void *app_ctx)
+{
+  s_pending_cert_validator = fn;
+  s_pending_cert_validator_ctx = app_ctx;
+  /* Also update a live context if one already exists. */
+  if(edhoc_ctx != NULL) {
+    edhoc_ctx->config.cert_validator = fn;
+    edhoc_ctx->config.cert_validator_ctx = app_ctx;
+  }
 }
 /*---------------------------------------------------------------------------*/
 uint8_t
@@ -913,6 +933,19 @@ edhoc_authenticate_msg(edhoc_context_t *ctx, uint8_t *ad, bool msg2)
   if(key_result < 0) {
     LOG_ERR("Failed to parse ID_CRED_X (error: %d)\n", key_result);
     return (edhoc_error_t)key_result;
+  }
+
+  /* If an application validator is registered and the peer delivered a cert
+   * inline (c5c), run the validator now.  NULL validator = trust-on-first-use. */
+  if(ctx->config.cert_validator != NULL
+     && key->c509_data != NULL && key->c509_len > 0) {
+    edhoc_error_t val_err = ctx->config.cert_validator(
+      key->c509_data, key->c509_len, ctx->config.cert_validator_ctx);
+    if(val_err != EDHOC_SUCCESS) {
+      LOG_ERR("Peer certificate rejected by validator (err %d)\n", val_err);
+      return EDHOC_ERR_CERTIFICATE_REJECTED;
+    }
+    LOG_INFO("Peer certificate accepted by validator\n");
   }
 
   /* Get MAC from the decrypted message using shared reader state */

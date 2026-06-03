@@ -97,6 +97,7 @@ typedef enum {
   EDHOC_ERR_CREDENTIAL_NOT_FOUND = -32,   /**< Credential not found */
   EDHOC_ERR_STORAGE_INIT_FAILED = -33,   /**< Storage initialization failed */
   EDHOC_ERR_DUPLICATE_KEY = -34,         /**< Duplicate key in storage */
+  EDHOC_ERR_CERTIFICATE_REJECTED = -35,  /**< Application cert validator rejected the peer certificate */
 
   /* Network errors (-40 to -49) */
   EDHOC_ERR_NETWORK_TIMEOUT = -40,       /**< Network operation timeout */

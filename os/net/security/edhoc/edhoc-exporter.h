@@ -64,13 +64,19 @@
 #define OSCORE_MASTER_SALT_LABEL   1
 
 /**
- * \brief OSCORE context struct
+ * \brief OSCORE context struct (keying material derived from EDHOC)
+ *
+ * sender_id   = own Connection Identifier (Initiator's C_I, Responder's C_R)
+ * recipient_id = peer's Connection Identifier
+ * Both IDs follow RFC 8613 §3.1: 0–7 bytes, encoded as CBOR byte strings.
  */
 typedef struct oscore_ctx {
   uint8_t master_secret[OSCORE_KEY_SZ];
   uint8_t master_salt[OSCORE_SALT_SZ];
-  int client_ID;   /* CoAP client is the Initiator */
-  int server_ID;   /* CoAP server is the Responder */
+  uint8_t sender_id[EDHOC_MAX_CID_LEN];
+  uint8_t sender_id_len;
+  uint8_t recipient_id[EDHOC_MAX_CID_LEN];
+  uint8_t recipient_id_len;
 } oscore_ctx_t;
 
 /**

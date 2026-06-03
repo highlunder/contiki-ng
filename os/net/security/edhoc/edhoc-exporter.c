@@ -50,8 +50,12 @@
 void
 print_oscore_ctx(oscore_ctx_t *osc)
 {
-  LOG_PRINT("Initiator client CID: 0x%02x\n", osc->client_ID);
-  LOG_PRINT("Responder server CID: 0x%02x\n", osc->server_ID);
+  LOG_PRINT("OSCORE Sender ID (%u bytes): ", osc->sender_id_len);
+  LOG_PRINT_BYTES(osc->sender_id, osc->sender_id_len);
+  LOG_PRINT_("\n");
+  LOG_PRINT("OSCORE Recipient ID (%u bytes): ", osc->recipient_id_len);
+  LOG_PRINT_BYTES(osc->recipient_id, osc->recipient_id_len);
+  LOG_PRINT_("\n");
   LOG_PRINT("OSCORE Master Secret (%d bytes): ", OSCORE_KEY_SZ);
   LOG_PRINT_BYTES(osc->master_secret, OSCORE_KEY_SZ);
   LOG_PRINT_("\n");
@@ -98,36 +102,17 @@ edhoc_exporter_oscore(oscore_ctx_t *osc, edhoc_context_t *ctx)
   LOG_DBG_BYTES(prk_exporter, prk_exporter_sz);
   LOG_DBG_("\n");
 
-  /* The OSCORE client is the initiator */
-  if(EDHOC_ROLE == EDHOC_INITIATOR) {
-    /* For OSCORE, convert CID to integer (only for single-byte CIDs) */
-    if(ctx->state.cid_len == 1) {
-      osc->client_ID = ctx->state.cid[0];
-    } else {
-      LOG_WARN("Multi-byte CID not supported for OSCORE\n");
-      osc->client_ID = 0; /* Fallback */
-    }
-    if(ctx->state.cid_rx_len == 1) {
-      osc->server_ID = ctx->state.cid_rx[0];
-    } else {
-      LOG_WARN("Multi-byte CID not supported for OSCORE\n");
-      osc->server_ID = 0; /* Fallback */
-    }
-  }
-  if(EDHOC_ROLE == EDHOC_RESPONDER) {
-    if(ctx->state.cid_rx_len == 1) {
-      osc->client_ID = ctx->state.cid_rx[0];
-    } else {
-      LOG_WARN("Multi-byte CID not supported for OSCORE\n");
-      osc->client_ID = 0; /* Fallback */
-    }
-    if(ctx->state.cid_len == 1) {
-      osc->server_ID = ctx->state.cid[0];
-    } else {
-      LOG_WARN("Multi-byte CID not supported for OSCORE\n");
-      osc->server_ID = 0; /* Fallback */
-    }
-  }
+  /*
+   * RFC 8613 §3.1: Sender ID = own CID, Recipient ID = peer's CID.
+   * For EDHOC Initiator: own CID = C_I (ctx->state.cid),
+   *                      peer CID = C_R (ctx->state.cid_rx).
+   * For EDHOC Responder: own CID = C_R (ctx->state.cid),
+   *                      peer CID = C_I (ctx->state.cid_rx).
+   */
+  osc->sender_id_len = ctx->state.cid_len;
+  memcpy(osc->sender_id, ctx->state.cid, ctx->state.cid_len);
+  osc->recipient_id_len = ctx->state.cid_rx_len;
+  memcpy(osc->recipient_id, ctx->state.cid_rx, ctx->state.cid_rx_len);
 
   /* Derive OSCORE Master Secret */
   err = edhoc_exporter(prk_exporter, OSCORE_MASTER_SECRET_LABEL, NULL,
