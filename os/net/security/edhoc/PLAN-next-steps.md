@@ -4,12 +4,12 @@
 **Updated:** 2026-06-03  
 **Branch:** edhoc-merge
 
-Current state (2026-06-03): **Steps 1 and 2 COMPLETE, nRF52840 all PASS.**
+Current state (2026-06-03): **Steps 1–3a and Method 2 KID COMPLETE, nRF52840 all PASS.**
 All three credential types (KID, c5t, c5c) run EDHOC then derive an OSCORE
 context and exchange a protected CoAP GET/2.05-Content in cooja-ng at ~11 s
 simulated time on nRF52840-DK + native server.
-Step 2 (cert validation hook) is complete and passing.
-Next: Step 3 (EAD API), Step 4 (Method 1/2), Step 5 (interop), or Step 6 (energy profiling).
+Step 2 (cert validation hook), Step 3a (EAD API), and Method 2 KID (Step 4 partial) are complete.
+Next: Method 2 with c5t/c5c credentials, Method 1, Step 5 (interop), or Step 6 (energy profiling).
 
 ---
 
@@ -210,16 +210,17 @@ without checking the issuer signature or validity period.
 **Goal:** Allow applications to implement EAD label handlers without forking the
 core, and lay the groundwork for LAKE-authz (device onboarding vouchers).
 
-### 3a — Handler registration API
+### 3a — Handler registration API ✅ DONE 2026-06-03
 
-- [ ] In `edhoc-msgs.c`: replace the `TODO` stub with a registration table
-  (static array of `{label, handler_fn}` entries, `EDHOC_EAD_MAX_HANDLERS` slots)
-- [ ] Add `edhoc_register_ead_handler(int label, ead_handler_fn fn)` to `edhoc.h`
-  — adds to the table; returns error if full or label already registered
-- [ ] Call registered handlers from `edhoc_process_ead_item()` before falling
-  through to the critical/non-critical default
-- [ ] Non-critical unknown items: continue silently (no change)
-- [ ] Critical unknown items: return `EDHOC_ERR_CRITICAL_EAD_UNSUPPORTED` (no change)
+- [x] In `edhoc-msgs.c`: replace the `TODO` stub with a registration table
+  (`ead_handlers[EDHOC_EAD_MAX_HANDLERS]`, configurable via `EDHOC_CONF_EAD_MAX_HANDLERS`)
+- [x] Add `edhoc_ead_handler_fn` typedef and `edhoc_register_ead_handler()` to `edhoc-msgs.h`
+  — update-in-place for existing labels; NULL removes; full → `EDHOC_ERR_BUFFER_OVERFLOW`
+- [x] Call registered handlers from `edhoc_process_ead_item()` before falling
+  through to the critical/non-critical default (exact label match including sign)
+- [x] Non-critical unknown items: continue silently (no change)
+- [x] Critical unknown items: return `EDHOC_ERR_CRITICAL_EAD_UNSUPPORTED` (no change)
+- [x] `edhoc.h`: add usage documentation cross-referencing `edhoc-msgs.h`
 
 ### 3b — LAKE-authz EAD handler (draft-ietf-lake-edhoc-authz)
 
@@ -241,14 +242,38 @@ pre-provisioned peer credentials.
 **Goal:** Validate the asymmetric EDHOC methods with C509 credentials (the code
 compiles but no test exercises these paths).
 
-- [ ] Method 2 (StaticDH|Sig): server authenticates with a static DH key wrapped
-  in a C509 certificate; client signs. This is the realistic IoT enrollment
-  asymmetry (cheap server side).
-  - Build test app pair with `EDHOC_METHOD 2`, server uses c5t DH cert
-  - Verify MAC computation is correct in the asymmetric case
-- [ ] Method 1 (Sig|StaticDH): reverse of Method 2
-- [ ] Add cooja-ng JSON configs `configs/edhoc-method2-c5t.json`, `configs/edhoc-method1-c5t.json`
-- [ ] Run on nRF52840 emulation in cooja-ng
+### 4a — Method 2 KID baseline ✅ DONE 2026-06-03
+
+Method 2 = I:StaticDH | R:Sig. Client uses static DH key (no ECDSA), server
+signs MAC_2 with ECDSA P-256.  Same P-256 key material for both, different code
+paths selected at compile time via EDHOC_CONF_METHOD.
+
+- [x] Apps: `tests/21-security-protocols/edhoc-method2-kid-client/`,
+  `edhoc-method2-kid-server/`
+- [x] Credentials: RFC 9529 static DH keys (P-256), KID=0x2b (client), KID=0x32 (server)
+- [x] Config: `cooja-ng/configs/edhoc-method2-kid.json`
+- [x] PASS 2026-06-03: 20.646 s simulated, both nodes derive same OSCORE Master
+  Secret (`e6dbd175ec3969303d0ca36be561571f`), GET/Content OSCORE exchange OK
+
+### 4b — Method 2 with c5t/c5c credentials
+
+Use C509 test certificates with `EDHOC_CONF_AUTHENT_TYPE EDHOC_CRED_C509_C5T`
+or `EDHOC_CRED_C509_C5C` for the same Method 2 flow (server signs).
+
+- [ ] `edhoc-method2-c5t-client/`, `edhoc-method2-c5t-server/` + config
+- [ ] `edhoc-method2-c5c-client/`, `edhoc-method2-c5c-server/` + config
+
+### 4c — Method 1 (Sig|StaticDH)
+
+Method 1 = I:Sig | R:StaticDH. Client signs; server uses static DH.
+
+- [ ] `edhoc-method1-kid-client/`, `edhoc-method1-kid-server/` + config
+- [ ] c5t variant
+
+### 4d — nRF52840 emulation
+
+- [ ] Run Method 2 KID on nRF52840-DK cooja-ng config (add RPL tuning to
+  client project-conf.h as in KID/c5t/c5c OSCORE tests)
 
 ---
 
