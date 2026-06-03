@@ -1,0 +1,6 @@
+# OSCORE module (RFC 8613) and its dependencies.
+# cose provides cose_encrypt0_seal/open (AES-CCM driver).
+# edhoc provides oscore_ctx_t and the HKDF/CBOR helpers it re-exports.
+MODULES += os/net/security/oscore
+MODULES += os/net/security/cose
+MODULES += os/net/security/edhoc
