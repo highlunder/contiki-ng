@@ -2,6 +2,11 @@ MODULES += os/net/security/cose
 MODULES += os/net/app-layer/coap
 MODULES += os/services/ecc
 
+# edhoc-cred-c509.c is compiled unconditionally via the module wildcard.
+# It has no dependency on os/services/c509 (uses lib/cbor.h + lib/sha-256.h
+# directly). Applications that also use the DTLS C509 DER reconstruction path
+# must add MODULES += os/services/c509 in their own Makefile.
+
 ifneq ($(MAKE_EDHOC_METHOD),)
   CFLAGS += -DEDHOC_METHOD=$(MAKE_EDHOC_METHOD)
 endif

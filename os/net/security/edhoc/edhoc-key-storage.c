@@ -206,6 +206,9 @@ cose_print_key(cose_key_t *cose)
   LOG_DBG("y: ");
   LOG_DBG_BYTES(cose->ecc.pub.y, ECC_KEY_LEN);
   LOG_DBG_("\n");
+  if(cose->c509_data != NULL) {
+    LOG_DBG("c509_len: %u\n", (unsigned)cose->c509_len);
+  }
 }
 /*---------------------------------------------------------------------------*/
 void
