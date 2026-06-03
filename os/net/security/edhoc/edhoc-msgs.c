@@ -48,6 +48,43 @@
 #define LOG_LEVEL LOG_LEVEL_EDHOC
 
 /*---------------------------------------------------------------------------*/
+/* EAD handler registration table */
+static struct {
+  int32_t label;
+  edhoc_ead_handler_fn fn;
+} ead_handlers[EDHOC_EAD_MAX_HANDLERS];
+static uint8_t ead_handler_count;
+/*---------------------------------------------------------------------------*/
+edhoc_error_t
+edhoc_register_ead_handler(int32_t label, edhoc_ead_handler_fn fn)
+{
+  uint8_t i;
+
+  /* Allow updating or removing an existing registration */
+  for(i = 0; i < ead_handler_count; i++) {
+    if(ead_handlers[i].label == label) {
+      ead_handlers[i].fn = fn;
+      return EDHOC_SUCCESS;
+    }
+  }
+
+  if(fn == NULL) {
+    return EDHOC_SUCCESS; /* No-op: removing a label that was never registered */
+  }
+
+  if(ead_handler_count >= EDHOC_EAD_MAX_HANDLERS) {
+    LOG_ERR("EAD handler table full (max %d); increase EDHOC_CONF_EAD_MAX_HANDLERS\n",
+            EDHOC_EAD_MAX_HANDLERS);
+    return EDHOC_ERR_BUFFER_OVERFLOW;
+  }
+
+  ead_handlers[ead_handler_count].label = label;
+  ead_handlers[ead_handler_count].fn = fn;
+  ead_handler_count++;
+  return EDHOC_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
 void
 print_msg_1(edhoc_msg_1_t *msg)
 {
@@ -878,27 +915,16 @@ edhoc_process_ead_item(const edhoc_ead_data_t *ead_data)
           is_critical ? "critical" : "non-critical",
           ead_data->ead_label, ead_data->ead_value_sz);
 
-  /*
-   * Application-specific EAD processing would go here.
-   * For now, this is a minimal implementation that follows RFC 9528:
-   *
-   * Applications should implement handlers for recognized EAD labels.
-   * Unrecognized critical EAD items must trigger an error.
-   * Unrecognized non-critical EAD items can be ignored.
-   */
+  /* Check registered application handlers (exact label match, including sign) */
+  for(uint8_t i = 0; i < ead_handler_count; i++) {
+    if(ead_handlers[i].label == ead_data->ead_label && ead_handlers[i].fn != NULL) {
+      LOG_DBG("EAD: dispatching label %" PRId32 " to registered handler\n",
+              ead_data->ead_label);
+      return ead_handlers[i].fn(ead_data);
+    }
+  }
 
-  /* TODO: Add application-specific EAD handlers here based on ead_label */
-  /* Example:
-   * switch(ead_data->ead_label) {
-   *   case MY_APP_EAD_LABEL:
-   *     return handle_my_app_ead(ead_data);
-   *   case -MY_CRITICAL_EAD_LABEL:
-   *     return handle_critical_ead(ead_data);
-   *   default:
-   *     // Fall through to general handling below
-   * }
-   */
-
+  /* No registered handler — apply RFC 9528 §6 default policy */
   if(is_critical) {
     /* RFC 9528 Section 6: If an endpoint receives a critical EAD item it
      * does not recognize or cannot process, it MUST send an EDHOC error

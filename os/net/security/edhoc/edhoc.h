@@ -171,6 +171,30 @@ void edhoc_storage_init(void);
 void edhoc_set_cert_validator(edhoc_cert_validator_fn fn, void *app_ctx);
 
 /**
+ * \brief Register an application handler for a specific EAD label.
+ *
+ * edhoc_ead_handler_fn and edhoc_register_ead_handler() are defined in
+ * edhoc-msgs.h (included above).  This comment is provided here for
+ * discoverability from the primary public header.
+ *
+ * Up to EDHOC_EAD_MAX_HANDLERS (default 4, configurable via
+ * EDHOC_CONF_EAD_MAX_HANDLERS in project-conf.h) handlers can be active
+ * simultaneously.  Handlers are matched by exact label value, including
+ * sign (criticality per RFC 9528 §6: negative = critical).
+ *
+ * Registering a handler for a critical label is the correct way to consume
+ * it without triggering EDHOC_ERR_CRITICAL_EAD_UNSUPPORTED.
+ *
+ * Must be called before the first edhoc_handler_msg_N() that may carry the
+ * target label.  The table is module-global and persists across sessions.
+ *
+ * \param label  EAD label to handle (negative = critical per RFC 9528).
+ * \param fn     Handler callback; NULL removes any existing registration.
+ * \return EDHOC_SUCCESS, or EDHOC_ERR_BUFFER_OVERFLOW if the table is full.
+ */
+/* edhoc_register_ead_handler() is declared in edhoc-msgs.h */
+
+/**
  * \brief Create a new EDHOC context
  * \relates edhoc_storage_init
  * \return edhoc_context_t* Pointer to EDHOC context struct, or NULL on failure

@@ -361,6 +361,19 @@
 #endif
 
 /**
+ * \brief Maximum number of application EAD handler registrations.
+ *
+ * Applications call edhoc_register_ead_handler() to attach a callback for a
+ * specific EAD label.  Increase this value if more than 4 distinct labels
+ * need to be handled simultaneously.
+ */
+#ifdef EDHOC_CONF_EAD_MAX_HANDLERS
+#define EDHOC_EAD_MAX_HANDLERS EDHOC_CONF_EAD_MAX_HANDLERS
+#else
+#define EDHOC_EAD_MAX_HANDLERS 4
+#endif
+
+/**
  * \brief EDHOC resource CoAP URI path
  */
 #define EDHOC_COAP_URI_PATH ".well-known/edhoc"

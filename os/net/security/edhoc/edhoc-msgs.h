@@ -53,6 +53,14 @@ typedef struct edhoc_ead_data {
   size_t ead_value_sz;       /* Size of EAD value */
 } edhoc_ead_data_t;
 
+/**
+ * \brief Application callback type for EAD item handlers.
+ *
+ * Registered via edhoc_register_ead_handler().  Return EDHOC_SUCCESS to
+ * continue the handshake, or a negative edhoc_error_t to abort it.
+ */
+typedef edhoc_error_t (*edhoc_ead_handler_fn)(const edhoc_ead_data_t *ead);
+
 typedef struct edhoc_msg_1 {
   uint8_t method;
   uint8_t suites_i[EDHOC_SUITES_MAX_COUNT];
@@ -264,6 +272,13 @@ uint8_t edhoc_get_ad(cbor_reader_state_t *reader, uint8_t *ad, size_t ad_buffer_
  * Applications should implement custom handlers for recognized EAD labels.
  */
 edhoc_error_t edhoc_process_ead_item(const edhoc_ead_data_t *ead_data);
+
+/**
+ * \brief Register an application handler for a specific EAD label.
+ *
+ * See edhoc.h for full documentation.
+ */
+edhoc_error_t edhoc_register_ead_handler(int32_t label, edhoc_ead_handler_fn fn);
 
 /**
  * \brief Write EDHOC byte identifier according to RFC 9528 rules
