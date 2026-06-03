@@ -18,7 +18,7 @@
 /* TH input = TH(34) + PLAINTEXT(~80) + CRED(~159) = ~273 bytes */
 #define EDHOC_CONF_MAX_BUFFER 384
 
-/* CoAP server endpoint in Cooja */
+/* Server is cooja/native node 2 (fd00::202:2:2:2) regardless of client target. */
 #define EDHOC_CONF_SERVER_EP "coap://[fd00::202:2:2:2]"
 
 /* KID used by edhoc_get_own_auth_key() to find the client's own key */

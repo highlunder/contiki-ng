@@ -297,17 +297,17 @@ coap_endpoint_is_connected(const coap_endpoint_t *ep)
 int
 coap_endpoint_connect(coap_endpoint_t *ep)
 {
-  printf("DEBUG: entering coap_endpoint_connect\n");
+  //printf("DEBUG: entering coap_endpoint_connect\n");
 #ifdef WITH_DTLS
-  printf("DEBUG: WITH_DTLS is defined\n");
+  //printf("DEBUG: WITH_DTLS is defined\n");
 #else
-  printf("DEBUG: WITH_DTLS is NOT defined\n");
+  //printf("DEBUG: WITH_DTLS is NOT defined\n");
 #endif
 
 #ifdef COAP_DTLS_CONF_WITH_CLIENT
-  printf("DEBUG: COAP_DTLS_CONF_WITH_CLIENT is defined\n");
+  //printf("DEBUG: COAP_DTLS_CONF_WITH_CLIENT is defined\n");
 #else
-  printf("DEBUG: COAP_DTLS_CONF_WITH_CLIENT is NOT defined\n");
+  //printf("DEBUG: COAP_DTLS_CONF_WITH_CLIENT is NOT defined\n");
 #endif
 
 #ifdef WITH_DTLS
@@ -348,11 +348,11 @@ coap_endpoint_connect(coap_endpoint_t *ep)
   }
 #endif /* COAP_DTLS_CONF_WITH_CERT */
 #ifdef COAP_DTLS_CONF_WITH_C509
-  printf("DEBUG: calling coap_ep_get_dtls_c509_info\n");
+  //printf("DEBUG: calling coap_ep_get_dtls_c509_info\n");
   if(coap_ep_get_dtls_c509_info(ep, &c509_info) == 1) {
-    printf("DEBUG: calling coap_ep_dtls_connect\n");
+    //printf("DEBUG: calling coap_ep_dtls_connect\n");
     int res = coap_ep_dtls_connect(ep, COAP_DTLS_SEC_MODE_C509, &c509_info);
-    printf("DEBUG: coap_ep_dtls_connect returned %d\n", res);
+    //printf("DEBUG: coap_ep_dtls_connect returned %d\n", res);
     return res;
   }
 #endif /* COAP_DTLS_CONF_WITH_C509 */
@@ -362,7 +362,7 @@ coap_endpoint_connect(coap_endpoint_t *ep)
 #endif /* COAP_DTLS_CONF_WITH_CLIENT */
 #endif /* WITH_DTLS */
 
-  printf("DEBUG: coap_endpoint_connect falling through to return 0\n");
+  //printf("DEBUG: coap_endpoint_connect falling through to return 0\n");
   return 0;
 }
 /*---------------------------------------------------------------------------*/
@@ -533,10 +533,10 @@ PROCESS_THREAD(coap_engine, ev, data)
     }
 #endif /* WITH_DTLS */
     if(ev == tcpip_event) {
-      printf("DEBUG: tcpip_event, uip_len=%u, uip_newdata=%d\n", uip_len, uip_newdata());
+      //printf("DEBUG: tcpip_event, uip_len=%u, uip_newdata=%d\n", uip_len, uip_newdata());
       if(uip_newdata()) {
-        printf("DEBUG: newdata, lport=%u, rport=%u, len=%u\n",
-               uip_ntohs(uip_udp_conn->lport), uip_ntohs(uip_udp_conn->rport), uip_datalen());
+        //printf("DEBUG: newdata, lport=%u, rport=%u, len=%u\n",
+        //       uip_ntohs(uip_udp_conn->lport), uip_ntohs(uip_udp_conn->rport), uip_datalen());
 #ifdef WITH_DTLS
         if(uip_udp_conn->lport == SERVER_LISTEN_SECURE_PORT) {
           process_secure_data();

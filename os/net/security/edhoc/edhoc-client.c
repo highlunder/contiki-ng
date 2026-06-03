@@ -268,7 +268,7 @@ client_response_handler(coap_callback_request_state_t *callback_state)
   client_block2_handler(callback_state->state.response,
                         rx_ptr, &rx_sz, EDHOC_MAX_PAYLOAD_LEN);
   if(!callback_state->state.more) {
-    edhoc_ctx->buffers.rx_sz = (uint8_t)rx_sz;
+    edhoc_ctx->buffers.rx_sz = (uint16_t)rx_sz;
     edhoc_state.val = EVT_BLOCKING;
     process_post(PROCESS_BROADCAST, edhoc_event, &edhoc_state);
   }
@@ -423,7 +423,16 @@ handle_rx_msg2(edhoc_client_t *client, edhoc_msg_2_t *msg2)
   client->state = PROTO_RX_RSP_MSG3;
   client->tx_msg3 = true;
   edhoc_client_post();
-  edhoc_client_post_blocks();
+  /* Defer the actual CoAP send to after a Contiki yield (EVT_POST).
+   * MSG_2 reception involves a blocking ECDSA computation; when that
+   * computation finishes the nRF52840 radio may still be in TXIDLE
+   * (from the last MAC ACK) rather than RX.  Calling edhoc_client_post_blocks
+   * directly would attempt a CSMA CCA while the radio is not ready,
+   * causing all retries to fail silently.  Yielding via EVT_POST lets the
+   * Contiki event loop advance the radio state machine to RX before the
+   * CSMA CCA for MSG_3 is attempted. */
+  edhoc_state.val = EVT_POST;
+  process_post(&edhoc_client, edhoc_event, &edhoc_state);
   return 0;
 }
 

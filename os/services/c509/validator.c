@@ -3,7 +3,7 @@
  * @brief Chain validation implementation.
  */
 
-#include "c509/validator.h"
+#include "validator.h"
 #include <string.h>
 
 validator_error_t c509_verify_chain(const uint8_t **chain, 

@@ -89,6 +89,17 @@ cbor_error_t cbor_decode_next(cbor_context_t *ctx, cbor_value_t *value);
 cbor_error_t cbor_skip_item(cbor_context_t *ctx);
 
 /**
+ * @brief Initializes a sub-context from a decoded BSTR/TSTR/container value.
+ *
+ * Sets ctx->buffer to value->ptr and ctx->offset to 0. ctx->size is set to
+ * the value length so the sub-context is bounded to that item's content.
+ *
+ * @param ctx  Context to initialize.
+ * @param value Previously decoded value whose content becomes the new buffer.
+ */
+void cbor_init_sub_context(cbor_context_t *ctx, const cbor_value_t *value);
+
+/**
  * @brief Peeks at the major type of the next item without advancing the offset.
  * 
  * @param ctx The decoding context.

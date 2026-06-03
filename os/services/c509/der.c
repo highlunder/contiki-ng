@@ -3,8 +3,16 @@
  * @brief Lightweight DER encoder implementation.
  */
 
-#include "c509/der.h"
+#include "der.h"
 #include <string.h>
+
+size_t der_get_tag_len_size(uint8_t tag, size_t len) {
+    (void)tag;
+    if (len < 128)   return 2; /* 1 tag + 1 length */
+    if (len < 256)   return 3; /* 1 tag + 0x81 + 1 */
+    if (len < 65536) return 4; /* 1 tag + 0x82 + 2 */
+    return 6;                  /* 1 tag + 0x84 + 4 */
+}
 
 int der_write_tag_len(uint8_t *buffer, size_t size, size_t *offset, uint8_t tag, size_t len) {
     size_t off = *offset;

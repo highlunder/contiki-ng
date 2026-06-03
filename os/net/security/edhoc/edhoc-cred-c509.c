@@ -214,7 +214,9 @@ edhoc_c509_extract_pub_key(const uint8_t *c509, size_t c509_len,
   uint8_t pub_xy[64];
   uECC_decompress(compressed, pub_xy, uECC_secp256r1());
 
-  /* Fill cose_key_t */
+  /* Populate cose_key_t with the extracted public key.  The memset clears
+   * every field including c509_data/c509_len; callers that need to retain a
+   * reference to the source cert bytes must set those fields after returning. */
   memset(key_out, 0, sizeof(*key_out));
   key_out->kty = 2;  /* EC2 */
   key_out->crv = 1;  /* P-256 */

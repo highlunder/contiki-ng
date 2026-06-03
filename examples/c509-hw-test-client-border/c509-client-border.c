@@ -180,6 +180,15 @@ PROCESS_THREAD(c509_client_process, ev, data)
   }
   LOG_INFO("DTLS connected\n");
 
+  /* Brief settling delay: the DTLS Finished flight leaves the 3-hop mesh
+   * saturated with ACKs and retransmissions for a few seconds.  Waiting
+   * here lets the channel drain before the CoAP GET competes for it. */
+#ifndef POST_HANDSHAKE_SETTLE_S
+#define POST_HANDSHAKE_SETTLE_S 8
+#endif
+  etimer_set(&et, CLOCK_SECOND * POST_HANDSHAKE_SETTLE_S);
+  PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+
   coap_init_message(request, COAP_TYPE_CON, COAP_GET, 0);
   coap_set_header_uri_path(request, "test/hello");
   LOG_INFO("Sending GET /test/hello\n");

@@ -712,7 +712,7 @@ determine_credential_label(cbor_reader_state_t *reader)
   return COSE_HEADER_LABEL_COMPACT_ENCODING;
 }
 /*---------------------------------------------------------------------------*/
-static int8_t
+static int16_t
 copy_id_cred_x_to_output(const uint8_t *start, const uint8_t *end,
                         uint8_t *out_id_cred_x, size_t id_cred_x_buffer_size,
                         cose_key_t *key)
@@ -755,7 +755,7 @@ copy_id_cred_x_to_output(const uint8_t *start, const uint8_t *end,
   return id_cred_x_sz;
 }
 /*---------------------------------------------------------------------------*/
-int8_t
+int16_t
 edhoc_get_key_id_cred_x(cbor_reader_state_t *reader, uint8_t *out_id_cred_x,
                        size_t id_cred_x_buffer_size, cose_key_t *key)
 {

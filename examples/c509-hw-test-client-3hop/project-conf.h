@@ -32,8 +32,9 @@
  * (BR joins first, then I, then C).  Each hop doubles the Trickle interval,
  * so full convergence with DAO registration can take 90-120 s at real-time
  * simulation speed.  Add margin beyond that for the ETX probing cycle. */
-#define CONNECT_DELAY_S     90
-#define HANDSHAKE_TIMEOUT_S 120
+#define CONNECT_DELAY_S       150
+#define HANDSHAKE_TIMEOUT_S   200
+#define POST_HANDSHAKE_SETTLE_S 8
 
 /* ---- RPL ---- */
 #define RPL_CONF_PARENT_TIMEOUT        30
@@ -41,7 +42,7 @@
 #define RPL_MRHOF_CONF_MAX_PATH_COST   32768
 
 /* ---- CSMA ---- */
-#define CSMA_CONF_MAX_TX_RETRIES 3
+#define CSMA_CONF_MAX_TX_RETRIES 7
 
 /* ---- Platform ---- */
 #define LPM_CONF_ENABLE 0

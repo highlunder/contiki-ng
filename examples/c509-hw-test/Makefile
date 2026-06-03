@@ -1,4 +1,4 @@
-CONTIKI_PROJECT = c509-server
+CONTIKI_PROJECT = c509-server ecc-test
 all: $(CONTIKI_PROJECT)
 
 CONTIKI = ../..

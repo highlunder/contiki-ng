@@ -227,7 +227,7 @@ edhoc_error_t edhoc_get_auth_key_from_kid(uint8_t *kid, uint8_t kid_sz, cose_key
  * - Full credential inclusion: complete COSE key structure
  * Populates the key structure with authentication information.
  */
-int8_t edhoc_get_key_id_cred_x(cbor_reader_state_t *reader, uint8_t *id_cred_x, size_t id_cred_x_buffer_size, cose_key_t *key);
+int16_t edhoc_get_key_id_cred_x(cbor_reader_state_t *reader, uint8_t *id_cred_x, size_t id_cred_x_buffer_size, cose_key_t *key);
 
 /**
  * \brief Parse signature data from CBOR reader

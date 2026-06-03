@@ -5,6 +5,28 @@ credentials, replacing the current CCS/RPK-only model with standards-compliant
 certificate-based authentication as specified in RFC 9528 §3.5.2 and
 draft-ietf-cose-cbor-encoded-cert.
 
+## Status Summary (2026-06-03)
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| A — c5t (hash-by-reference) | Native cooja, both nodes | **PASS** (20s sim) |
+| B — c5c (inline cert delivery) | Native cooja, both nodes | **PASS** (20s sim) |
+| C — nRF52840 emulation | Method 0 baseline + c5t + c5c on nRF52840 | **PASS** (11s sim) |
+
+**Phase C result (2026-06-03):** All three nRF52840 tests pass with the fixed
+cooja-ng emulator (LDRD/STRD, VFP double-precision, SUBS/SBC fixes landed on
+c509-experimental). Four additional firmware fixes were required for c5c:
+
+| Fix | Root cause | Change |
+|-----|-----------|--------|
+| C1 — RPL parent eviction | CSMA retries during ECDSA spike ETX > 512 | `RPL_MRHOF_CONF_MAX_LINK_METRIC 16384` |
+| C2 — Competing EDHOC session | CoAP timeout fires before MSG_2 arrives | `EDHOC_CONF_ATTEMPTS 1` |
+| C3 — Server session timeout | Default 10s too short for nRF ECDSA | `EDHOC_CONF_TIMEOUT 60000` (server) |
+| C4 — MSG_3 never transmitted | Radio in TXIDLE after blocking ECDSA | Deferred MSG_3 via EVT_POST in edhoc-client.c |
+
+OSCORE Master Secret matched on both sides:
+`b3 01 15 58 b6 66 ae ab dd ed 7d 0a 06 86 7d d6`
+
 **Branch:** `edhoc-merge` (on top of `c509_experimental`)
 
 ---
@@ -206,64 +228,70 @@ This module wraps the c509 service for EDHOC use.
 
 **File:** `os/net/security/edhoc/edhoc-config.h`
 
-- [ ] Add `EDHOC_CRED_C509_C5C 5` auth type constant
+- [x] Add `EDHOC_CRED_C509_C5C 5` auth type constant (moved before the #if check it governs)
 - [x] Add `EDHOC_COSE_HEADER_C5C 25` (c5c = 25 from C509 draft-11 IANA table)
-- [ ] `EDHOC_MAX_ID_CRED_LEN` for c5c mode must accommodate full cert:
-  - When `EDHOC_AUTHENT_TYPE == EDHOC_CRED_C509_C5C`, set default `EDHOC_MAX_ID_CRED_LEN` to 256
-  - The existing `#if EDHOC_AUTHENT_TYPE == EDHOC_CRED_KID` guard in edhoc-config.h
-    already handles the small/large split; add a third branch
+- [x] `EDHOC_MAX_ID_CRED_LEN` for c5c mode: 256 bytes (covers 164-byte c5c ID_CRED)
+  - **Bug fixed**: credential type constants were defined AFTER the `#if EDHOC_AUTHENT_TYPE`
+    guard that used them, so the condition always evaluated as `(0==0)=TRUE`, forcing
+    `EDHOC_MAX_ID_CRED_LEN=32` for all modes. Moving the constants before the guard fixes this.
 
 #### B2 — Extend send path for c5c
 
 **File:** `os/net/security/edhoc/edhoc-cred-c509.c`
 
-- [ ] `edhoc_c509_generate_id_cred_c5c(const cose_key_t *key, uint8_t *out, size_t out_sz)`
-  - Builds CBOR: `{ -1: h'<raw C509 bytes>' }`
-  - If chain: `{ -1: [h'<cert1>', h'<cert2>', ...] }` — for Phase B, single cert only
+- [x] `edhoc_c509_generate_id_cred_c5c(const cose_key_t *key, uint8_t *out, size_t out_sz)`
+  - Builds CBOR: `{ 25: h'<raw C509 bytes>' }`
 
 **File:** `os/net/security/edhoc/edhoc.c`
 
 - [x] In `edhoc_generate_id_cred_x()`: add branch for `EDHOC_CRED_C509_C5C`
-  - Call `edhoc_c509_generate_id_cred_c5c()` — returns `{ -1: cert_bytes }`
+  - Call `edhoc_c509_generate_id_cred_c5c()` — returns `{ 25: cert_bytes }`
 - [x] In `edhoc_generate_cred_x()`: same as c5t — return raw C509 bytes
 
 #### B3 — Extend receive path for c5c
 
 **File:** `os/net/security/edhoc/edhoc-msgs.c`
 
-- [x] In `edhoc_get_key_id_cred_x()`: add map-key dispatch for `-1` (c5c)
+- [x] In `edhoc_get_key_id_cred_x()`: add map-key dispatch for `25` (c5c)
   - `parse_c5c_credential(reader, key)`:
-    - Read COSE_C509: bstr (single cert) or CBOR array of bstr (chain — take index 0)
+    - Read COSE_C509: bstr (single cert)
     - Call `edhoc_c509_extract_pub_key()` to get EC public key
+    - Store cert pointer in key->c509_data (needed for later id_cred_x regeneration)
     - Fill `key` struct — no key store lookup needed (key is inline)
     - Return `EDHOC_SUCCESS`
+- [x] **Bug fixed**: `edhoc_get_key_id_cred_x` return type `int8_t` overflowed when
+  returning 164 (c5c ID_CRED_x size). Changed to `int16_t`.
+- [x] **Bug fixed**: `copy_id_cred_x_to_output` return type also changed to `int16_t`.
+- [x] **Bug fixed**: `key_result` variable in `edhoc_authenticate_msg` widened to `int16_t`.
 
 #### B4 — Payload buffer sizing
 
 **File:** `os/net/security/edhoc/edhoc-config.h`
 
-- [ ] Ensure `EDHOC_MAX_PAYLOAD_LEN` ≥ overhead + cert size (256 bytes)
-  - For nRF52840 with block-wise CoAP, this is handled by fragmentation
-  - For native tests, increase to 512 bytes under `EDHOC_CRED_C509_C5C`
-  - Alternatively: document that applications must set `EDHOC_CONF_MAX_PAYLOAD_LEN`
+- [x] `EDHOC_MAX_PAYLOAD_LEN`: applications must set `EDHOC_CONF_MAX_PAYLOAD_LEN ≥ 320`
+  for c5c (MSG_2 = 266 bytes, MSG_3 = 239 bytes). Default 256 is insufficient.
+  - **Bug fixed**: `edhoc-client.c` stored rx_sz as `(uint8_t)rx_sz`, truncating 266 → 10.
+    Changed to `(uint16_t)rx_sz`.
+- [x] `EDHOC_MAX_BUFFER`: applications must set `EDHOC_CONF_MAX_BUFFER ≥ 512` for c5c
+  (TH_2 input = TH(34) + PLAINTEXT_2(231) + CRED_R(159) = 424 bytes).
 
 #### B5 — Optional: cert validation hook
 
-**File:** `os/net/security/edhoc/edhoc-cred-c509.h`
-
-- [ ] Declare callback type:
-  ```c
-  typedef edhoc_error_t (*edhoc_c509_validate_fn_t)(const uint8_t *c509, size_t len);
-  ```
-- [ ] Add `edhoc_c509_set_validate_cb(edhoc_c509_validate_fn_t cb)` to register
-  a validation function (checks cert signature against a trust anchor)
-- [ ] Call it from `parse_c5c_credential()` before accepting the key
-- [ ] Default (NULL callback): no chain validation — trust on first use
+- Deferred to future work. Trust-on-first-use (no chain validation) is the default.
 
 #### B6 — Tests
 
-- [ ] Add `05-edhoc-c509-c5c.csc` Cooja sim with inline cert delivery
-- [ ] Test heterogeneous case: initiator uses c5t, responder uses c5c
+- [x] Add `tests/21-security-protocols/edhoc-c5c-client/` and `edhoc-c5c-server/`
+  - `EDHOC_CONF_AUTHENT_TYPE EDHOC_CRED_C509_C5C`, `EDHOC_CONF_MAX_PAYLOAD_LEN 320`,
+    `EDHOC_CONF_MAX_BUFFER 512`
+- [x] Add `cooja-ng/configs/edhoc-c509-c5c.json`
+- [x] Cooja end-to-end run: **PASSED** (20s sim). OSCORE Master Secret matches:
+  `93 26 f1 e9 56 7b 77 19 91 e8 ef 78 ed 3f 64 a8`
+
+**nRF52840 emulation note (updated 2026-06-02)**: An earlier session attributed
+nRF52840 EDHOC failures to a "FAST_MULT_ASM_8 emulation bug". This claim predates
+the emulator fixes landed in cooja-ng `c509-experimental` (LDRD/STRD, VFP, SUBS/SBC).
+The nRF52840 EDHOC test must be re-run — see Phase C below.
 
 ---
 
@@ -346,10 +374,10 @@ of scope.
 ## Phase A Completion Criteria
 
 - [x] `07-c509` unit tests still pass (3/3 SUCCESS, no warnings)
-- [ ] `21-security-protocols/01-edhoc-tests-cooja-method0.csc` still passes (needs Cooja run)
+- [ ] `21-security-protocols/01-edhoc-tests-cooja-method0.csc` still passes — deferred to Phase C (requires Cooja / cooja-ng run)
 - [x] New `edhoc-c509-c5t.json` cooja-ng test PASSES: full MSG_1/2/3, c5t lookup both sides, OSCORE match
 - [x] No new compiler warnings (client + server build clean for cooja target)
-- [ ] `EDHOC_MAX_CRED_LEN` increase verified safe on nRF52840 stack profile
+- [ ] `EDHOC_MAX_CRED_LEN` increase verified safe on nRF52840 stack profile — deferred to Phase C
 
 ---
 
@@ -368,3 +396,58 @@ of scope.
 - **Q3**: For Phase B, should `ID_CRED_x` carry the full chain or just the EE cert?
   RFC §3.5.2 says CRED_x is only the end-entity cert even when the ID carries
   a chain. Start with single-cert (EE only) in Phase B; add chain support later.
+
+---
+
+## Phase C: nRF52840 Emulation Validation
+
+**Goal:** Confirm that EDHOC Method 0 and C509 c5t/c5c credential modes work on
+emulated nRF52840 hardware (cooja-ng `c509-experimental`) after the 2026-06-02
+emulator bugfixes.
+
+**Prerequisites:** cooja-ng `c509-experimental` with LDRD/STRD, VFP double-precision,
+SUBS/SBC, RNG, and pending-RX buffer fixes applied (all landed 2026-06-02).
+The `edhoc-method0-nrf52840.json` config runs native cooja server + nRF52840 client.
+
+### C1 — Method 0 baseline (plain EDHOC, no C509)
+
+- [x] Build `edhoc-test-client` for nRF52840 target
+- [x] Run `cooja-ng/configs/edhoc-method0-nrf52840.json`
+- [x] OSCORE Master Secret matches between native server and nRF52840 client
+  Result: PASS at 10.761s simulated (2026-06-03)
+
+### C2 — C509 c5t on nRF52840 (native server ↔ nRF52840 client)
+
+- [x] Build `edhoc-c509-client` for nRF52840 target (EDHOC_CONF_SERVER_EP fixed to native cooja address)
+- [x] Build `edhoc-c509-server` for cooja (native) target
+- [x] Created `cooja-ng/configs/edhoc-c509-c5t-nrf52840.json`
+- [x] OSCORE Master Secret matches; no ERRs
+  Result: PASS at 10.786s simulated (2026-06-03)
+
+### C3 — C509 c5c on nRF52840 (native server ↔ nRF52840 client)
+
+- [x] Build `edhoc-c5c-client` for nRF52840 target
+- [x] Build `edhoc-c5c-server` for cooja target (EDHOC_CONF_TIMEOUT 60000 added)
+- [x] Created `cooja-ng/configs/edhoc-c509-c5c-nrf52840.json`
+- [x] OSCORE Master Secret matches; no ERRs
+  Result: PASS at 11.034s simulated (2026-06-03)
+
+**Bugs fixed during C3:**
+1. `edhoc-c5c-client/project-conf.h`: RPL_MRHOF_CONF_MAX_LINK_METRIC 16384 — CSMA congestion during MSG_1/MSG_2 exchange spiked ETX above default 512, evicting the parent before MSG_3 could be sent.
+2. `edhoc-c5c-client/project-conf.h`: EDHOC_CONF_ATTEMPTS 1 — CoAP retransmit timer fires before MSG_2 completes (6LoWPAN fragmentation delay). With default ATTEMPTS=2, a second conflicting EDHOC session started while the first was still in progress.
+3. `edhoc-c5c-server/project-conf.h`: EDHOC_CONF_TIMEOUT 60000 — default 10s server timeout expired before MSG_3 arrived from the ARM client (which requires ECDSA computation + fragmented delivery).
+4. `os/net/security/edhoc/edhoc-client.c`: MSG_3 send deferred via EVT_POST — the blocking ECDSA computation left the nRF52840 radio in TXIDLE state; calling coap_send_request immediately caused CSMA to fail silently. Posting EVT_POST instead of calling edhoc_client_post_blocks() directly allows a Contiki event loop iteration, letting radio_process restore the radio to RX before the CSMA CCA attempt.
+
+### C4 — Stack profile on nRF52840
+
+- [ ] Measure peak stack depth during EDHOC Method 0 on nRF52840
+- [ ] Confirm `EDHOC_MAX_CRED_LEN=256` does not overflow 256KB RAM budget
+- [ ] (Optional) measure c5t and c5c stack separately (c5c MSG_2 is 266 bytes)
+
+### Configs needed
+
+| Config | Server | Client | Notes |
+|--------|--------|--------|-------|
+| `edhoc-method0-nrf52840.json` | native cooja | nRF52840 | Already exists |
+| `edhoc-c509-c5t-nrf52840.json` | native cooja | nRF52840 | To be created |
+| `edhoc-c509-c5c-nrf52840.json` | native cooja | nRF52840 | To be created |

@@ -534,7 +534,13 @@ setup_session(const coap_mbedtls_role_t role,
   }
 #endif /* !MBEDTLS_NO_PLATFORM_ENTROPY */
 
-  /* Configure protocol as DTLS and role as Client or Server */
+  /* Configure protocol as DTLS and role as Client or Server.
+   * mbedtls_ssl_config_defaults() sets anti_replay = MBEDTLS_SSL_ANTI_REPLAY_ENABLED
+   * by default, which is the correct and intended setting.  Fix D: a previous
+   * workaround that called mbedtls_ssl_conf_dtls_anti_replay(..., DISABLED) here
+   * has been removed.  The underlying GCC -O2 register-caching bugs that caused
+   * false replay rejections on ARM Cortex-M4 are fixed in ssl_msg.c (Fixes A, B,
+   * E, F) and ssl_tls12_client.c (Fix C). */
   if((ret = mbedtls_ssl_config_defaults(&session_info->conf,
                                         role == COAP_MBEDTLS_ROLE_CLIENT ?
                                          MBEDTLS_SSL_IS_CLIENT : MBEDTLS_SSL_IS_SERVER,
@@ -784,12 +790,6 @@ setup_session(const coap_mbedtls_role_t role,
   mbedtls_ssl_set_timer_cb(&session_info->ssl, &session_info->timer,
                            mbedtls_timing_set_delay, mbedtls_timing_get_delay);
   mbedtls_ssl_set_mtu(&session_info->ssl, COAP_MBEDTLS_MTU);
-#if defined(MBEDTLS_SSL_DTLS_ANTI_REPLAY)
-  /* The cooja-ng ARM emulator has a bug in 64-bit memory operations that
-   * causes false replay drops. Disable until the emulator bug is fixed. */
-  mbedtls_ssl_conf_dtls_anti_replay(&session_info->conf,
-                                    MBEDTLS_SSL_ANTI_REPLAY_DISABLED);
-#endif /* MBEDTLS_SSL_DTLS_ANTI_REPLAY */
   return session_info;
 
  clean_and_ret_err:

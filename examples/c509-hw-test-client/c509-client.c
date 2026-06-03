@@ -133,12 +133,17 @@ PROCESS_THREAD(c509_client_process, ev, data)
   }
 
   /* Poll every second until the DTLS handshake completes or times out. */
-  etimer_set(&et, CLOCK_SECOND * HANDSHAKE_TIMEOUT_S);
-  while(!coap_endpoint_is_connected(&server_ep)) {
-    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
-    if(!coap_endpoint_is_connected(&server_ep)) {
-      LOG_ERR("DTLS handshake timed out\n");
-      PROCESS_EXIT();
+  etimer_set(&et, CLOCK_SECOND);
+  {
+    static int handshake_ticks;
+    handshake_ticks = 0;
+    while(!coap_endpoint_is_connected(&server_ep)) {
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+      etimer_reset(&et);
+      if(++handshake_ticks >= HANDSHAKE_TIMEOUT_S) {
+        LOG_ERR("DTLS handshake timed out\n");
+        PROCESS_EXIT();
+      }
     }
   }
   LOG_INFO("DTLS connected\n");

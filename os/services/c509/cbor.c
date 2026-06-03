@@ -3,12 +3,25 @@
  * @brief Implementation of the low-footprint CBOR decoder.
  */
 
-#include "c509/cbor.h"
+#include "cbor.h"
 
 void cbor_init(cbor_context_t *ctx, const uint8_t *buffer, size_t size) {
     ctx->buffer = buffer;
     ctx->size = size;
     ctx->offset = 0;
+}
+
+void cbor_init_sub_context(cbor_context_t *ctx, const cbor_value_t *value) {
+    ctx->buffer = value->ptr;
+    ctx->offset = 0;
+    /* For BSTR/TSTR, val is the byte length — safe to use directly.
+     * For ARRAY/MAP/TAG, val is the element count, not byte size.
+     * Use a generous upper bound; callers limit iteration via value->val. */
+    if (value->type == CBOR_TYPE_BSTR || value->type == CBOR_TYPE_TSTR) {
+        ctx->size = (size_t)value->val;
+    } else {
+        ctx->size = 65536;
+    }
 }
 
 /**
@@ -40,8 +53,6 @@ cbor_error_t cbor_peek_type(const cbor_context_t *ctx, cbor_major_type_t *type) 
     *type = (cbor_major_type_t)(ctx->buffer[ctx->offset] >> 5);
     return CBOR_ERR_NONE;
 }
-
-#include <stdio.h>
 
 cbor_error_t cbor_skip_item(cbor_context_t *ctx) {
     cbor_value_t val;

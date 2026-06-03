@@ -35,7 +35,13 @@
 #include <strformat.h>
 /*---------------------------------------------------------------------------*/
 #define HAVE_DOUBLE
-#define HAVE_LONGLONG
+/* HAVE_LONGLONG intentionally disabled: on ARM32, GCC's codegen for
+ * "unsigned long long uvalue = va_arg(ap, unsigned int)" only writes
+ * the lower 32 bits, leaving the upper word uninitialised on the stack.
+ * After stack_check_init poisons the stack with 0xCDCDCDCD this causes
+ * output_uint_decimal to loop ~3.4 billion times.  unsigned long (32-bit)
+ * is sufficient for all format strings used on constrained targets. */
+/* #define HAVE_LONGLONG */
 
 #ifndef LARGEST_SIGNED
 #ifdef HAVE_LONGLONG
@@ -382,8 +388,8 @@ format_str_v(const strformat_context_t *ctxt, const char *format, va_list ap)
 #ifdef HAVE_LONGLONG
       } else if(sizeof(size_t) == sizeof(long long)) {
         flags |= SIZE_LONGLONG;
-      }
 #endif
+      }
       pos++;
     }
 

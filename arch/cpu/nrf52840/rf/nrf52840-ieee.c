@@ -399,8 +399,6 @@ enter_rx(void)
 {
   nrf_radio_state_t curr_state = nrf_radio_state_get();
 
-  printf("DEBUG: Radio enter_rx, state=%u\n", curr_state);
-
   /* Do nothing if we are already in RX */
   if(curr_state == NRF_RADIO_STATE_RX) {
     return;
@@ -426,8 +424,6 @@ enter_rx(void)
     /* Trigger the Start task */
     nrf_radio_task_trigger(NRF_RADIO_TASK_START);
   }
-
-  printf("DEBUG: Radio enter_rx triggered RXEN/START, state=%u\n", nrf_radio_state_get());
 }
 /*---------------------------------------------------------------------------*/
 /* Retrieve an RSSI sample. The radio must be in RX mode */
@@ -461,7 +457,7 @@ lqi_convert_to_802154_scale(uint8_t lqi_hw)
 static int
 on(void)
 {
-  printf("DEBUG: Radio ON called\n");
+  //printf("DEBUG: Radio ON called\n");
 
   if(radio_is_powered() == false) {
     power_on_and_configure();
@@ -533,11 +529,11 @@ init(void)
   timestamps.phr = 0;
 
   /* Request the HF clock */
-  printf("DEBUG: Radio requesting HFCLK\n");
+  //printf("DEBUG: Radio requesting HFCLK\n");
   nrf_clock_event_clear(NRF_CLOCK_EVENT_HFCLKSTARTED);
   nrf_clock_task_trigger(NRF_CLOCK_TASK_HFCLKSTART);
   // while(!nrf_clock_event_check(NRF_CLOCK_EVENT_HFCLKSTARTED));
-  printf("DEBUG: Radio HFCLK wait bypassed\n");
+  //printf("DEBUG: Radio HFCLK wait bypassed\n");
   nrf_clock_event_clear(NRF_CLOCK_EVENT_HFCLKSTARTED);
 
   /* Start the RF driver process */
@@ -578,7 +574,7 @@ static int
 transmit(unsigned short transmit_len)
 {
   int i;
-  printf("DEBUG: Radio transmit called, len=%u\n", transmit_len);
+  //printf("DEBUG: Radio transmit called, len=%u\n", transmit_len);
 
   LOG_DBG("TX %u bytes + FCS, channel=%u\n", transmit_len, get_channel());
 
@@ -600,9 +596,9 @@ transmit(unsigned short transmit_len)
 
   /* When we reach here we are in state RX. Send a STOP to drop to RXIDLE */
   nrf_radio_task_trigger(NRF_RADIO_TASK_STOP);
-  printf("DEBUG: Radio waiting for RXIDLE\n");
+  //printf("DEBUG: Radio waiting for RXIDLE\n");
   while(nrf_radio_state_get() != NRF_RADIO_STATE_RXIDLE);
-  printf("DEBUG: Radio state RXIDLE reached\n");
+  //printf("DEBUG: Radio state RXIDLE reached\n");
 
   LOG_DBG("Transmit: %u bytes=000000", tx_buf.phr);
   for(i = 0; i < tx_buf.phr - 2; i++) {
@@ -628,7 +624,7 @@ transmit(unsigned short transmit_len)
 
   /* Enable the SHORT between TXREADY and START before triggering TXRU */
   nrf_radio_shorts_enable(NRF_RADIO_SHORT_TXREADY_START_MASK);
-  printf("DEBUG: Radio triggering TXEN\n");
+  //printf("DEBUG: Radio triggering TXEN\n");
   nrf_radio_task_trigger(NRF_RADIO_TASK_TXEN);
 
   /*
@@ -641,9 +637,9 @@ transmit(unsigned short transmit_len)
   LOG_DBG_("--->%u\n", nrf_radio_state_get());
 
   /* Wait for TX to complete */
-  printf("DEBUG: Radio waiting for TX finish, state=%u\n", nrf_radio_state_get());
+  //printf("DEBUG: Radio waiting for TX finish, state=%u\n", nrf_radio_state_get());
   while(nrf_radio_state_get() == NRF_RADIO_STATE_TX);
-  printf("DEBUG: Radio TX finished, state=%u\n", nrf_radio_state_get());
+  //printf("DEBUG: Radio TX finished, state=%u\n", nrf_radio_state_get());
 
   LOG_DBG("TX: Done\n");
 
@@ -1031,10 +1027,7 @@ PROCESS_THREAD(nrf52840_ieee_rf_process, ev, data)
 void
 RADIO_IRQHandler(void)
 {
-  uint32_t events_end = NRF_RADIO->EVENTS_END;
-  uint32_t events_crcok = NRF_RADIO->EVENTS_CRCOK;
-  uint32_t events_crcerr = NRF_RADIO->EVENTS_CRCERROR;
-  printf("DEBUG: RADIO_IRQHandler END=%ld, CRCOK=%ld, CRCERR=%ld\n", events_end, events_crcok, events_crcerr);
+  //printf("DEBUG: RADIO_IRQHandler END=%ld, CRCOK=%ld, CRCERR=%ld\n", (long)NRF_RADIO->EVENTS_END, (long)NRF_RADIO->EVENTS_CRCOK, (long)NRF_RADIO->EVENTS_CRCERROR);
   if(!rf_config.poll_mode) {
     if(nrf_radio_event_check(NRF_RADIO_EVENT_CRCOK)) {
       nrf_radio_event_clear(NRF_RADIO_EVENT_CRCOK);

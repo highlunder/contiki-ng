@@ -44,6 +44,19 @@
 #ifndef _EDHOC_CONFIG_H_
 #define _EDHOC_CONFIG_H_
 
+/* Credential type constants — must be defined early so #if checks below work. */
+#define EDHOC_CRED_KID      2  /* Key ID (compact integer or {4: bstr}) */
+#define EDHOC_CRED_INCLUDE  3  /* Full COSE_Key inline */
+#define EDHOC_CRED_C509_C5T 4  /* C509 hash-by-reference {22: COSE_CertHash} */
+#define EDHOC_CRED_C509_C5C 5  /* C509 by-value {25: COSE_C509} */
+
+/* Resolve EDHOC_AUTHENT_TYPE early so buffer-size #if checks work. */
+#ifdef EDHOC_CONF_AUTHENT_TYPE
+#define EDHOC_AUTHENT_TYPE EDHOC_CONF_AUTHENT_TYPE
+#else
+#define EDHOC_AUTHENT_TYPE EDHOC_CRED_KID
+#endif
+
 /**
  * \brief The max size of the transcript hash input buffer.
  * Must be >= CBOR_BYTE_STRING_SIZE(HASH_LEN) + PLAINTEXT_sz + CRED_sz.
@@ -220,14 +233,6 @@
 #define RESPONDER_METHOD2 \
   (EDHOC_METHOD == EDHOC_METHOD2 && EDHOC_ROLE == EDHOC_RESPONDER)
 
-/* Credential type/usage */
-#define EDHOC_CRED_KID 2
-#define EDHOC_CRED_INCLUDE 3
-/* C509 certificate by hash reference (ID_CRED_x = {22: COSE_CertHash}) */
-#define EDHOC_CRED_C509_C5T 4
-/* C509 certificate by value (ID_CRED_x = {25: COSE_C509})              */
-#define EDHOC_CRED_C509_C5C 5
-
 /* COSE header labels for ID_CRED_X identification methods */
 #define COSE_HEADER_LABEL_COMPACT_ENCODING 0  /* Compact encoding (bare KID) */
 #define COSE_HEADER_LABEL_CRED_FULL 1         /* Full credential inclusion */
@@ -240,14 +245,8 @@
 /* Recommended truncated hash length for c5t per RFC 9528 §9.3          */
 #define EDHOC_C5T_HASH_LEN 8
 
-/**
- * \brief Set the authentication credential type/usage
- */
-#ifdef EDHOC_CONF_AUTHENT_TYPE
-#define EDHOC_AUTHENT_TYPE EDHOC_CONF_AUTHENT_TYPE
-#else
-#define EDHOC_AUTHENT_TYPE EDHOC_CRED_KID
-#endif
+/* EDHOC_AUTHENT_TYPE and credential type constants are resolved at the top of
+ * this file so the #if guards on EDHOC_MAX_ID_CRED_LEN work correctly. */
 
 /* cipher suites */
 #define EDHOC_CIPHERSUITE_0 0   /* AES-CCM-16-64-128,  (HMAC 256/256) SHA-256,  MAC LEN 8,  X25519, EdDSA, Ed25519, AES-CCM-16-64-128, SHA-256 */

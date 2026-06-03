@@ -19,7 +19,7 @@
 #define RPL_MRHOF_CONF_MAX_PATH_COST   32768
 
 /* ---- CSMA ---- */
-#define CSMA_CONF_MAX_TX_RETRIES 3
+#define CSMA_CONF_MAX_TX_RETRIES 7
 
 /* ---- Platform ---- */
 #define LPM_CONF_ENABLE 0

@@ -907,11 +907,12 @@ edhoc_authenticate_msg(edhoc_context_t *ctx, uint8_t *ad, bool msg2)
   cbor_reader_state_t reader;
   cbor_init_reader(&reader, plaintext_ptr, parse_size);
 
-  /* Parse ID_CRED_X using shared reader state */
-  int8_t key_result = edhoc_get_key_id_cred_x(&reader, NULL, 0, key);
+  /* Parse ID_CRED_X using shared reader state.
+   * int16_t: edhoc_get_key_id_cred_x may return a byte count > 127 for c5c. */
+  int16_t key_result = edhoc_get_key_id_cred_x(&reader, NULL, 0, key);
   if(key_result < 0) {
     LOG_ERR("Failed to parse ID_CRED_X (error: %d)\n", key_result);
-    return key_result;
+    return (edhoc_error_t)key_result;
   }
 
   /* Get MAC from the decrypted message using shared reader state */

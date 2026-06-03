@@ -26,10 +26,18 @@
 /* ---- CSPRNG ---- */
 #define CSPRNG_CONF_ENABLED 1
 
+/* ---- 6LoWPAN / queuebuf ----
+ * DTLS server flight ≈ 765 bytes UDP needs ~10 6LoWPAN fragments; the
+ * 6LoWPAN output code requires (fragment_count + 1) free queuebufs.
+ * Default pool of 8 is too small; silently drops the packet. */
+#define QUEUEBUF_CONF_NUM 16
+
 /* ---- Platform ---- */
 /* NODE_ID_OFFSET 2 makes this node address f4ce:3600:0000:0002,
  * link-local fe80::f6ce:3600:0:2. */
 #define NODE_ID_OFFSET 2
 #define LPM_CONF_ENABLE 0
+/* CCA busy-wait guard: see c509-hw-test/project-conf.h for rationale. */
+#define NRF52840_CCA_TIMEOUT_ITERATIONS 1000UL
 
 #endif /* PROJECT_CONF_H_ */

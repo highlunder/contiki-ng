@@ -12,8 +12,8 @@
 
 #define EDHOC_AUTH_KID 0x2b
 
-/* Define the coap server to connect with */
-#define EDHOC_CONF_SERVER_EP "coap://[fd00::202:2:2:2]" /* Server IP for Cooja simulator */
+/* Server is cooja/native node 2 (fd00::202:2:2:2). */
+#define EDHOC_CONF_SERVER_EP "coap://[fd00::202:2:2:2]"
 
 /* Define the party role on the EDHOC protocol as Initiator and the correlation method */
 #define EDHOC_CONF_ROLE EDHOC_INITIATOR

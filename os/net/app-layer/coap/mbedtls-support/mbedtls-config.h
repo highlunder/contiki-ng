@@ -43,6 +43,7 @@
 #include "lib/heapmem.h"
 
 /* Basic settings */
+#define MBEDTLS_HAVE_ASM
 #define MBEDTLS_SSL_TLS_C
 #define MBEDTLS_VERSION_C
 
