@@ -1,6 +1,6 @@
 /**
  * @file c509_registry.h
- * @brief C509 IANA Registry constants — draft-ietf-cose-cbor-encoded-cert-11
+ * @brief C509 IANA Registry constants — draft-ietf-cose-cbor-encoded-cert-19
  *
  * Integer IDs are from the IANA registries defined in Section 9 of the draft.
  * Negative extension IDs signal critical extensions on the wire; the absolute
