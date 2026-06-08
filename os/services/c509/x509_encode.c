@@ -46,9 +46,13 @@ static const uint8_t OID_RSA_PSS[]        = { 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D
 static const uint8_t OID_ECDSA_SHA1[]     = { 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x01 };
 static const uint8_t OID_RSA_V15_SHA1[]   = { 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x05 };
 static const uint8_t OID_SM2_SM3[]        = { 0x2A, 0x81, 0x1C, 0xCF, 0x55, 0x01, 0x83, 0x75 };
-static const uint8_t OID_ECDSA_SHAKE128[] = { 0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x06, 0x20 };
-static const uint8_t OID_ECDSA_SHAKE256[] = { 0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x06, 0x21 };
+static const uint8_t OID_ECDSA_SHAKE128[]  = { 0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x06, 0x20 };
+static const uint8_t OID_ECDSA_SHAKE256[]  = { 0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x06, 0x21 };
 static const uint8_t OID_UNSIGNED[]        = { 0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x06, 0x24 };
+/* DH Proof-of-Possession OIDs (RFC 6955 / C509 §9.1 Table 3, IDs 14–16) */
+static const uint8_t OID_ECDHPOP_SHA256[]  = { 0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x06, 0x1A };
+static const uint8_t OID_ECDHPOP_SHA384[]  = { 0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x06, 0x1B };
+static const uint8_t OID_ECDHPOP_SHA512[]  = { 0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x06, 0x1C };
 
 /* ── Public key algorithm OIDs ───────────────────────────────────────────── */
 static const uint8_t OID_ID_EC_PUBKEY[]   = { 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01 };
@@ -136,11 +140,13 @@ int x509_encode_algorithm_identifier(uint8_t *buffer, size_t size, size_t *offse
         case C509_SIG_ECDSA_SHA512:  oid = OID_ECDSA_SHA512;   oid_len = sizeof(OID_ECDSA_SHA512);   break;
         case C509_SIG_ED25519:       oid = OID_ED25519;         oid_len = sizeof(OID_ED25519);         break;
         case C509_SIG_ED448:         oid = OID_ED448;           oid_len = sizeof(OID_ED448);           break;
-        case 5: /* id-alg-unsigned: 1.3.6.1.5.5.7.6.36 — used for template/unsigned certs */
-                             oid = OID_UNSIGNED;        oid_len = sizeof(OID_UNSIGNED);        break;
-        case C509_SIG_ECDSA_SHAKE128: oid = OID_ECDSA_SHAKE128;  oid_len = sizeof(OID_ECDSA_SHAKE128);  break;
-        case C509_SIG_ECDSA_SHAKE256: oid = OID_ECDSA_SHAKE256;  oid_len = sizeof(OID_ECDSA_SHAKE256);  break;
+        case C509_SIG_UNSIGNED:      oid = OID_UNSIGNED;        oid_len = sizeof(OID_UNSIGNED);        break;
+        case C509_SIG_ECDSA_SHAKE128: oid = OID_ECDSA_SHAKE128; oid_len = sizeof(OID_ECDSA_SHAKE128);  break;
+        case C509_SIG_ECDSA_SHAKE256: oid = OID_ECDSA_SHAKE256; oid_len = sizeof(OID_ECDSA_SHAKE256);  break;
         case C509_SIG_SM2_SM3:       oid = OID_SM2_SM3;         oid_len = sizeof(OID_SM2_SM3);         break;
+        case C509_SIG_ECDHPOP_SHA256: oid = OID_ECDHPOP_SHA256; oid_len = sizeof(OID_ECDHPOP_SHA256);  break;
+        case C509_SIG_ECDHPOP_SHA384: oid = OID_ECDHPOP_SHA384; oid_len = sizeof(OID_ECDHPOP_SHA384);  break;
+        case C509_SIG_ECDHPOP_SHA512: oid = OID_ECDHPOP_SHA512; oid_len = sizeof(OID_ECDHPOP_SHA512);  break;
         case C509_SIG_ECDSA_SHA1:    oid = OID_ECDSA_SHA1;      oid_len = sizeof(OID_ECDSA_SHA1);      break;
         case C509_SIG_RSA_V15_SHA1:  oid = OID_RSA_V15_SHA1;    oid_len = sizeof(OID_RSA_V15_SHA1);    needs_null = 1; break;
         case C509_SIG_RSA_V15_SHA256:oid = OID_RSA_V15_SHA256;  oid_len = sizeof(OID_RSA_V15_SHA256);  needs_null = 1; break;
@@ -510,12 +516,29 @@ int x509_encode_extensions(uint8_t *buffer, size_t size, size_t *offset, const c
             der_write_tag_len(val_der, sizeof(val_der), &val_der_off, DER_TAG_OCTET_STRING, (size_t)ext_val.val);
             memcpy(val_der + val_der_off, ext_val.ptr, (size_t)ext_val.val); val_der_off += (size_t)ext_val.val;
         } else if (abs_id == C509_EXT_AUTHORITY_KEY_ID) {
-            /* AKID: SEQUENCE { [0] IMPLICIT key-identifier } */
+            /* C509 §7.3: two AKI encodings exist:
+             *   bstr         keyid-only  (07 54 <20 bytes>)
+             *   array[3]     keyid+issuer+serial  (07 83 54 <20 bytes> ...)
+             * In both cases we extract only the keyIdentifier and encode it as
+             * SEQUENCE { [0] IMPLICIT keyIdentifier }. */
+            const uint8_t *keyid_ptr;
+            size_t keyid_len;
+            cbor_value_t keyid_val;
+            if (ext_val.type == CBOR_TYPE_ARRAY) {
+                cbor_context_t aki_ctx;
+                cbor_init_sub_context(&aki_ctx, &ext_val);
+                if (cbor_decode_next(&aki_ctx, &keyid_val) != CBOR_ERR_NONE) continue;
+                keyid_ptr = keyid_val.ptr;
+                keyid_len = (size_t)keyid_val.val;
+            } else {
+                keyid_ptr = ext_val.ptr;
+                keyid_len = (size_t)ext_val.val;
+            }
             uint8_t akid_inner[34]; size_t akid_inner_off = 0;
             akid_inner[akid_inner_off++] = 0x80; /* [0] IMPLICIT */
-            akid_inner[akid_inner_off++] = (uint8_t)ext_val.val;
-            memcpy(akid_inner + akid_inner_off, ext_val.ptr, (size_t)ext_val.val);
-            akid_inner_off += (size_t)ext_val.val;
+            akid_inner[akid_inner_off++] = (uint8_t)keyid_len;
+            memcpy(akid_inner + akid_inner_off, keyid_ptr, keyid_len);
+            akid_inner_off += keyid_len;
             der_write_tag_len(val_der, sizeof(val_der), &val_der_off, DER_TAG_SEQUENCE, akid_inner_off);
             memcpy(val_der + val_der_off, akid_inner, akid_inner_off); val_der_off += akid_inner_off;
         } else if (abs_id == C509_EXT_KEY_USAGE) {

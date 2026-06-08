@@ -1,6 +1,6 @@
 /**
  * @file c509_registry.h
- * @brief C509 IANA Registry constants — draft-ietf-cose-cbor-encoded-cert-19
+ * @brief C509 IANA Registry constants — draft-ietf-cose-cbor-encoded-cert-11
  *
  * Integer IDs are from the IANA registries defined in Section 9 of the draft.
  * Negative extension IDs signal critical extensions on the wire; the absolute
@@ -20,6 +20,7 @@
 #define C509_SIG_ECDSA_SHA512              2
 #define C509_SIG_ECDSA_SHAKE128            3
 #define C509_SIG_ECDSA_SHAKE256            4
+#define C509_SIG_UNSIGNED                  5  /* id-alg-unsigned — template/unsigned certs */
 #define C509_SIG_SM2_SM3                   8
 #define C509_SIG_ED25519                   12
 #define C509_SIG_ED448                     13
