@@ -50,6 +50,7 @@
 #include <stdint.h>
 #include "edhoc-error.h"
 #include "edhoc-key-storage.h"
+#include "edhoc-trust-store.h"
 
 /**
  * \brief Copy raw C509 bytes into the CRED_x output buffer.
@@ -146,7 +147,10 @@ edhoc_error_t edhoc_c509_lookup_by_hash(const uint8_t *hash, size_t hash_len,
  *
  * Suitable as a quick sanity check for test deployments and as a template
  * for application-specific validators.  Not a full PKI chain check.
- * app_ctx is ignored.
+ *
+ * \param c509     Peer's C509 certificate bytes (as received in CRED_x).
+ * \param c509_len Length of \p c509 in bytes.
+ * \param app_ctx  Ignored.  Pass NULL.
  *
  * \return EDHOC_SUCCESS if the cert is valid,
  *         EDHOC_ERR_CERTIFICATE_REJECTED otherwise.
@@ -154,5 +158,37 @@ edhoc_error_t edhoc_c509_lookup_by_hash(const uint8_t *hash, size_t hash_len,
 edhoc_error_t edhoc_c509_validate_self_signed(const uint8_t *c509,
                                                size_t c509_len,
                                                void *app_ctx);
+
+/**
+ * \brief Certificate validator for CA-issued Type-2 C509 certificates.
+ *
+ * Verifies the peer's C509 certificate against the process-wide trust store
+ * registered with edhoc_set_c509_trust_store().  Suitable for deployments
+ * where each peer holds a leaf certificate signed by a known CA.
+ *
+ * Unlike edhoc_c509_validate_self_signed() (issuer == subject: a cert
+ * verified against its own embedded key), this function assumes
+ * issuer != subject and checks the cert's signature against the trust
+ * anchors' keys instead.
+ *
+ * Verification logic by type:
+ * - **Type 2** (natively signed): SHA-256(CBOR TBS fields 0-9) is computed
+ *   and the ECDSA-P-256 signature is verified against each trust anchor's
+ *   public key in turn (brute-force search; no issuer-field lookup).  The
+ *   cert is accepted as soon as any anchor verifies it.
+ * - **Type 0, 1, 3** (DER-equivalent): structural check only (public key
+ *   extraction succeeds), as for edhoc_c509_validate_self_signed().
+ *
+ * \param c509     Peer's C509 certificate bytes (as received in CRED_x).
+ * \param c509_len Length of \p c509 in bytes.
+ * \param app_ctx  Ignored (the global trust store is used).  Pass NULL.
+ *
+ * \return EDHOC_SUCCESS if the cert is valid,
+ *         EDHOC_ERR_CERTIFICATE_REJECTED if no anchor verified it,
+ *         EDHOC_ERR_NULL_POINTER if the trust store was never set.
+ */
+edhoc_error_t edhoc_c509_validate_chain(const uint8_t *c509,
+                                         size_t c509_len,
+                                         void *app_ctx);
 
 #endif /* EDHOC_CRED_C509_H_ */

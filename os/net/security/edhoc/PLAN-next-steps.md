@@ -4,12 +4,12 @@
 **Updated:** 2026-06-03  
 **Branch:** edhoc-merge
 
-Current state (2026-06-03): **Steps 1–3a and Method 2 KID COMPLETE, nRF52840 all PASS.**
-All three credential types (KID, c5t, c5c) run EDHOC then derive an OSCORE
-context and exchange a protected CoAP GET/2.05-Content in cooja-ng at ~11 s
-simulated time on nRF52840-DK + native server.
-Step 2 (cert validation hook), Step 3a (EAD API), and Method 2 KID (Step 4 partial) are complete.
-Next: Method 2 with c5t/c5c credentials, Method 1, Step 5 (interop), or Step 6 (energy profiling).
+Current state (2026-06-03): **Steps 1–3a and Step 4 fully COMPLETE. All Method 0/1/2 × KID/c5t/c5c PASS on both native Cooja and nRF52840-DK.**
+nRF52840 results (native server + nRF52840-DK client, ~11 s simulated each):
+  Method 0: KID 11.3s, c5t 11.2s, c5c 11.8s
+  Method 1: KID 11.3s, c5t 11.2s, c5c 11.6s
+  Method 2: KID 11.2s, c5t 11.2s, c5c 11.6s
+Remaining: Step 5 (interop), Step 6 (energy profiling).
 
 ---
 
@@ -255,25 +255,54 @@ paths selected at compile time via EDHOC_CONF_METHOD.
 - [x] PASS 2026-06-03: 20.646 s simulated, both nodes derive same OSCORE Master
   Secret (`e6dbd175ec3969303d0ca36be561571f`), GET/Content OSCORE exchange OK
 
-### 4b — Method 2 with c5t/c5c credentials
+### 4b — Method 2 with c5t/c5c credentials ✅ DONE 2026-06-03
 
 Use C509 test certificates with `EDHOC_CONF_AUTHENT_TYPE EDHOC_CRED_C509_C5T`
 or `EDHOC_CRED_C509_C5C` for the same Method 2 flow (server signs).
 
-- [ ] `edhoc-method2-c5t-client/`, `edhoc-method2-c5t-server/` + config
-- [ ] `edhoc-method2-c5c-client/`, `edhoc-method2-c5c-server/` + config
+- [x] `edhoc-method2-c5t-client/`, `edhoc-method2-c5t-server/` + config
+  PASS 2026-06-03: 20.615 s simulated, `cooja-ng/configs/edhoc-method2-c5t.json`
+- [x] `edhoc-method2-c5c-client/`, `edhoc-method2-c5c-server/` + config
+  PASS 2026-06-03: 20.672 s simulated, `cooja-ng/configs/edhoc-method2-c5c.json`
 
-### 4c — Method 1 (Sig|StaticDH)
+### 4c — Method 1 (Sig|StaticDH) ✅ DONE 2026-06-03 (KID + c5t)
 
 Method 1 = I:Sig | R:StaticDH. Client signs; server uses static DH.
 
-- [ ] `edhoc-method1-kid-client/`, `edhoc-method1-kid-server/` + config
-- [ ] c5t variant
+- [x] `edhoc-method1-kid-client/`, `edhoc-method1-kid-server/` + config
+  PASS 2026-06-03: 20.640 s simulated, OSCORE Master Secret `aaa905b336f89c10bb21853e52dc075b`
+  Bug fixed: `edhoc_generate_prk_3e2m` guard in `edhoc.c` missing `RESPONDER_METHOD1`.
+  Config: `cooja-ng/configs/edhoc-method1-kid.json`
+- [x] c5t variant: `edhoc-method1-c5t-client/`, `edhoc-method1-c5t-server/` + config
+  PASS 2026-06-03: 20.619 s simulated, OSCORE Master Secret `1ba0c186f6ac6f5b25739b829752d3b0`
+  Bug fixed: server must set `COAP_MAX_CHUNK_SIZE 300` — client sends MSG_3 (90 B) as one
+  CoAP packet (no BLOCK1 since 90 < 300), but server's default 64 truncates it mid-parse.
+  Config: `cooja-ng/configs/edhoc-method1-c5t.json`
 
-### 4d — nRF52840 emulation
+### 4d — nRF52840 emulation ✅ DONE 2026-06-03
 
-- [ ] Run Method 2 KID on nRF52840-DK cooja-ng config (add RPL tuning to
-  client project-conf.h as in KID/c5t/c5c OSCORE tests)
+- [x] Method 2 KID on nRF52840-DK + native server
+  PASS 2026-06-03: 11.218 s simulated
+  RPL tuning added to `edhoc-method2-kid-client/project-conf.h`
+  Config: `cooja-ng/configs/edhoc-method2-kid-nrf52840.json`
+
+### 4e — Method 1 c5c ✅ DONE 2026-06-03
+
+- [x] `edhoc-method1-c5c-client/`, `edhoc-method1-c5c-server/` + config
+  PASS 2026-06-03: 20.672 s simulated, OSCORE Master Secret `803b275e24a3d47fd8b4e3893be46cd2`
+  Both nodes: cert validator fires ("type-3 (DER-equiv) — structural check OK")
+  Config: `cooja-ng/configs/edhoc-method1-c5c.json`
+
+### 4f — nRF52840 for all Method 1 and Method 2 variants ✅ DONE 2026-06-03
+
+Added RPL tuning to Method 1 KID, c5t, c5c client project-conf.h files.
+All five new configs pair native server (node 2) with nRF52840-DK client (node 1).
+
+- [x] Method 1 KID:  `edhoc-method1-kid-nrf52840.json`  — PASS 11.290 s
+- [x] Method 1 c5t:  `edhoc-method1-c5t-nrf52840.json`  — PASS 11.242 s
+- [x] Method 1 c5c:  `edhoc-method1-c5c-nrf52840.json`  — PASS 11.581 s
+- [x] Method 2 c5t:  `edhoc-method2-c5t-nrf52840.json`  — PASS 11.152 s
+- [x] Method 2 c5c:  `edhoc-method2-c5c-nrf52840.json`  — PASS 11.633 s
 
 ---
 

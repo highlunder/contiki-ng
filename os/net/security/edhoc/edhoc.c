@@ -607,7 +607,11 @@ edhoc_generate_keystream_2e(edhoc_context_t *ctx, uint16_t length, uint8_t *ks_2
   return 1;
 }
 /*---------------------------------------------------------------------------*/
-#if (EDHOC_METHOD == EDHOC_METHOD3) || INITIATOR_METHOD1 || RESPONDER_METHOD2
+/* RESPONDER_METHOD1: Responder in Method 1 (R=StaticDH) calls this when
+ * generating MSG_2 — it must compute PRK_3e2m from its own static DH key.
+ * Note: check_mac does NOT need RESPONDER_METHOD1 because MSG_3 from the
+ * Initiator (I=Sig) carries a COSE_Sign1, verified via the signature path. */
+#if (EDHOC_METHOD == EDHOC_METHOD3) || INITIATOR_METHOD1 || RESPONDER_METHOD1 || RESPONDER_METHOD2
 bool
 edhoc_generate_prk_3e2m(edhoc_context_t *ctx, const ecc_key_t *auth_key, uint8_t gen)
 {
@@ -650,7 +654,7 @@ edhoc_generate_prk_3e2m(edhoc_context_t *ctx, const ecc_key_t *auth_key, uint8_t
   edhoc_trace_prk_derivation("PRK_3e2m", ctx->state.prk_3e2m, salt, grx);
   return true;
 }
-#endif /* (EDHOC_METHOD == EDHOC_METHOD3) || INITIATOR_METHOD1 || RESPONDER_METHOD2 */
+#endif /* (EDHOC_METHOD == EDHOC_METHOD3) || INITIATOR_METHOD1 || RESPONDER_METHOD1 || RESPONDER_METHOD2 */
 /*---------------------------------------------------------------------------*/
 #if (EDHOC_METHOD == EDHOC_METHOD2) || (EDHOC_METHOD == EDHOC_METHOD3) || INITIATOR_METHOD1 || RESPONDER_METHOD2
 bool

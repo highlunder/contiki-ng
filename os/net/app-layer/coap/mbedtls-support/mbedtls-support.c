@@ -91,6 +91,8 @@
 #ifdef COAP_DTLS_CONF_WITH_C509
 #include "c509.h"
 #include "x509_encode.h"
+#include "validator.h"
+#include "mbedtls/x509_crt.h"
 #endif /* COAP_DTLS_CONF_WITH_C509 */
 
 #if !defined(COAP_DTLS_PRNG_INSECURE) && !CSPRNG_ENABLED
@@ -461,7 +463,91 @@ debug_hex_dump(const char *label, const uint8_t *data, size_t len)
   }
   LOG_DBG_("\n");
 }
-#endif
+
+/*
+ * Return true when the C509 cert at 'cert' (length 'len') is a natively
+ * signed Type 2 certificate, as opposed to a DER-equivalent Type 0/1/3.
+ *
+ * The C509 "type" field is the first CBOR item of the TBS sequence; for
+ * Type 2 it is the unsigned integer 2, which in CBOR major type 0 encodes
+ * as a single byte 0x02. This is therefore just a peek at cert[0].
+ *
+ * Used by setup_session() to decide whether to register
+ * c509_native_verify_cb() for this session's CA cert.
+ */
+static bool
+c509_is_native_type2(const uint8_t *cert, size_t len)
+{
+  return len >= 1 && cert[0] == 0x02;
+}
+
+/*
+ * Mbed TLS certificate verify callback for natively signed C509 Type-2
+ * certificates, registered via mbedtls_ssl_conf_verify() (see
+ * setup_session() below) only when the session's CA cert is Type 2.
+ * Mbed TLS invokes this once per certificate in the chain during the
+ * handshake, from the deepest (CA) to the shallowest (leaf, depth 0).
+ *
+ * Background: for Type 2, the original ECDSA signature was computed over
+ * the CBOR-encoded TBS bytes, not over the reconstructed DER
+ * TBSCertificate. Mbed TLS's normal X.509 signature check therefore always
+ * fails for the leaf cert (it flags MBEDTLS_X509_BADCERT_NOT_TRUSTED), even
+ * though the certificate itself is valid. To compensate, this callback
+ * performs an independent chain check on the *raw* C509 bytes (using
+ * c509_verify_chain(), which understands the CBOR-signed form) against the
+ * pre-provisioned peer cert (session_info->native_peer_c509) and CA public
+ * key (session_info->native_ca_pub_xy). If that check succeeds, we clear
+ * the flags that Mbed TLS could not have correctly evaluated:
+ *
+ *  - MBEDTLS_X509_BADCERT_NOT_TRUSTED: always set for Type 2 leaf certs for
+ *    the reason above; clearing it here is what makes the handshake
+ *    succeed.
+ *  - MBEDTLS_X509_BADCERT_EXPIRED / _FUTURE: the Contiki-NG native/Cooja
+ *    targets have no real-time clock, so Mbed TLS's notBefore/notAfter
+ *    check against "now" is meaningless. c509_verify_chain() instead checks
+ *    the cert's POSIX validity window against the fixed timestamp below
+ *    (~2028-08), which falls inside the test certs' validity period.
+ *
+ * NOTE: this callback only runs c509_verify_chain() at depth 0 (the leaf)
+ * and only when session_info->is_native_c509 is set; for depth != 0, or for
+ * non-native sessions, it is a no-op that leaves 'flags' untouched (i.e.
+ * Mbed TLS's own verdict for the CA cert and for non-Type-2 sessions stands
+ * unchanged). On success, the three flags above are cleared
+ * unconditionally, regardless of which (if any) of them Mbed TLS actually
+ * set -- i.e. this does not distinguish "EXPIRED/FUTURE due to missing RTC"
+ * from "EXPIRED/FUTURE because the cert is genuinely outside its validity
+ * window" beyond what c509_verify_chain()'s own timestamp check provides.
+ */
+static int
+c509_native_verify_cb(void *ctx, mbedtls_x509_crt *crt, int depth,
+                      uint32_t *flags)
+{
+  (void)crt;
+  if(depth != 0) {
+    return 0;
+  }
+  coap_dtls_session_info_t *si = (coap_dtls_session_info_t *)ctx;
+  if(!si->is_native_c509) {
+    return 0;
+  }
+
+  const uint8_t *chain[1] = { si->native_peer_c509 };
+  size_t lens[1]           = { si->native_peer_c509_len };
+  /* 1 850 000 000 s ≈ 2028-08 — within the test cert validity window. */
+  validator_error_t r = c509_verify_chain(chain, lens, 1,
+                                          si->native_ca_pub_xy, 64,
+                                          1850000000LL);
+  if(r == VALIDATOR_OK) {
+    *flags &= ~(uint32_t)(MBEDTLS_X509_BADCERT_NOT_TRUSTED
+                          | MBEDTLS_X509_BADCERT_EXPIRED
+                          | MBEDTLS_X509_BADCERT_FUTURE);
+    LOG_INFO("Native C509 Type-2 chain validation OK\n");
+  } else {
+    LOG_ERR("Native C509 Type-2 chain validation FAILED: %d\n", (int)r);
+  }
+  return 0;
+}
+#endif /* COAP_DTLS_CONF_WITH_C509 */
 
 static coap_dtls_session_info_t *
 setup_session(const coap_mbedtls_role_t role,
@@ -506,8 +592,16 @@ setup_session(const coap_mbedtls_role_t role,
     mbedtls_x509_crt_init(&session_info->ca_cert);
     mbedtls_x509_crt_init(&session_info->own_cert);
     mbedtls_pk_init(&session_info->pkey);
-    session_info->ca_der = NULL;
-    session_info->own_der = NULL;
+    session_info->ca_der              = NULL;
+    session_info->own_der             = NULL;
+    /* Native Type-2 fields default to "off"; populated below (and the
+     * verify callback registered) only if the keystore entry's CA cert is
+     * a natively signed Type 2 cert and a peer cert / CA public key were
+     * also provisioned. */
+    session_info->is_native_c509      = false;
+    session_info->native_peer_c509    = NULL;
+    session_info->native_peer_c509_len = 0;
+    memset(session_info->native_ca_pub_xy, 0, 64);
   }
 #endif /* COAP_DTLS_CONF_WITH_C509 */
 
@@ -709,6 +803,35 @@ setup_session(const coap_mbedtls_role_t role,
     if(ret != 0) {
       LOG_ERR("mbedtls_ssl_conf_own_cert returned %d\n", ret);
       goto clean_and_ret_err;
+    }
+
+    /*
+     * For natively signed Type-2 C509 (detected from the CA cert's type
+     * byte), additionally register a verify callback that performs chain
+     * validation on the raw C509 bytes. The CA/own certs above are still
+     * reconstructed to DER and loaded into Mbed TLS as usual so that Mbed
+     * TLS can build the chain and run its other checks (e.g. on the CA
+     * cert itself); only the leaf's signature check is expected to fail,
+     * because the original signature was computed over the CBOR TBS, not
+     * the DER TBSCertificate -- c509_native_verify_cb() compensates for
+     * that.
+     *
+     * This requires that the keystore entry also provides the peer's raw
+     * C509 bytes (peer_cert) and the CA's public key (ca_pub_xy), which are
+     * stashed on session_info here so the callback can use them once the
+     * handshake reaches the peer's certificate (depth 0). If either is
+     * missing, no callback is registered and Mbed TLS's normal verification
+     * result stands (which will reject a Type-2 leaf cert as untrusted).
+     */
+    if(c509_is_native_type2(ks->ca_cert, ks->ca_cert_len) &&
+       ks->peer_cert != NULL && ks->ca_pub_xy != NULL) {
+      session_info->is_native_c509       = true;
+      session_info->native_peer_c509     = ks->peer_cert;
+      session_info->native_peer_c509_len = ks->peer_cert_len;
+      memcpy(session_info->native_ca_pub_xy, ks->ca_pub_xy, 64);
+      mbedtls_ssl_conf_verify(&session_info->conf,
+                              c509_native_verify_cb, session_info);
+      LOG_INFO("Native C509 Type-2: verify callback registered\n");
     }
   } else
 #endif /* COAP_DTLS_CONF_WITH_C509 */

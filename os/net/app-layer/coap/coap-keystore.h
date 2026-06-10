@@ -79,13 +79,26 @@ typedef struct {
 
 /**
  * The structure of a CoAP C509 certificate info.
+ *
+ * For DER-equivalent C509 (type 0/1/3): set ca_cert, own_cert, priv_key.
+ * For natively-signed C509 (type 2): additionally set peer_cert and ca_pub_xy
+ * so the DTLS layer can run a native chain check via the Mbed TLS verify callback.
  */
 typedef struct {
   const uint8_t *ca_cert;
   const uint8_t *own_cert;
+  const uint8_t *peer_cert;    /**< C509 bytes of the peer's cert, pre-provisioned
+                                     out of band (Type-2 only). Used by
+                                     c509_native_verify_cb() to run a native
+                                     chain check, since Mbed TLS cannot verify
+                                     the (CBOR-signed) reconstructed DER. */
   const uint8_t *priv_key;
+  const uint8_t *ca_pub_xy;   /**< CA trust anchor public key, raw 64-byte
+                                    x||y coordinates (Type-2 only). Passed to
+                                    c509_verify_chain() as the root of trust. */
   uint16_t ca_cert_len;
   uint16_t own_cert_len;
+  uint16_t peer_cert_len;     /**< Length in bytes of peer_cert. */
   uint16_t priv_key_len;
 } coap_keystore_c509_entry_t;
 

@@ -37,6 +37,15 @@
 /* EDHOC session watchdog.  100 s is conservative for both emulated and real HW. */
 #define EDHOC_CONF_TIMEOUT 100000
 
+/* RPL tuning for nRF52840 emulation.
+ * Relaxed MRHOF thresholds prevent the RPL DAG from being torn down during
+ * transient MAC NACKs that occur under emulated radio conditions.
+ * LPM_CONF_MAX_PM=1 keeps the radio responsive during DAG formation. */
+#define RPL_MRHOF_CONF_MAX_LINK_METRIC 16384
+#define RPL_MRHOF_CONF_MAX_PATH_COST   32768
+#define RPL_CONF_PARENT_TIMEOUT        30  /* no-op: unused by RPL Lite */
+#define LPM_CONF_MAX_PM                1
+
 #define LOG_CONF_LEVEL_EDHOC LOG_LEVEL_INFO
 
 #endif /* PROJECT_CONF_H_ */

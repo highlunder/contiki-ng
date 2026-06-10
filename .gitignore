@@ -44,3 +44,9 @@ COOJA.testlog
 summary
 tests/18-coap-lwm2m/Californium.properties
 tests/18-coap-lwm2m/leshan-server-demo*.jar
+
+# C509/EDHOC hardware test scratch artifacts (nRF52840-DK manual builds)
+*.nrf52840
+examples/c509-hw-test*/client_output_*.txt
+examples/c509-hw-test*/server_output_*.txt
+build-dk.sh

@@ -34,6 +34,7 @@
  */
 
 #include "edhoc-cred-c509.h"
+#include "edhoc-trust-store.h"
 #include "edhoc-config.h"
 #include "edhoc-error.h"
 #include "edhoc-key-storage.h"
@@ -278,14 +279,15 @@ edhoc_c509_validate_self_signed(const uint8_t *c509, size_t c509_len,
 
   /* Read the C509 type field (first CBOR item).
    *
-   * C509 types:
-   *   0, 1 — reconstructed from DER X.509 (the signature in the cert was
-   *           computed over the DER TBSCertificate, not the CBOR encoding).
-   *           Full signature verification requires DER reconstruction; as a
-   *           pragmatic check we verify structural integrity (public key
-   *           extraction succeeds) and accept the cert.
-   *   2, 3 — natively signed C509: signature is over SHA-256(CBOR TBS fields).
-   *           Full ECDSA verification is performed here. */
+   * C509 types (draft-ietf-cose-cbor-encoded-cert §3.1):
+   *   0, 1, 3 — DER-equivalent: the signature was computed over the DER
+   *             TBSCertificate, not the CBOR encoding.  Full verification
+   *             requires DER reconstruction; as a pragmatic check we verify
+   *             structural integrity (public key extraction succeeds) and
+   *             accept the cert.
+   *   2       — natively signed C509: signature is ECDSA-P256 over
+   *             SHA-256(CBOR TBS, fields 0–9).  Full ECDSA verification is
+   *             performed here using the cert's own public key. */
   cbor_reader_state_t r;
   cbor_init_reader(&r, c509, c509_len);
 
@@ -362,4 +364,133 @@ edhoc_c509_validate_self_signed(const uint8_t *c509, size_t c509_len,
 
   LOG_INFO("validate_self_signed: native C509 type-%d cert OK\n", cert_type);
   return EDHOC_SUCCESS;
+}
+/*---------------------------------------------------------------------------*/
+/*
+ * CA-issued chain validation (draft-ietf-cose-cbor-encoded-cert §3.1, Type 2).
+ *
+ * Unlike edhoc_c509_validate_self_signed() (which checks the cert's
+ * signature against its OWN embedded public key, i.e. issuer == subject),
+ * this function checks the cert's signature against the public keys of the
+ * trust anchors registered via edhoc_set_c509_trust_store() (i.e. it
+ * assumes issuer != subject — the cert was issued by a separate CA).
+ *
+ * This implementation does not parse the cert's "issuer" field (field 3)
+ * to look up a specific CA by name/identifier; instead it performs a
+ * brute-force search, trying the signature against every trust anchor in
+ * the store and accepting the cert if ANY anchor verifies it. For the
+ * small, statically-configured trust stores used in this workspace's tests
+ * (typically a single CA) this is equivalent to an issuer-based lookup, but
+ * it does not by itself confirm that the "issuer" field actually names the
+ * anchor that verified the signature.
+ *
+ * Steps:
+ *   1. Read the cert type (field 0). Types 0/1/3 are DER-equivalent and
+ *      only get the structural check (see edhoc_c509_extract_pub_key());
+ *      full DER-based signature verification is out of scope here.
+ *   2. For Type 2 (natively signed), recompute SHA-256 over the raw CBOR
+ *      TBS bytes (fields 0-9) -- this is the "c509_verify_chain"-equivalent
+ *      hash step.
+ *   3. Read the ECDSA signature from field 10 and verify it
+ *      (ecc_verify_hash(), the "c509_verify_signature"-equivalent step)
+ *      against each trust anchor's public key (anchor->ecc.pub.{x,y}) in
+ *      turn, until one succeeds or the store is exhausted.
+ */
+edhoc_error_t
+edhoc_c509_validate_chain(const uint8_t *c509, size_t c509_len, void *app_ctx)
+{
+  (void)app_ctx;
+
+  if(c509 == NULL || c509_len == 0) {
+    return EDHOC_ERR_NULL_POINTER;
+  }
+
+  const edhoc_trust_store_t *store = edhoc_get_c509_trust_store();
+  if(store == NULL) {
+    LOG_ERR("validate_chain: trust store not set\n");
+    return EDHOC_ERR_NULL_POINTER;
+  }
+
+  cbor_reader_state_t r;
+  cbor_init_reader(&r, c509, c509_len);
+  if(c509_len > 0 && (c509[0] >> 5) == 4) {
+    cbor_read_array(&r);
+  }
+
+  int64_t cert_type_val = 0;
+  if(cbor_read_signed(&r, &cert_type_val) == CBOR_SIZE_NONE) {
+    LOG_ERR("validate_chain: cannot read cert type\n");
+    return EDHOC_ERR_CERTIFICATE_REJECTED;
+  }
+  int cert_type = (int)cert_type_val;
+
+  /* Structural check: extraction succeeds only if CBOR fields 0–8 parse
+   * correctly.  The resulting peer_pk is not used within this function;
+   * the EDHOC stack uses the cert's embedded public key separately. */
+  cose_key_t peer_pk;
+  edhoc_error_t err = edhoc_c509_extract_pub_key(c509, c509_len, &peer_pk);
+  if(err != EDHOC_SUCCESS) {
+    LOG_ERR("validate_chain: cannot extract peer public key (%d)\n", err);
+    return EDHOC_ERR_CERTIFICATE_REJECTED;
+  }
+
+  if(cert_type != 2) {
+    /* Types 0, 1, 3 — DER-equivalent.  Structural check passed above. */
+    LOG_INFO("validate_chain: type-%d (DER-equiv) — structural check OK\n",
+             cert_type);
+    return EDHOC_SUCCESS;
+  }
+
+  /* Native Type 2: measure TBS extent (fields 0–9 of the raw cert bytes).
+   * Re-init the reader so tbs_start lands at field 0 — the first reader and
+   * edhoc_c509_extract_pub_key have both already advanced past field 0. */
+  cbor_init_reader(&r, c509, c509_len);
+  if(c509_len > 0 && (c509[0] >> 5) == 4) {
+    cbor_read_array(&r);
+  }
+  const uint8_t *tbs_start = cbor_get_position(&r);
+
+  /* Skip over fields 0-9 (type, serial, issuer_alg, issuer, validity x2,
+   * subject, pk_alg, subject_pk, extensions) without decoding their
+   * contents — only the byte range tbs_start..tbs_end is needed for the
+   * hash. Field 10 (the signature itself) is read separately below. */
+  for(int i = 0; i < 10; i++) {
+    if(!cbor_skip_next(&r)) {
+      LOG_ERR("validate_chain: failed to skip TBS field %d\n", i);
+      return EDHOC_ERR_CERTIFICATE_REJECTED;
+    }
+  }
+  const uint8_t *tbs_end = cbor_get_position(&r);
+  size_t tbs_len = (size_t)(tbs_end - tbs_start);
+
+  /* Field 10: signature bstr (64 bytes: r||s for P-256). */
+  size_t sig_len;
+  const uint8_t *sig = cbor_read_data(&r, &sig_len);
+  if(sig == NULL || sig_len != 2 * ECC_KEY_LEN) {
+    LOG_ERR("validate_chain: bad sig length %zu\n", sig ? sig_len : 0);
+    return EDHOC_ERR_CERTIFICATE_REJECTED;
+  }
+
+  /* Hash of the TBS bytes is what each candidate CA signature is checked
+   * against (see ecc_verify_hash() calls below). */
+  uint8_t hash[SHA_256_DIGEST_LENGTH];
+  SHA_256.hash(tbs_start, tbs_len, hash);
+
+  /* Try each trust anchor in turn: the cert is accepted as soon as one
+   * anchor's public key successfully verifies the ECDSA signature over
+   * the TBS hash. */
+  for(size_t i = 0; i < store->count; i++) {
+    const cose_key_t *anchor = &store->anchors[i];
+    uint8_t anchor_xy[2 * ECC_KEY_LEN];
+    memcpy(anchor_xy,               anchor->ecc.pub.x, ECC_KEY_LEN);
+    memcpy(anchor_xy + ECC_KEY_LEN, anchor->ecc.pub.y, ECC_KEY_LEN);
+
+    if(ecc_verify_hash(EDHOC_CURVE_P256, hash, anchor_xy, sig)) {
+      LOG_INFO("validate_chain: cert verified by trust anchor %zu\n", i);
+      return EDHOC_SUCCESS;
+    }
+  }
+
+  LOG_ERR("validate_chain: cert not verified by any trust anchor\n");
+  return EDHOC_ERR_CERTIFICATE_REJECTED;
 }

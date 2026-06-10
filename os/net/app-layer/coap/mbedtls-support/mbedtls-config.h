@@ -100,6 +100,10 @@
 #define MBEDTLS_CCM_C
 #define MBEDTLS_SHA256_C
 #define MBEDTLS_MD_CAN_SHA256
+/* Needed for Ed25519 signature verification (EdDSA uses SHA-512 internally),
+ * used by the C509 native Type-2 chain validator (validator.c /
+ * ed25519_verify.c). */
+#define MBEDTLS_SHA512_C
 #define MBEDTLS_MD_C
 #define MBEDTLS_CIPHER_C
 

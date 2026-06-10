@@ -117,8 +117,21 @@ typedef struct coap_dtls_session_info {
   mbedtls_pk_context pkey; /* Our (Client/Server) private key */
 #endif /* COAP_DTLS_CONF_WITH_CERT */
 #ifdef COAP_DTLS_CONF_WITH_C509
-  uint8_t *ca_der; /* Converted CA DER */
-  uint8_t *own_der; /* Converted Own DER */
+  uint8_t *ca_der;                   /* Converted CA DER */
+  uint8_t *own_der;                  /* Converted Own DER */
+  bool is_native_c509;               /* True when cert type is 2 (natively signed);
+                                         set in setup_session() and consulted by
+                                         c509_native_verify_cb() to decide whether
+                                         to run the native chain check. */
+  const uint8_t *native_peer_c509;   /* Peer cert in raw C509 CBOR form, copied
+                                         (by pointer) from the keystore entry's
+                                         peer_cert for use by
+                                         c509_native_verify_cb(). */
+  size_t native_peer_c509_len;       /* Length in bytes of native_peer_c509. */
+  uint8_t native_ca_pub_xy[64];      /* CA trust anchor: 32-byte x || 32-byte y,
+                                         copied from the keystore entry's
+                                         ca_pub_xy for use by
+                                         c509_native_verify_cb(). */
 #endif /* COAP_DTLS_CONF_WITH_C509 */
 #ifdef COAP_DTLS_CONF_WITH_SERVER
   bool in_use; /* Determines if this server session is in use by a client. */
