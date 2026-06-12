@@ -66,6 +66,8 @@ get_curve(uint8_t curve_id)
   switch(curve_id) {
   case EDHOC_CURVE_P256:
     return &ecc_curve_p_256;
+  case EDHOC_CURVE_BRAINPOOLP256R1:
+    return &ecc_curve_brainpool_p_256;
   default:
     LOG_ERR("Unsupported ECDH curve id %u\n", curve_id);
     return NULL;

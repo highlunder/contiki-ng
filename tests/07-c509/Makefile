@@ -4,6 +4,9 @@ all: $(CONTIKI_PROJECT)
 # Include the C509 service
 MODULES += os/services/c509
 
+# c509-csr-build.c uses uECC_sign_deterministic() for x509_csr_sign()
+MODULES += os/services/ecc
+
 # Enabling CoAP with DTLS is the standard way to get MbedTLS integrated correctly in Contiki-NG
 MODULES += os/net/app-layer/coap
 MAKE_WITH_DTLS = 1

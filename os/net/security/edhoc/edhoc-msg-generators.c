@@ -543,6 +543,8 @@ edhoc_generate_message_3(edhoc_context_t *ctx, const uint8_t *auth_data, size_t 
   memcpy(ctx->buffers.msg_tx, ctx->state.cid_rx, ctx->state.cid_rx_len);
   ctx->buffers.tx_sz = ciphertext_sz + ctx->state.cid_rx_len;
 
+  LOG_INFO("MSG3 sz: %d\n", (int)ctx->buffers.tx_sz);
+
   /* Compute TH_4 WIP */
   edhoc_generate_transcript_hash_4(ctx, ctx->buffers.cred_x, ctx->buffers.cred_x_sz,
                 ctx->buffers.plaintext, ctx->buffers.plaintext_sz);

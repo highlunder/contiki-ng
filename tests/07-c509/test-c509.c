@@ -1,8 +1,13 @@
 #include "contiki.h"
 #include "c509.h"
+#include "c509_registry.h"
+#include "crypto.h"
 #include "x509_encode.h"
+#include "c509-csr-build.h"
+#include "c509-ca.h"
 #include "validity.h"
 #include "ed25519_verify.h"
+#include "c509-chain.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -272,6 +277,224 @@ static int run_csr_test(const char *name, const uint8_t *cbor, size_t cbor_len,
     return 0;
 }
 
+/* Encodes a 2-cert CertificateChain from c509_secp256r1 + c509_secp384r1,
+ * decodes it back, and checks that both elements round-trip byte-exact. */
+static int run_chain_test(void) {
+    static uint8_t chain_buf[1024];
+    c509_chain_entry_t entries[2];
+    c509_chain_entry_t decoded[4];
+    size_t chain_len, n;
+
+    printf("--- Test: certificate-chain encode/decode ---\n");
+
+    entries[0].ptr = c509_secp256r1;
+    entries[0].len = sizeof(c509_secp256r1);
+    entries[1].ptr = c509_secp384r1;
+    entries[1].len = sizeof(c509_secp384r1);
+
+    chain_len = c509_chain_encode(chain_buf, sizeof(chain_buf), entries, 2);
+    if(chain_len == 0) {
+        printf("FAILED: chain encoding error\n");
+        return -1;
+    }
+
+    if(c509_chain_decode(chain_buf, chain_len, decoded, 4, &n) != 0) {
+        printf("FAILED: chain decoding error\n");
+        return -1;
+    }
+
+    if(n != 2) {
+        printf("FAILED: expected 2 chain entries, got %zu\n", n);
+        return -1;
+    }
+
+    if(decoded[0].len != entries[0].len ||
+       memcmp(decoded[0].ptr, entries[0].ptr, entries[0].len) != 0) {
+        printf("FAILED: chain entry 0 mismatch\n");
+        return -1;
+    }
+
+    if(decoded[1].len != entries[1].len ||
+       memcmp(decoded[1].ptr, entries[1].ptr, entries[1].len) != 0) {
+        printf("FAILED: chain entry 1 mismatch\n");
+        return -1;
+    }
+
+    printf("SUCCESS: encoded %zu bytes, 2 entries round-trip exact\n", chain_len);
+    return 0;
+}
+
+/* ── New: Phase 2 CSR builder/signer (LICE/C509 enrollment plan) ──────── */
+
+/* Private key d for the secp256r1 keypair embedded in c509_csr_p256's pkKey
+ * field (= c509_native_client_priv_key_der in edhoc-cred-c509-native-test.h). */
+static const uint8_t csr_priv_key_d[] = {
+  0x0c, 0x19, 0x83, 0x9c, 0xb7, 0xf7, 0x8b, 0xc9, 0x98, 0x0b, 0x5e, 0x07,
+  0x8f, 0x43, 0x78, 0xd3, 0xf3, 0x51, 0x94, 0x11, 0x15, 0xea, 0xbc, 0x1b,
+  0xe4, 0xcd, 0xac, 0x51, 0x0f, 0x5a, 0x46, 0xec
+};
+
+/* Builds and signs a C509 Type-3 CSR with x509_encode_csr_build()/
+ * x509_csr_sign(), cross-checks the resulting fields 0-4 (type, sigAlg,
+ * subject, pkAlg, pkKey) against the c509_csr_p256 reference vector,
+ * verifies the signature with c509_verify_signature(), and confirms the
+ * built CSR decodes to a valid PKCS#10 DER CertificationRequest. */
+static int run_csr_build_sign_test(void) {
+    static uint8_t csr_buf[256];
+    static uint8_t der_buf[1024];
+    size_t offset = 0, tbs_len = 0, der_len = 0;
+    const uint8_t *subject = c509_csr_p256 + 3;
+    const size_t subject_len = 10; /* "ecdsa-p256" */
+    const uint8_t *pk_key = c509_csr_p256 + 16;
+    const size_t pk_key_len = 65;
+
+    printf("--- Test: csr-build-and-sign ---\n");
+
+    if(x509_encode_csr_build(csr_buf, sizeof(csr_buf), &offset,
+                              subject, subject_len,
+                              C509_PK_SECP256R1,
+                              pk_key, pk_key_len, &tbs_len) != 0) {
+        printf("FAILED: csr build error\n");
+        return -1;
+    }
+
+    if(memcmp(csr_buf, c509_csr_p256, 81) != 0) {
+        printf("FAILED: built CSR fields 0-4 mismatch reference vector\n");
+        return -1;
+    }
+
+    if(x509_csr_sign(csr_buf, tbs_len, offset, csr_priv_key_d, sizeof(csr_priv_key_d)) != 0) {
+        printf("FAILED: csr signing error\n");
+        return -1;
+    }
+
+    c509_cert_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.tbs_ptr = csr_buf;
+    fake.tbs_len = tbs_len;
+    fake.issuer_alg.val = C509_SIG_ECDSA_SHA256;
+    fake.signature.val = 64;
+    fake.signature.ptr = csr_buf + (offset - 64);
+
+    if(c509_verify_signature(&fake, pk_key, pk_key_len) != CRYPTO_ERR_NONE) {
+        printf("FAILED: signature verification failed\n");
+        return -1;
+    }
+
+    if(x509_encode_csr(der_buf, sizeof(der_buf), &der_len, csr_buf, offset) != 0) {
+        printf("FAILED: PKCS#10 DER conversion error\n");
+        return -1;
+    }
+
+    printf("SUCCESS: built+signed CSR (%zu bytes), fields 0-4 match reference, "
+           "signature verified, decoded to %zu-byte PKCS#10 DER\n", offset, der_len);
+    return 0;
+}
+
+/* ── New: Phase 3.1 CA-side issuance (LICE/C509 enrollment plan) ───────── */
+
+/* CA private key d (= EDHOC-Test-CA's signing key, see
+ * CBOR-certificates/c509_demo_impl/src/generate.rs CA_PRIVATE_KEY).
+ * SECURITY NOTICE: Test credentials only, publicly known. */
+static const uint8_t ca_priv_key_d[] = {
+  0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57,
+  0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f,
+  0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67,
+  0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f
+};
+
+/* CA public key, uncompressed EC point (0x04 || X || Y), matching
+ * C509_NATIVE_CA_PUB_X/Y in edhoc-cred-c509-native-test.h. */
+static const uint8_t ca_pub_key[] = {
+  0x04,
+  0xb7, 0x9e, 0x3d, 0x7d, 0xcf, 0xa3, 0xf1, 0x11,
+  0x81, 0xf4, 0x6f, 0x24, 0x7a, 0xf5, 0x6c, 0x06,
+  0x7b, 0x0e, 0xf5, 0x32, 0x50, 0xfc, 0x18, 0xe9,
+  0xbe, 0x82, 0xc2, 0x3e, 0x6f, 0x83, 0x3f, 0xee,
+  0x89, 0x24, 0x70, 0x41, 0x63, 0x7a, 0x86, 0x44,
+  0x2f, 0x45, 0x8b, 0x78, 0xa5, 0xc4, 0x39, 0x60,
+  0xbb, 0xac, 0xcc, 0x3e, 0xb1, 0x4c, 0x89, 0xe5,
+  0xae, 0x9a, 0xda, 0xf4, 0xf7, 0x94, 0x55, 0x30
+};
+
+static const uint8_t ca_issuer_name[] = "EDHOC-Test-CA";
+static const uint8_t issued_serial[] = { 0x05 };
+
+/* Takes a Phase-2 CSR, verifies its self-signature (proof-of-possession),
+ * issues a new Type-2 cert via c509_ca_issue_cert(), and verifies the
+ * issued cert's signature against the CA's public key. */
+static int run_ca_issue_test(void) {
+    static uint8_t csr_buf[256];
+    static uint8_t cert_buf[256];
+    size_t csr_offset = 0, csr_tbs_len = 0, cert_offset = 0;
+    const uint8_t *subject = c509_csr_p256 + 3;
+    const size_t subject_len = 10; /* "ecdsa-p256" */
+    const uint8_t *pk_key = c509_csr_p256 + 16;
+    const size_t pk_key_len = 65;
+
+    printf("--- Test: ca-issue-cert ---\n");
+
+    /* 1. Build+sign the Phase-2 CSR. */
+    if(x509_encode_csr_build(csr_buf, sizeof(csr_buf), &csr_offset,
+                              subject, subject_len,
+                              C509_PK_SECP256R1,
+                              pk_key, pk_key_len, &csr_tbs_len) != 0 ||
+       x509_csr_sign(csr_buf, csr_tbs_len, csr_offset,
+                      csr_priv_key_d, sizeof(csr_priv_key_d)) != 0) {
+        printf("FAILED: csr build/sign error\n");
+        return -1;
+    }
+
+    /* 2. Verify the CSR's self-signature (proof-of-possession). */
+    {
+        c509_cert_t csr_fake;
+        memset(&csr_fake, 0, sizeof(csr_fake));
+        csr_fake.tbs_ptr = csr_buf;
+        csr_fake.tbs_len = csr_tbs_len;
+        csr_fake.issuer_alg.val = C509_SIG_ECDSA_SHA256;
+        csr_fake.signature.val = 64;
+        csr_fake.signature.ptr = csr_buf + (csr_offset - 64);
+
+        if(c509_verify_signature(&csr_fake, pk_key, pk_key_len) != CRYPTO_ERR_NONE) {
+            printf("FAILED: CSR proof-of-possession signature verification failed\n");
+            return -1;
+        }
+    }
+
+    /* 3. CA issues a new Type-2 cert for the CSR's subject/key. */
+    if(c509_ca_issue_cert(cert_buf, sizeof(cert_buf), &cert_offset,
+                           issued_serial, sizeof(issued_serial),
+                           ca_issuer_name, sizeof(ca_issuer_name) - 1,
+                           1700000000, 2000000000,
+                           subject, subject_len,
+                           C509_PK_SECP256R1,
+                           pk_key, pk_key_len,
+                           ca_priv_key_d, sizeof(ca_priv_key_d)) != 0) {
+        printf("FAILED: c509_ca_issue_cert error\n");
+        return -1;
+    }
+
+    /* 4. Verify the issued cert's signature against the CA's public key. */
+    {
+        c509_cert_t issued;
+        memset(&issued, 0, sizeof(issued));
+        issued.tbs_ptr = cert_buf;
+        issued.tbs_len = cert_offset - 2 - 64; /* strip sigValue header (0x58 0x40) + 64-byte sig */
+        issued.issuer_alg.val = C509_SIG_ECDSA_SHA256;
+        issued.signature.val = 64;
+        issued.signature.ptr = cert_buf + (cert_offset - 64);
+
+        if(c509_verify_signature(&issued, ca_pub_key, sizeof(ca_pub_key)) != CRYPTO_ERR_NONE) {
+            printf("FAILED: issued cert signature verification (CA key) failed\n");
+            return -1;
+        }
+    }
+
+    printf("SUCCESS: issued %zu-byte Type-2 cert for CSR subject, "
+           "PoP verified, issued-cert signature verified against CA key\n", cert_offset);
+    return 0;
+}
+
 PROCESS(test_c509_process, "C509 Test Process");
 AUTOSTART_PROCESSES(&test_c509_process);
 
@@ -306,6 +529,15 @@ PROCESS_THREAD(test_c509_process, ev, data)
 
   /* Ed25519 signature verification */
   failures += run_ed25519_verify_tests();
+
+  /* CertificateChain encode/decode (Phase 1 of LICE/C509 enrollment plan) */
+  failures += (run_chain_test() != 0);
+
+  /* CSR build+sign round-trip (Phase 2 of LICE/C509 enrollment plan) */
+  failures += (run_csr_build_sign_test() != 0);
+
+  /* CA-side issuance from a CSR (Phase 3.1 of LICE/C509 enrollment plan) */
+  failures += (run_ca_issue_test() != 0);
 
   if(failures == 0) {
     printf("C509: All Tests Finished OK\n");
