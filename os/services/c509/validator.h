@@ -34,14 +34,18 @@ typedef enum {
  * @param chain_len Number of certificates in the chain.
  * @param root_pk The trusted root public key.
  * @param root_pk_len Length of the root public key.
+ * @param root_pk_alg The root key's C509 public key algorithm ID (e.g.
+ *                     C509_PK_SECP256R1, C509_PK_BRAINPOOLP256R1); 0 or
+ *                     unrecognized defaults to secp256r1.
  * @param current_time Current Unix timestamp for validity checks.
  * @return VALIDATOR_OK on success, or an error code.
  */
-validator_error_t c509_verify_chain(const uint8_t **chain, 
-                                   const size_t *chain_lens, 
+validator_error_t c509_verify_chain(const uint8_t **chain,
+                                   const size_t *chain_lens,
                                    size_t chain_count,
-                                   const uint8_t *root_pk, 
+                                   const uint8_t *root_pk,
                                    size_t root_pk_len,
+                                   int64_t root_pk_alg,
                                    int64_t current_time);
 
 #endif // C509_VALIDATOR_H
