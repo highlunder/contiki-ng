@@ -2191,3 +2191,8 @@ int x509_encode_csr(uint8_t *buffer, size_t size, size_t *offset,
     memcpy(buffer + *offset, outer, outer_off); *offset += outer_off;
     return 0;
 }
+
+/* x509_encode_csr_build() / x509_csr_sign() now live in c509-csr-build.c —
+ * a self-contained module (no os/services/c509/cbor.h or c509.h dependency)
+ * so it can be linked into EDHOC/OSCORE apps without conflicting with
+ * os/lib/cbor.h. See c509-csr-build.h. */

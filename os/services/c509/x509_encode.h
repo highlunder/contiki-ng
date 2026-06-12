@@ -91,4 +91,9 @@ int x509_encode_full_cert(uint8_t *buffer, size_t size, size_t *offset, const c5
 int x509_encode_csr(uint8_t *buffer, size_t size, size_t *offset,
                     const uint8_t *cbor, size_t cbor_len);
 
+/* x509_encode_csr_build() / x509_csr_sign() — building and self-signing a
+ * C509 Type-3 CSR — now live in c509-csr-build.h/.c, a self-contained
+ * module with no os/services/c509/cbor.h or c509.h dependency, so it can be
+ * linked into EDHOC/OSCORE apps without conflicting with os/lib/cbor.h. */
+
 #endif // C509_X509_ENCODE_H
