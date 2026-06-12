@@ -124,6 +124,53 @@ ecc_curve_t ecc_curve_p_192 = {
   .y                           = nist_p_192_y
 };
 
+/* [RFC 5639 brainpoolP256r1]. Unlike the NIST curves above, a != -3, so this
+ * curve cannot rely on the optimized a == -3 doubling formulas; see
+ * os/net/security/micro-ecc/curve-specific.inc (double_jacobian_brainpoolP256r1). */
+static const uint32_t brainpool_p_256_p[] = {
+  0x1F6E5377, 0x2013481D, 0xD5262028, 0x6E3BF623,
+  0x9D838D72, 0x3E660A90, 0xA1EEA9BC, 0xA9FB57DB
+};
+static const uint32_t brainpool_p_256_p_plus_one[] = {
+  0x1F6E5378, 0x2013481D, 0xD5262028, 0x6E3BF623,
+  0x9D838D72, 0x3E660A90, 0xA1EEA9BC, 0xA9FB57DB
+};
+static const uint32_t brainpool_p_256_n[] = {
+  0x974856A7, 0x901E0E82, 0xB561A6F7, 0x8C397AA3,
+  0x9D838D71, 0x3E660A90, 0xA1EEA9BC, 0xA9FB57DB
+};
+static const uint32_t brainpool_p_256_a[] = {
+  0xF330B5D9, 0xE94A4B44, 0x26DC5C6C, 0xFB8055C1,
+  0x417AFFE7, 0xEEF67530, 0xFC2C3057, 0x7D5A0975
+};
+static const uint32_t brainpool_p_256_b[] = {
+  0xFF8C07B6, 0x6BCCDC18, 0x5CF7E1CE, 0x95841629,
+  0xBBD77CBF, 0xF330B5D9, 0xE94A4B44, 0x26DC5C6C
+};
+static const uint32_t brainpool_p_256_x[] = {
+  0x9ACE3262, 0x3A4453BD, 0xE3BD23C2, 0xB9DE27E1,
+  0xFC81B7AF, 0x2C4B482F, 0xCB7E57CB, 0x8BD2AEB9
+};
+static const uint32_t brainpool_p_256_y[] = {
+  0x2F046997, 0x5C1D54C7, 0x2DED8E54, 0xC2774513,
+  0x14611DC9, 0x97F8461A, 0xC3DAC4FD, 0x547EF835
+};
+
+ecc_curve_t ecc_curve_brainpool_p_256 = {
+  .name                        = "brainpoolP256r1",
+  .words                       = 8,
+  .bytes                       = 32,
+  .p                           = brainpool_p_256_p,
+  .p_plus_one                  = brainpool_p_256_p_plus_one,
+  .binary_length_of_p_plus_one = 256,
+  .n                           = brainpool_p_256_n,
+  .binary_length_of_n          = 256,
+  .a                           = brainpool_p_256_a,
+  .b                           = brainpool_p_256_b,
+  .x                           = brainpool_p_256_x,
+  .y                           = brainpool_p_256_y
+};
+
 /**
  * @}
  */

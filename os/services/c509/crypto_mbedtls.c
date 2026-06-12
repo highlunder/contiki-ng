@@ -20,8 +20,8 @@
  *    compressed public key (no hashing performed here — Ed25519 hashes the
  *    message internally).
  *  - C509_SIG_ECDSA_SHA256: SHA-256 over the TBS bytes followed by
- *    mbedtls_ecdsa_verify() on curve secp256r1, with the 64-byte signature
- *    split into r||s (each 32 bytes).
+ *    mbedtls_ecdsa_verify() on the curve identified by issuer_pk_alg (see
+ *    below), with the 64-byte signature split into r||s (each 32 bytes).
  *  - All other algorithms: CRYPTO_ERR_UNSUPPORTED_ALG.
  *
  * In both supported cases, the data that was signed is
@@ -33,6 +33,9 @@
  * @param issuer_pk     Issuer's public key bytes (32-byte compressed Ed25519
  *                      point, or 64/65-byte EC point for ECDSA).
  * @param issuer_pk_len Length of issuer_pk in bytes.
+ * @param issuer_pk_alg Issuer's C509 public key algorithm ID. For ECDSA,
+ *                      selects the EC group (secp256r1, brainpoolP256r1,
+ *                      ...); 0 or unrecognized defaults to secp256r1.
  * @return CRYPTO_ERR_NONE if the signature is valid, CRYPTO_ERR_SIG_INVALID
  *         if it is well-formed but does not verify, CRYPTO_ERR_MALFORMED if
  *         the signature/key lengths are inconsistent with the algorithm,
@@ -41,7 +44,8 @@
  */
 crypto_error_t c509_verify_signature(const c509_cert_t *cert,
                                      const uint8_t *issuer_pk,
-                                     size_t issuer_pk_len) {
+                                     size_t issuer_pk_len,
+                                     int64_t issuer_pk_alg) {
     if (cert->issuer_alg.val == C509_SIG_ED25519) {
         if (cert->signature.val != 64 || issuer_pk_len != 32)
             return CRYPTO_ERR_MALFORMED;
@@ -54,11 +58,22 @@ crypto_error_t c509_verify_signature(const c509_cert_t *cert,
         return CRYPTO_ERR_UNSUPPORTED_ALG;
     }
 
+    mbedtls_ecp_group_id gid;
+    switch (issuer_pk_alg) {
+        case C509_PK_SECP384R1:       gid = MBEDTLS_ECP_DP_SECP384R1; break;
+        case C509_PK_SECP521R1:       gid = MBEDTLS_ECP_DP_SECP521R1; break;
+        case C509_PK_BRAINPOOLP256R1: gid = MBEDTLS_ECP_DP_BP256R1;   break;
+        case C509_PK_BRAINPOOLP384R1: gid = MBEDTLS_ECP_DP_BP384R1;   break;
+        case C509_PK_BRAINPOOLP512R1: gid = MBEDTLS_ECP_DP_BP512R1;   break;
+        case C509_PK_SECP256R1:
+        default:                      gid = MBEDTLS_ECP_DP_SECP256R1; break;
+    }
+
     int ret;
     mbedtls_ecdsa_context ecdsa;
     mbedtls_ecdsa_init(&ecdsa);
 
-    ret = mbedtls_ecp_group_load(&ecdsa.MBEDTLS_PRIVATE(grp), MBEDTLS_ECP_DP_SECP256R1);
+    ret = mbedtls_ecp_group_load(&ecdsa.MBEDTLS_PRIVATE(grp), gid);
     if (ret != 0) { mbedtls_ecdsa_free(&ecdsa); return CRYPTO_ERR_INTERNAL; }
 
     ret = mbedtls_ecp_point_read_binary(&ecdsa.MBEDTLS_PRIVATE(grp),
@@ -73,6 +88,17 @@ crypto_error_t c509_verify_signature(const c509_cert_t *cert,
             ret = mbedtls_ecp_point_read_binary(&ecdsa.MBEDTLS_PRIVATE(grp),
                                                 &ecdsa.MBEDTLS_PRIVATE(Q),
                                                 pk_fixed, 65);
+        } else if (issuer_pk_len == 33 &&
+                   (issuer_pk[0] == 0xFE || issuer_pk[0] == 0xFD)) {
+            /* C509-compressed point (0xFE/0xFD prefix instead of SEC1's
+             * 0x02/0x03), e.g. an intermediate CA's subject_pk propagated
+             * directly from the parsed certificate by c509_verify_chain(). */
+            uint8_t pk_fixed33[33];
+            memcpy(pk_fixed33, issuer_pk, 33);
+            pk_fixed33[0] = (issuer_pk[0] == 0xFE) ? 0x02 : 0x03;
+            ret = mbedtls_ecp_point_read_binary(&ecdsa.MBEDTLS_PRIVATE(grp),
+                                                &ecdsa.MBEDTLS_PRIVATE(Q),
+                                                pk_fixed33, 33);
         }
         if (ret != 0) { mbedtls_ecdsa_free(&ecdsa); return CRYPTO_ERR_INTERNAL; }
     }

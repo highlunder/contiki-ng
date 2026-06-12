@@ -203,7 +203,7 @@ cose_sign1_sign(int8_t alg, const uint8_t *private_key,
   uint8_t hash[HASH_LEN];
   sha_256_hash(sig_struct, sig_struct_len, hash);
 
-  if(!ecc_sign_hash(EDHOC_CURVE_P256, hash, private_key, signature)) {
+  if(!ecc_sign_hash(EDHOC_SIGNATURE_CURVE, hash, private_key, signature)) {
     LOG_ERR("COSE_Sign1 signature generation failed\n");
     return 0;
   }
@@ -241,7 +241,7 @@ cose_sign1_verify(int8_t alg, const uint8_t *public_key,
   uint8_t hash[HASH_LEN];
   sha_256_hash(sig_struct, sig_struct_len, hash);
 
-  if(!ecc_verify_hash(EDHOC_CURVE_P256, hash, public_key, signature)) {
+  if(!ecc_verify_hash(EDHOC_SIGNATURE_CURVE, hash, public_key, signature)) {
     LOG_ERR("COSE_Sign1 signature verification failed\n");
     return false;
   }

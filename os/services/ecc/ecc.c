@@ -75,6 +75,10 @@ ecc_enable(const ecc_curve_t *c)
     uecc_curve = uECC_secp256r1();
   } else if(c == &ecc_curve_p_192) {
     uecc_curve = uECC_secp192r1();
+#if uECC_SUPPORTS_brainpoolP256r1
+  } else if(c == &ecc_curve_brainpool_p_256) {
+    uecc_curve = uECC_brainpoolP256r1();
+#endif
   } else {
     process_mutex_unlock(&mutex);
     return 1;

@@ -100,6 +100,12 @@ extern ecc_curve_t ecc_curve_p_256;
 extern ecc_curve_t ecc_curve_p_192;
 #define ECC_CURVE_P_192_SIZE (24)
 
+/*
+ * brainpoolP256r1 (RFC 5639)
+ */
+extern ecc_curve_t ecc_curve_brainpool_p_256;
+#define ECC_CURVE_BRAINPOOL_P_256_SIZE (32)
+
 #endif /* ECC_CURVE_H_ */
 
 /**

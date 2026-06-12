@@ -179,12 +179,22 @@ edhoc_error_t edhoc_c509_validate_self_signed(const uint8_t *c509,
  * - **Type 0, 1, 3** (DER-equivalent): structural check only (public key
  *   extraction succeeds), as for edhoc_c509_validate_self_signed().
  *
- * \param c509     Peer's C509 certificate bytes (as received in CRED_x).
+ * **Chain support (c5c, chain-length >= 1):** if \p c509 is a CBOR array of
+ * cert byte strings, [bstr<leaf>, bstr<issuer_1>, ..., bstr<issuer_N>]
+ * (as produced for CRED_x by edhoc_c509_generate_id_cred_c5c() when the
+ * key's c509_data is itself such an array), each cert[i] is verified
+ * against cert[i+1]'s embedded public key, and the last (most-root) cert
+ * is verified against the trust store as above. The leaf's public key must
+ * also extract successfully (it is used separately by the EDHOC stack for
+ * the peer's auth signature/MAC).
+ *
+ * \param c509     Peer's C509 certificate bytes (as received in CRED_x),
+ *                  either a single cert or a CBOR array of certs (chain).
  * \param c509_len Length of \p c509 in bytes.
  * \param app_ctx  Ignored (the global trust store is used).  Pass NULL.
  *
- * \return EDHOC_SUCCESS if the cert is valid,
- *         EDHOC_ERR_CERTIFICATE_REJECTED if no anchor verified it,
+ * \return EDHOC_SUCCESS if the cert (or chain) is valid,
+ *         EDHOC_ERR_CERTIFICATE_REJECTED if validation failed,
  *         EDHOC_ERR_NULL_POINTER if the trust store was never set.
  */
 edhoc_error_t edhoc_c509_validate_chain(const uint8_t *c509,

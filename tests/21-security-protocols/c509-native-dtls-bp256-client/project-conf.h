@@ -1,0 +1,31 @@
+#ifndef PROJECT_CONF_H_
+#define PROJECT_CONF_H_
+
+/* ---- Logging ---- */
+#define LOG_CONF_LEVEL_APP  LOG_LEVEL_INFO
+#define LOG_CONF_LEVEL_DTLS LOG_LEVEL_DBG
+
+/* ---- DTLS / C509 ---- */
+#define WITH_DTLS                  1
+#define COAP_DTLS_CONF_WITH_CERT   1
+#define COAP_DTLS_CONF_WITH_C509   1
+#define COAP_DTLS_CONF_WITH_CLIENT 1
+#define COAP_DTLS_CONF_WITH_BRAINPOOLP256R1 1
+
+/* ---- Heap ---- */
+#define HEAPMEM_CONF_ARENA_SIZE (64 * 1024)
+
+/* ---- Mbed TLS ---- */
+#define MBEDTLS_SSL_MAX_CONTENT_LEN     4096
+#define MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED
+
+/* ---- CoAP ---- */
+#define COAP_MAX_CHUNK_SIZE 300
+
+/* ---- CSPRNG ---- */
+#define CSPRNG_CONF_ENABLED 1
+
+/* ---- 6LoWPAN ---- */
+#define QUEUEBUF_CONF_NUM 16
+
+#endif /* PROJECT_CONF_H_ */

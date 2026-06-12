@@ -92,13 +92,32 @@ typedef struct {
                                      c509_native_verify_cb() to run a native
                                      chain check, since Mbed TLS cannot verify
                                      the (CBOR-signed) reconstructed DER. */
+  const uint8_t *intermediate_cert;      /**< C509 bytes of the intermediate
+                                               (Sub) CA cert that issued
+                                               own_cert, or NULL for a
+                                               chain-length-0 (CA issues the
+                                               leaf directly) setup. Sent to
+                                               the peer alongside own_cert
+                                               (Type-2 only). */
+  const uint8_t *peer_intermediate_cert; /**< C509 bytes of the intermediate
+                                               (Sub) CA cert that issued the
+                                               peer's cert, or NULL. Used by
+                                               c509_native_verify_cb() to
+                                               validate the peer's 2-cert
+                                               chain (Type-2 only). */
   const uint8_t *priv_key;
   const uint8_t *ca_pub_xy;   /**< CA trust anchor public key, raw 64-byte
                                     x||y coordinates (Type-2 only). Passed to
                                     c509_verify_chain() as the root of trust. */
+  int64_t ca_pk_alg;          /**< CA trust anchor's C509 public key algorithm
+                                    ID (e.g. C509_PK_SECP256R1,
+                                    C509_PK_BRAINPOOLP256R1), Type-2 only.
+                                    0 defaults to secp256r1. */
   uint16_t ca_cert_len;
   uint16_t own_cert_len;
   uint16_t peer_cert_len;     /**< Length in bytes of peer_cert. */
+  uint16_t intermediate_cert_len;      /**< Length in bytes of intermediate_cert. */
+  uint16_t peer_intermediate_cert_len; /**< Length in bytes of peer_intermediate_cert. */
   uint16_t priv_key_len;
 } coap_keystore_c509_entry_t;
 

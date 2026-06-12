@@ -28,10 +28,15 @@ typedef enum {
  * @param cert The parsed certificate.
  * @param issuer_pk The public key of the issuer (raw bytes).
  * @param issuer_pk_len Length of the issuer public key.
+ * @param issuer_pk_alg The issuer's C509 public key algorithm ID (e.g.
+ *                       C509_PK_SECP256R1, C509_PK_BRAINPOOLP256R1), used to
+ *                       select the EC group for ECDSA verification. 0 (or any
+ *                       unrecognized value) defaults to secp256r1.
  * @return CRYPTO_ERR_NONE on successful verification, or an error code.
  */
-crypto_error_t c509_verify_signature(const c509_cert_t *cert, 
-                                    const uint8_t *issuer_pk, 
-                                    size_t issuer_pk_len);
+crypto_error_t c509_verify_signature(const c509_cert_t *cert,
+                                    const uint8_t *issuer_pk,
+                                    size_t issuer_pk_len,
+                                    int64_t issuer_pk_alg);
 
 #endif // C509_CRYPTO_H

@@ -1,2 +1,2 @@
-c509_src = c509.c cbor.c crypto_mbedtls.c validator.c validity.c der.c x509_encode.c
+c509_src = c509.c cbor.c crypto_mbedtls.c validator.c validity.c der.c x509_encode.c c509-chain.c c509-csr-build.c c509-ca.c c509-csr-parse.c
 C509_SOURCEFILES += $(c509_src)

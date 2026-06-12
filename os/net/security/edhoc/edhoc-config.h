@@ -49,6 +49,7 @@
 #define EDHOC_CRED_INCLUDE  3  /* Full COSE_Key inline */
 #define EDHOC_CRED_C509_C5T 4  /* C509 hash-by-reference {22: COSE_CertHash} */
 #define EDHOC_CRED_C509_C5C 5  /* C509 by-value {25: COSE_C509} */
+#define EDHOC_CRED_X509_X5C 6  /* X.509 DER by-value {33: bstr(DER cert)} */
 
 /* Resolve EDHOC_AUTHENT_TYPE early so buffer-size #if checks work. */
 #ifdef EDHOC_CONF_AUTHENT_TYPE
@@ -75,14 +76,20 @@
  */
 #ifdef EDHOC_CONF_MAX_CRED_LEN
 #define EDHOC_MAX_CRED_LEN EDHOC_CONF_MAX_CRED_LEN
+#elif (EDHOC_AUTHENT_TYPE == EDHOC_CRED_X509_X5C)
+#define EDHOC_MAX_CRED_LEN 512      /* X.509 DER cert (~387 bytes typical) */
 #else
 #define EDHOC_MAX_CRED_LEN 256
 #endif
 
-#if (EDHOC_AUTHENT_TYPE == EDHOC_CRED_KID) || (EDHOC_AUTHENT_TYPE == EDHOC_CRED_C509_C5T)
+#ifdef EDHOC_CONF_MAX_ID_CRED_LEN
+#define EDHOC_MAX_ID_CRED_LEN EDHOC_CONF_MAX_ID_CRED_LEN
+#elif (EDHOC_AUTHENT_TYPE == EDHOC_CRED_KID) || (EDHOC_AUTHENT_TYPE == EDHOC_CRED_C509_C5T)
 #define EDHOC_MAX_ID_CRED_LEN 32    /* KID/c5t: ≤ 16 bytes typical → 32 bytes (safe) */
 #elif (EDHOC_AUTHENT_TYPE == EDHOC_CRED_C509_C5C)
-#define EDHOC_MAX_ID_CRED_LEN 256   /* c5c: full cert inline */
+#define EDHOC_MAX_ID_CRED_LEN 256   /* c5c: full cert inline (override for chains, see EDHOC_CONF_MAX_ID_CRED_LEN) */
+#elif (EDHOC_AUTHENT_TYPE == EDHOC_CRED_X509_X5C)
+#define EDHOC_MAX_ID_CRED_LEN 512   /* x5chain: full DER cert inline (~387 bytes) */
 #else
 #define EDHOC_MAX_ID_CRED_LEN 256   /* Include mode / fallback */
 #endif
@@ -240,6 +247,8 @@
 /* C509 COSE header parameters (draft-ietf-cose-cbor-encoded-cert-11) */
 #define COSE_HEADER_LABEL_C5T 22  /* C509 hash-by-reference              */
 #define COSE_HEADER_LABEL_C5C 25  /* C509 by-value (ordered chain)       */
+/* X.509 COSE header parameter (draft-ietf-cose-x509): by-value DER cert(s) */
+#define COSE_HEADER_LABEL_X5CHAIN 33  /* X.509 DER by-value (ordered chain) */
 /* SHA-256/64 (8-byte truncated SHA-256) COSE algorithm ID for c5t      */
 #define COSE_HASH_ALG_SHA256_64  (-15)
 /* Recommended truncated hash length for c5t per RFC 9528 §9.3          */
@@ -266,6 +275,20 @@
 
 /* Curves for EDHOC key exchange algorithm (ECDH curve) */
 #define EDHOC_CURVE_P256 1
+#define EDHOC_CURVE_BRAINPOOLP256R1 2
+
+/* Curve used for the COSE_Sign1 signature (credential's static authentication
+ * key), as opposed to EDHOC_CURVE_P256 above which is the ephemeral ECDH
+ * curve. These are independent: a ciphersuite's nominal "P-256" signature
+ * curve can be overridden here for test apps whose credential uses a
+ * different curve (e.g. brainpoolP256r1, see PLAN-c509-lice-followup.md
+ * SS5.3.3 scenario D). Override via EDHOC_CONF_SIGNATURE_CURVE in
+ * project-conf.h. */
+#ifdef EDHOC_CONF_SIGNATURE_CURVE
+#define EDHOC_SIGNATURE_CURVE EDHOC_CONF_SIGNATURE_CURVE
+#else
+#define EDHOC_SIGNATURE_CURVE EDHOC_CURVE_P256
+#endif
 
 /* Common settings for supported cipher suites */
 #define ECC_KEY_LEN 32

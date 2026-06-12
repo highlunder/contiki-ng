@@ -48,8 +48,18 @@
 #include <string.h>
 
 /* C509 pk_alg values (from draft-ietf-cose-cbor-encoded-cert, Table 3).
- * Only secp256r1 is supported for EDHOC in this implementation. */
+ * secp256r1 and brainpoolP256r1 are supported for EDHOC in this
+ * implementation (selected via EDHOC_SIGNATURE_CURVE, edhoc-config.h). */
 #define C509_PK_ALG_SECP256R1 1
+#define C509_PK_ALG_BRAINPOOLP256R1 24
+
+/* COSE "crv" value for brainpoolP256r1. Not part of the IANA COSE Elliptic
+ * Curves registry (which only covers P-256/P-384/P-521/X25519/X448/
+ * Ed25519/Ed448/secp256k1); used here purely as a non-1 diagnostic marker
+ * (cose_key_t.crv is a uint8_t) so edhoc_print_key_info()/
+ * edhoc_validate_key_setup() report a curve mismatch instead of falsely
+ * claiming "P-256". */
+#define COSE_CRV_BRAINPOOLP256R1 255
 
 /* Log configuration */
 #include "sys/log.h"
@@ -131,12 +141,21 @@ edhoc_c509_generate_id_cred_c5c(const cose_key_t *key,
    *   CBOR map(1)
    *     key:   uint 25
    *     value: bstr <C509 cert>
+   *
+   * Chain case: if c509_data already holds a CBOR array of cert byte
+   * strings (chain-length >= 1, [bstr<leaf>, bstr<issuer>, ...]; major
+   * type 4), write it verbatim as the map value instead of wrapping it
+   * in an outer bstr — i.e. {25: [bstr, bstr, ...]}.
    */
   cbor_writer_state_t w;
   cbor_init_writer(&w, out, out_sz);
   cbor_open_map(&w);
   cbor_write_unsigned(&w, COSE_HEADER_LABEL_C5C);
-  cbor_write_data(&w, key->c509_data, key->c509_len);
+  if((key->c509_data[0] >> 5) == 4) {
+    cbor_write_object(&w, key->c509_data, key->c509_len);
+  } else {
+    cbor_write_data(&w, key->c509_data, key->c509_len);
+  }
   cbor_close_map(&w);
 
   size_t written = cbor_end_writer(&w);
@@ -191,16 +210,29 @@ edhoc_c509_extract_pub_key(const uint8_t *c509, size_t c509_len,
     return EDHOC_ERR_CREDENTIAL_NOT_FOUND;
   }
 
-  /* Only P-256 (secp256r1) supported */
-  if(pk_alg != C509_PK_ALG_SECP256R1) {
-    LOG_ERR("extract_pub_key: unsupported pk_alg %d (only secp256r1)\n", pk_alg);
+  /* Only secp256r1 and brainpoolP256r1 are supported */
+  uECC_Curve curve;
+  uint8_t crv;
+  switch(pk_alg) {
+  case C509_PK_ALG_SECP256R1:
+    curve = uECC_secp256r1();
+    crv = 1;  /* P-256 */
+    break;
+#if uECC_SUPPORTS_brainpoolP256r1
+  case C509_PK_ALG_BRAINPOOLP256R1:
+    curve = uECC_brainpoolP256r1();
+    crv = COSE_CRV_BRAINPOOLP256R1;
+    break;
+#endif
+  default:
+    LOG_ERR("extract_pub_key: unsupported pk_alg %d (only secp256r1/brainpoolP256r1)\n", pk_alg);
     return EDHOC_ERR_CREDENTIAL_NOT_FOUND;
   }
 
   /* C509 stores compressed EC points with a Contiki-specific prefix:
    *   0xFE → even y  (maps to standard 0x02)
    *   0xFD → odd  y  (maps to standard 0x03)
-   * A 33-byte point (1 prefix + 32 x-bytes) is expected for P-256. */
+   * A 33-byte point (1 prefix + 32 x-bytes) is expected for these curves. */
   if(pk_len != 33 || (pk[0] != 0xFE && pk[0] != 0xFD)) {
     LOG_ERR("extract_pub_key: unexpected pk format (len=%zu prefix=0x%02x)\n",
             pk_len, pk[0]);
@@ -214,18 +246,18 @@ edhoc_c509_extract_pub_key(const uint8_t *c509, size_t c509_len,
 
   /* Decompress using micro-ecc: output is 64 bytes = x[32] || y[32] */
   uint8_t pub_xy[64];
-  uECC_decompress(compressed, pub_xy, uECC_secp256r1());
+  uECC_decompress(compressed, pub_xy, curve);
 
   /* Populate cose_key_t with the extracted public key.  The memset clears
    * every field including c509_data/c509_len; callers that need to retain a
    * reference to the source cert bytes must set those fields after returning. */
   memset(key_out, 0, sizeof(*key_out));
   key_out->kty = 2;  /* EC2 */
-  key_out->crv = 1;  /* P-256 */
+  key_out->crv = crv;
   memcpy(key_out->ecc.pub.x, pub_xy,      ECC_KEY_LEN);
   memcpy(key_out->ecc.pub.y, pub_xy + 32, ECC_KEY_LEN);
 
-  LOG_DBG("extract_pub_key: P-256 key extracted from C509\n");
+  LOG_DBG("extract_pub_key: key extracted from C509 (pk_alg=%d)\n", pk_alg);
   return EDHOC_SUCCESS;
 }
 /*---------------------------------------------------------------------------*/
@@ -366,6 +398,132 @@ edhoc_c509_validate_self_signed(const uint8_t *c509, size_t c509_len,
   return EDHOC_SUCCESS;
 }
 /*---------------------------------------------------------------------------*/
+/* Verify a Type-2 C509 cert's ECDSA signature (field 10) against the given
+ * issuer's public key. Types 0/1/3 (DER-equivalent) would require DER
+ * reconstruction to verify and are accepted as a structural-only link here,
+ * matching edhoc_c509_validate_self_signed()'s handling of those types. */
+static int
+c509_verify_cert_signature(const uint8_t *c509, size_t c509_len,
+                            const cose_key_t *issuer_pk)
+{
+  cbor_reader_state_t r;
+  cbor_init_reader(&r, c509, c509_len);
+  if(c509_len > 0 && (c509[0] >> 5) == 4) {
+    cbor_read_array(&r);
+  }
+
+  int64_t cert_type_val = 0;
+  if(cbor_read_signed(&r, &cert_type_val) == CBOR_SIZE_NONE) {
+    return 0;
+  }
+  if((int)cert_type_val != 2) {
+    return 1;
+  }
+
+  cbor_init_reader(&r, c509, c509_len);
+  if(c509_len > 0 && (c509[0] >> 5) == 4) {
+    cbor_read_array(&r);
+  }
+  const uint8_t *tbs_start = cbor_get_position(&r);
+  for(int i = 0; i < 10; i++) {
+    if(!cbor_skip_next(&r)) {
+      return 0;
+    }
+  }
+  const uint8_t *tbs_end = cbor_get_position(&r);
+  size_t tbs_len = (size_t)(tbs_end - tbs_start);
+
+  size_t sig_len;
+  const uint8_t *sig = cbor_read_data(&r, &sig_len);
+  if(sig == NULL || sig_len != 2 * ECC_KEY_LEN) {
+    return 0;
+  }
+
+  uint8_t hash[SHA_256_DIGEST_LENGTH];
+  SHA_256.hash(tbs_start, tbs_len, hash);
+
+  uint8_t pub_xy[2 * ECC_KEY_LEN];
+  memcpy(pub_xy,               issuer_pk->ecc.pub.x, ECC_KEY_LEN);
+  memcpy(pub_xy + ECC_KEY_LEN, issuer_pk->ecc.pub.y, ECC_KEY_LEN);
+
+  return ecc_verify_hash(EDHOC_CURVE_P256, hash, pub_xy, sig);
+}
+/*---------------------------------------------------------------------------*/
+/* Verify c509's signature against every trust anchor in store, accepting it
+ * as soon as one anchor's public key verifies it (brute-force search; see
+ * edhoc_c509_validate_chain doc comment for rationale). */
+static int
+c509_verify_cert_against_trust_store(const uint8_t *c509, size_t c509_len,
+                                      const edhoc_trust_store_t *store)
+{
+  for(size_t i = 0; i < store->count; i++) {
+    if(c509_verify_cert_signature(c509, c509_len, &store->anchors[i])) {
+      LOG_INFO("validate_chain: cert verified by trust anchor %zu\n", i);
+      return 1;
+    }
+  }
+  return 0;
+}
+/*---------------------------------------------------------------------------*/
+/* Maximum chain length (number of certs in a c5c CRED_x array) supported by
+ * validate_cert_chain(). 4 is generous for the test chains in this
+ * workspace (Root CA -> Sub CA -> leaf = on-wire chain of 2). */
+#define C509_CHAIN_MAX_CERTS 4
+
+/* Verify a chain-of-certs CRED_x: [bstr<leaf>, bstr<issuer_1>, ..., bstr<issuer_N>].
+ * Each cert[i] (i < n-1) must be signed by cert[i+1]'s embedded public key;
+ * the last (most-root) cert must be verified by a trust anchor. The reader
+ * must be positioned right after the array header, with n elements
+ * remaining. */
+static edhoc_error_t
+validate_cert_chain(cbor_reader_state_t *r, size_t n,
+                     const edhoc_trust_store_t *store)
+{
+  if(n < 1 || n > C509_CHAIN_MAX_CERTS) {
+    LOG_ERR("validate_chain: unsupported chain length (%zu)\n", n);
+    return EDHOC_ERR_CERTIFICATE_REJECTED;
+  }
+
+  const uint8_t *certs[C509_CHAIN_MAX_CERTS];
+  size_t cert_lens[C509_CHAIN_MAX_CERTS];
+
+  for(size_t i = 0; i < n; i++) {
+    certs[i] = cbor_read_data(r, &cert_lens[i]);
+    if(certs[i] == NULL) {
+      LOG_ERR("validate_chain: chain element %zu malformed\n", i);
+      return EDHOC_ERR_CERTIFICATE_REJECTED;
+    }
+  }
+
+  /* Structural check on the leaf — its public key must be extractable (the
+   * EDHOC stack uses it separately for the auth signature/MAC). */
+  cose_key_t leaf_pk;
+  if(edhoc_c509_extract_pub_key(certs[0], cert_lens[0], &leaf_pk) != EDHOC_SUCCESS) {
+    LOG_ERR("validate_chain: cannot extract leaf public key\n");
+    return EDHOC_ERR_CERTIFICATE_REJECTED;
+  }
+
+  for(size_t i = 0; i + 1 < n; i++) {
+    cose_key_t issuer_pk;
+    if(edhoc_c509_extract_pub_key(certs[i + 1], cert_lens[i + 1], &issuer_pk) != EDHOC_SUCCESS) {
+      LOG_ERR("validate_chain: cannot extract issuer public key (chain[%zu])\n", i + 1);
+      return EDHOC_ERR_CERTIFICATE_REJECTED;
+    }
+    if(!c509_verify_cert_signature(certs[i], cert_lens[i], &issuer_pk)) {
+      LOG_ERR("validate_chain: chain link %zu -> %zu signature invalid\n", i, i + 1);
+      return EDHOC_ERR_CERTIFICATE_REJECTED;
+    }
+  }
+
+  if(!c509_verify_cert_against_trust_store(certs[n - 1], cert_lens[n - 1], store)) {
+    LOG_ERR("validate_chain: top-of-chain cert not verified by any trust anchor\n");
+    return EDHOC_ERR_CERTIFICATE_REJECTED;
+  }
+
+  LOG_INFO("validate_chain: chain of %zu certs verified OK\n", n);
+  return EDHOC_SUCCESS;
+}
+/*---------------------------------------------------------------------------*/
 /*
  * CA-issued chain validation (draft-ietf-cose-cbor-encoded-cert §3.1, Type 2).
  *
@@ -411,6 +569,22 @@ edhoc_c509_validate_chain(const uint8_t *c509, size_t c509_len, void *app_ctx)
     return EDHOC_ERR_NULL_POINTER;
   }
 
+  /* Detect a CBOR array of cert byte strings (chain-of-certs), as produced
+   * by c5c CRED_x for chain-length >= 1: [bstr<leaf>, bstr<issuer>, ...].
+   * Distinguish from the "array-wrapped single cert" convention below
+   * (where the array elements are the cert's own fields, the first of
+   * which is the unsigned "type" field, major type 0) by checking the
+   * major type of the first array element. */
+  if(c509_len > 0 && (c509[0] >> 5) == 4) {
+    cbor_reader_state_t cr;
+    cbor_init_reader(&cr, c509, c509_len);
+    size_t n = cbor_read_array(&cr);
+    if(n != SIZE_MAX && n >= 1 &&
+       cbor_peek_next(&cr) == CBOR_MAJOR_TYPE_BYTE_STRING) {
+      return validate_cert_chain(&cr, n, store);
+    }
+  }
+
   cbor_reader_state_t r;
   cbor_init_reader(&r, c509, c509_len);
   if(c509_len > 0 && (c509[0] >> 5) == 4) {
@@ -441,54 +615,10 @@ edhoc_c509_validate_chain(const uint8_t *c509, size_t c509_len, void *app_ctx)
     return EDHOC_SUCCESS;
   }
 
-  /* Native Type 2: measure TBS extent (fields 0–9 of the raw cert bytes).
-   * Re-init the reader so tbs_start lands at field 0 — the first reader and
-   * edhoc_c509_extract_pub_key have both already advanced past field 0. */
-  cbor_init_reader(&r, c509, c509_len);
-  if(c509_len > 0 && (c509[0] >> 5) == 4) {
-    cbor_read_array(&r);
-  }
-  const uint8_t *tbs_start = cbor_get_position(&r);
-
-  /* Skip over fields 0-9 (type, serial, issuer_alg, issuer, validity x2,
-   * subject, pk_alg, subject_pk, extensions) without decoding their
-   * contents — only the byte range tbs_start..tbs_end is needed for the
-   * hash. Field 10 (the signature itself) is read separately below. */
-  for(int i = 0; i < 10; i++) {
-    if(!cbor_skip_next(&r)) {
-      LOG_ERR("validate_chain: failed to skip TBS field %d\n", i);
-      return EDHOC_ERR_CERTIFICATE_REJECTED;
-    }
-  }
-  const uint8_t *tbs_end = cbor_get_position(&r);
-  size_t tbs_len = (size_t)(tbs_end - tbs_start);
-
-  /* Field 10: signature bstr (64 bytes: r||s for P-256). */
-  size_t sig_len;
-  const uint8_t *sig = cbor_read_data(&r, &sig_len);
-  if(sig == NULL || sig_len != 2 * ECC_KEY_LEN) {
-    LOG_ERR("validate_chain: bad sig length %zu\n", sig ? sig_len : 0);
-    return EDHOC_ERR_CERTIFICATE_REJECTED;
-  }
-
-  /* Hash of the TBS bytes is what each candidate CA signature is checked
-   * against (see ecc_verify_hash() calls below). */
-  uint8_t hash[SHA_256_DIGEST_LENGTH];
-  SHA_256.hash(tbs_start, tbs_len, hash);
-
-  /* Try each trust anchor in turn: the cert is accepted as soon as one
-   * anchor's public key successfully verifies the ECDSA signature over
-   * the TBS hash. */
-  for(size_t i = 0; i < store->count; i++) {
-    const cose_key_t *anchor = &store->anchors[i];
-    uint8_t anchor_xy[2 * ECC_KEY_LEN];
-    memcpy(anchor_xy,               anchor->ecc.pub.x, ECC_KEY_LEN);
-    memcpy(anchor_xy + ECC_KEY_LEN, anchor->ecc.pub.y, ECC_KEY_LEN);
-
-    if(ecc_verify_hash(EDHOC_CURVE_P256, hash, anchor_xy, sig)) {
-      LOG_INFO("validate_chain: cert verified by trust anchor %zu\n", i);
-      return EDHOC_SUCCESS;
-    }
+  /* Native Type 2: verify the signature (field 10, over SHA-256 of TBS
+   * fields 0-9) against each trust anchor in turn. */
+  if(c509_verify_cert_against_trust_store(c509, c509_len, store)) {
+    return EDHOC_SUCCESS;
   }
 
   LOG_ERR("validate_chain: cert not verified by any trust anchor\n");

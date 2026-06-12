@@ -508,42 +508,57 @@ c509_is_native_type2(const uint8_t *cert, size_t len)
  *    the cert's POSIX validity window against the fixed timestamp below
  *    (~2028-08), which falls inside the test certs' validity period.
  *
- * NOTE: this callback only runs c509_verify_chain() at depth 0 (the leaf)
- * and only when session_info->is_native_c509 is set; for depth != 0, or for
- * non-native sessions, it is a no-op that leaves 'flags' untouched (i.e.
- * Mbed TLS's own verdict for the CA cert and for non-Type-2 sessions stands
- * unchanged). On success, the three flags above are cleared
- * unconditionally, regardless of which (if any) of them Mbed TLS actually
- * set -- i.e. this does not distinguish "EXPIRED/FUTURE due to missing RTC"
- * from "EXPIRED/FUTURE because the cert is genuinely outside its validity
- * window" beyond what c509_verify_chain()'s own timestamp check provides.
+ * NOTE: this callback runs c509_verify_chain() at depth 0 (the leaf), and
+ * additionally at depth 1 when the peer's chain includes an intermediate
+ * (Sub) CA cert (session_info->native_intermediate_c509 != NULL) -- in that
+ * case the Sub CA cert was itself natively signed (Type 2), so Mbed TLS's
+ * own check of the Sub CA's signature against the Root CA (in DER form)
+ * fails for the same reason as the leaf. For depth values beyond the
+ * provisioned chain length, or for non-native sessions, this is a no-op
+ * that leaves 'flags' untouched (i.e. Mbed TLS's own verdict for the Root CA
+ * cert and for non-Type-2 sessions stands unchanged). On success, the three
+ * flags above are cleared unconditionally, regardless of which (if any) of
+ * them Mbed TLS actually set -- i.e. this does not distinguish
+ * "EXPIRED/FUTURE due to missing RTC" from "EXPIRED/FUTURE because the cert
+ * is genuinely outside its validity window" beyond what
+ * c509_verify_chain()'s own timestamp check provides.
  */
 static int
 c509_native_verify_cb(void *ctx, mbedtls_x509_crt *crt, int depth,
                       uint32_t *flags)
 {
   (void)crt;
-  if(depth != 0) {
-    return 0;
-  }
   coap_dtls_session_info_t *si = (coap_dtls_session_info_t *)ctx;
   if(!si->is_native_c509) {
     return 0;
   }
 
-  const uint8_t *chain[1] = { si->native_peer_c509 };
-  size_t lens[1]           = { si->native_peer_c509_len };
+  size_t chain_count = (si->native_intermediate_c509 != NULL) ? 2 : 1;
+  if(depth < 0 || (size_t)depth >= chain_count) {
+    return 0;
+  }
+
+  const uint8_t *chain[2];
+  size_t lens[2];
+  chain[0] = si->native_peer_c509;
+  lens[0]  = si->native_peer_c509_len;
+  if(chain_count == 2) {
+    chain[1] = si->native_intermediate_c509;
+    lens[1]  = si->native_intermediate_c509_len;
+  }
+
   /* 1 850 000 000 s ≈ 2028-08 — within the test cert validity window. */
-  validator_error_t r = c509_verify_chain(chain, lens, 1,
+  validator_error_t r = c509_verify_chain(chain, lens, chain_count,
                                           si->native_ca_pub_xy, 64,
+                                          si->native_ca_pk_alg,
                                           1850000000LL);
   if(r == VALIDATOR_OK) {
     *flags &= ~(uint32_t)(MBEDTLS_X509_BADCERT_NOT_TRUSTED
                           | MBEDTLS_X509_BADCERT_EXPIRED
                           | MBEDTLS_X509_BADCERT_FUTURE);
-    LOG_INFO("Native C509 Type-2 chain validation OK\n");
+    LOG_INFO("Native C509 Type-2 chain validation OK (depth %d)\n", depth);
   } else {
-    LOG_ERR("Native C509 Type-2 chain validation FAILED: %d\n", (int)r);
+    LOG_ERR("Native C509 Type-2 chain validation FAILED: %d (depth %d)\n", (int)r, depth);
   }
   return 0;
 }
@@ -594,6 +609,7 @@ setup_session(const coap_mbedtls_role_t role,
     mbedtls_pk_init(&session_info->pkey);
     session_info->ca_der              = NULL;
     session_info->own_der             = NULL;
+    session_info->intermediate_der    = NULL;
     /* Native Type-2 fields default to "off"; populated below (and the
      * verify callback registered) only if the keystore entry's CA cert is
      * a natively signed Type 2 cert and a peer cert / CA public key were
@@ -602,6 +618,9 @@ setup_session(const coap_mbedtls_role_t role,
     session_info->native_peer_c509    = NULL;
     session_info->native_peer_c509_len = 0;
     memset(session_info->native_ca_pub_xy, 0, 64);
+    session_info->native_ca_pk_alg    = 0;
+    session_info->native_intermediate_c509     = NULL;
+    session_info->native_intermediate_c509_len = 0;
   }
 #endif /* COAP_DTLS_CONF_WITH_C509 */
 
@@ -788,6 +807,38 @@ setup_session(const coap_mbedtls_role_t role,
       goto clean_and_ret_err;
     }
 
+    /*
+     * Optional intermediate (Sub) CA cert: convert to DER and append to
+     * own_cert's chain via a second mbedtls_x509_crt_parse() call (which
+     * links it onto own_cert.next), so Mbed TLS sends [leaf, Sub CA] to the
+     * peer during the handshake.
+     */
+    if(ks->intermediate_cert != NULL) {
+      session_info->intermediate_der = heapmem_alloc(1024);
+      if(session_info->intermediate_der == NULL) {
+        LOG_ERR("Failed to allocate memory for intermediate DER\n");
+        goto clean_and_ret_err;
+      }
+      if(c509_parse_cert(&c509, ks->intermediate_cert, ks->intermediate_cert_len) != CBOR_ERR_NONE) {
+        LOG_ERR("Failed to parse C509 intermediate cert\n");
+        goto clean_and_ret_err;
+      }
+      offset = 0;
+      if(x509_encode_full_cert(session_info->intermediate_der, 1024, &offset, &c509) < 0) {
+        LOG_ERR("Failed to encode X.509 intermediate cert\n");
+        goto clean_and_ret_err;
+      }
+      debug_hex_dump("Intermediate DER", session_info->intermediate_der, offset);
+
+      ret = mbedtls_x509_crt_parse(&session_info->own_cert,
+                                   (const unsigned char *)session_info->intermediate_der,
+                                   offset);
+      if(ret < 0) {
+        LOG_ERR("mbedtls_x509_crt_parse for intermediate cert (error %d)\n", ret);
+        goto clean_and_ret_err;
+      }
+    }
+
     ret = mbedtls_pk_parse_key(&session_info->pkey,
                                (const unsigned char *)ks->priv_key,
                                ks->priv_key_len, NULL, 0,
@@ -829,6 +880,11 @@ setup_session(const coap_mbedtls_role_t role,
       session_info->native_peer_c509     = ks->peer_cert;
       session_info->native_peer_c509_len = ks->peer_cert_len;
       memcpy(session_info->native_ca_pub_xy, ks->ca_pub_xy, 64);
+      session_info->native_ca_pk_alg     = ks->ca_pk_alg;
+      if(ks->peer_intermediate_cert != NULL) {
+        session_info->native_intermediate_c509     = ks->peer_intermediate_cert;
+        session_info->native_intermediate_c509_len = ks->peer_intermediate_cert_len;
+      }
       mbedtls_ssl_conf_verify(&session_info->conf,
                               c509_native_verify_cb, session_info);
       LOG_INFO("Native C509 Type-2: verify callback registered\n");
@@ -919,6 +975,7 @@ setup_session(const coap_mbedtls_role_t role,
 #ifdef COAP_DTLS_CONF_WITH_C509
   if(session_info->ca_der != NULL) heapmem_free(session_info->ca_der);
   if(session_info->own_der != NULL) heapmem_free(session_info->own_der);
+  if(session_info->intermediate_der != NULL) heapmem_free(session_info->intermediate_der);
 #endif
   list_remove(dtls_context.sessions, session_info);
   memb_free(&dtls_session_info_memb, session_info);
@@ -1110,6 +1167,10 @@ free_session_resources(coap_dtls_session_info_t *info)
   if(info->own_der != NULL) {
     heapmem_free(info->own_der);
     info->own_der = NULL;
+  }
+  if(info->intermediate_der != NULL) {
+    heapmem_free(info->intermediate_der);
+    info->intermediate_der = NULL;
   }
 #endif
 }
