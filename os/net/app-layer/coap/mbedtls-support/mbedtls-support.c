@@ -1011,6 +1011,26 @@ setup_session(const coap_mbedtls_role_t role,
 /*---------------------------------------------------------------------------*/
 
 #ifdef COAP_DTLS_CONF_WITH_CLIENT
+/* Staged session for resumption on the next coap_ep_dtls_connect() call,
+ * set via coap_ep_dtls_set_resume_session(). See mbedtls-support.h. */
+static mbedtls_ssl_session *pending_resume_session = NULL;
+
+int
+coap_ep_dtls_get_session(const coap_endpoint_t *ep, mbedtls_ssl_session *session)
+{
+  coap_dtls_session_info_t *info = coap_ep_get_dtls_session_info(ep);
+  if(info == NULL) {
+    return -1;
+  }
+  return mbedtls_ssl_get_session(&info->ssl, session);
+}
+
+void
+coap_ep_dtls_set_resume_session(mbedtls_ssl_session *session)
+{
+  pending_resume_session = session;
+}
+
 int
 coap_ep_dtls_connect(const coap_endpoint_t *ep,
                      const coap_dtls_sec_mode_t sec_mode,
@@ -1030,6 +1050,16 @@ coap_ep_dtls_connect(const coap_endpoint_t *ep,
       return 0;
     }
     memcpy(&session_info->ep, ep, sizeof(coap_endpoint_t));
+
+    if(pending_resume_session != NULL) {
+      int sret = mbedtls_ssl_set_session(&session_info->ssl, pending_resume_session);
+      if(sret != 0) {
+        LOG_ERR("mbedtls_ssl_set_session returned -0x%x\n", (unsigned int)-sret);
+      } else {
+        LOG_INFO("Resuming previous DTLS session\n");
+      }
+      pending_resume_session = NULL;
+    }
   } else {
     /*
      * The session already exists. If this func is called again, we

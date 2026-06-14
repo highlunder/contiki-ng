@@ -262,6 +262,33 @@ coap_ep_get_dtls_session_info(const coap_endpoint_t *ep);
  */
 int coap_ep_dtls_connect(const coap_endpoint_t *ep,
                          coap_dtls_sec_mode_t sec_mode, const void *keystore_entry);
+
+/**
+ * \brief   Save the negotiated DTLS session of a connected peer for later
+ *          resumption (session-ID based). Must be called after the
+ *          handshake completes and before coap_ep_dtls_disconnect(), which
+ *          destroys the underlying SSL context.
+ *
+ * \param ep       Pointer of peer CoAP endpoint.
+ * \param session  Caller-owned session struct (mbedtls_ssl_session_init()'d
+ *                  by the caller) to fill in. Caller must eventually call
+ *                  mbedtls_ssl_session_free() on it.
+ *
+ * \return  SUCCESS: 0
+ *          FAILURE: mbedTLS error code (< 0), or -1 if no such session
+ */
+int coap_ep_dtls_get_session(const coap_endpoint_t *ep, mbedtls_ssl_session *session);
+
+/**
+ * \brief   Stage a previously-saved session for resumption on the next
+ *          coap_ep_dtls_connect() call (any endpoint). The session is
+ *          consumed (the pointer is cleared) once a connect attempt uses it.
+ *
+ * \param session  Pointer to a session previously filled by
+ *                  coap_ep_dtls_get_session(), or NULL to clear any pending
+ *                  resumption session.
+ */
+void coap_ep_dtls_set_resume_session(mbedtls_ssl_session *session);
 #endif /* COAP_DTLS_CONF_WITH_CLIENT */
 
 #ifdef COAP_DTLS_CONF_WITH_SERVER
