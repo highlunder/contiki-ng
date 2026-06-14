@@ -11,7 +11,10 @@
  *
  *   Waits for RPL to converge, resolves the DAG root address, then opens
  *   a DTLS session to the server (c509-native-dtls-server, node 2) and
- *   issues a CoAP GET /test/hello.  On success logs the PASS string.
+ *   issues a CoAP GET /test/hello ("Handshake 1, full").  It then saves
+ *   the negotiated DTLS session, disconnects, reconnects and repeats the
+ *   GET ("Handshake 2, resumed") -- the §5.3.7 session-resumption
+ *   experiment (PLAN-c509-lice-followup.md sec. 5.3.7), scenario B.
  *
  * \author Joel Höglund <joel.hoglund@ri.se>
  */
@@ -63,6 +66,8 @@ static const coap_keystore_t client_keystore = {
 /*---------------------------------------------------------------------------*/
 static coap_endpoint_t server_ep;
 
+static int response_count;
+
 static void
 response_handler(coap_message_t *response)
 {
@@ -75,7 +80,12 @@ response_handler(coap_message_t *response)
   }
   len = coap_get_payload(response, &payload);
   LOG_INFO("Response: %.*s\n", len, (char *)payload);
-  LOG_INFO("=== Native C509 Type-2 DTLS test PASSED ===\n");
+  response_count++;
+  if(response_count == 1) {
+    LOG_INFO("=== Native C509 Type-2 DTLS test (handshake 1, full) PASSED ===\n");
+  } else {
+    LOG_INFO("=== Native C509 Type-2 DTLS test (handshake 2, resumed) PASSED ===\n");
+  }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -86,6 +96,9 @@ PROCESS_THREAD(c509_native_dtls_client, ev, data)
 {
   static coap_message_t request[1];
   static struct etimer et;
+  static mbedtls_ssl_session saved_session;
+  static int handshake_num;
+  static int ticks;
 
   PROCESS_BEGIN();
 
@@ -117,16 +130,16 @@ PROCESS_THREAD(c509_native_dtls_client, ev, data)
   etimer_set(&et, CLOCK_SECOND * CONNECT_DELAY_S);
   PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 
-  LOG_INFO("Connecting to server over CoAPS\n");
-  if(!coap_endpoint_connect(&server_ep)) {
-    LOG_ERR("coap_endpoint_connect failed\n");
-    PROCESS_EXIT();
-  }
+  for(handshake_num = 1; handshake_num <= 2; handshake_num++) {
+    LOG_INFO("Connecting to server over CoAPS (handshake %d, %s)\n",
+             handshake_num, handshake_num == 1 ? "full" : "resumed");
+    if(!coap_endpoint_connect(&server_ep)) {
+      LOG_ERR("coap_endpoint_connect failed\n");
+      PROCESS_EXIT();
+    }
 
-  /* Poll until DTLS handshake completes. */
-  etimer_set(&et, CLOCK_SECOND);
-  {
-    static int ticks;
+    /* Poll until DTLS handshake completes. */
+    etimer_set(&et, CLOCK_SECOND);
     ticks = 0;
     while(!coap_endpoint_is_connected(&server_ep)) {
       PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
@@ -136,13 +149,33 @@ PROCESS_THREAD(c509_native_dtls_client, ev, data)
         PROCESS_EXIT();
       }
     }
-  }
-  LOG_INFO("DTLS handshake complete\n");
+    LOG_INFO("DTLS handshake %d complete (%s)\n",
+             handshake_num, handshake_num == 1 ? "full" : "resumed");
 
-  coap_init_message(request, COAP_TYPE_CON, COAP_GET, 0);
-  coap_set_header_uri_path(request, "test/hello");
-  LOG_INFO("Sending GET /test/hello\n");
-  COAP_BLOCKING_REQUEST(&server_ep, request, response_handler);
+    coap_init_message(request, COAP_TYPE_CON, COAP_GET, 0);
+    coap_set_header_uri_path(request, "test/hello");
+    LOG_INFO("Sending GET /test/hello (handshake %d)\n", handshake_num);
+    COAP_BLOCKING_REQUEST(&server_ep, request, response_handler);
+
+    if(handshake_num == 1) {
+      /* Snapshot the negotiated session, then disconnect and stage it
+       * for resumption on the next coap_endpoint_connect(). */
+      mbedtls_ssl_session_init(&saved_session);
+      if(coap_ep_dtls_get_session(&server_ep, &saved_session) != 0) {
+        LOG_ERR("coap_ep_dtls_get_session failed\n");
+        PROCESS_EXIT();
+      }
+      coap_endpoint_disconnect(&server_ep);
+      coap_ep_dtls_set_resume_session(&saved_session);
+
+      /* Brief delay so the server finishes recycling the session slot. */
+      etimer_set(&et, CLOCK_SECOND * 2);
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+    } else {
+      coap_endpoint_disconnect(&server_ep);
+      mbedtls_ssl_session_free(&saved_session);
+    }
+  }
 
   PROCESS_END();
 }

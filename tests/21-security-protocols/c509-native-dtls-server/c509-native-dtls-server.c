@@ -13,8 +13,11 @@
  *   callback in mbedtls-support.c runs the native C509 chain validator
  *   instead of trusting the DER-reconstructed signature.
  *
- *   Exposes GET /test/hello over DTLS.  Logs a pass string once the
- *   first request is served.
+ *   Exposes GET /test/hello over DTLS.  Logs a pass string for each
+ *   request served -- the client (c509-native-dtls-client) issues two
+ *   GETs over two separate DTLS connections (full handshake, then a
+ *   resumed handshake) as part of the §5.3.7 session-resumption
+ *   experiment (PLAN-c509-lice-followup.md sec. 5.3.7).
  *
  * \author Joel Höglund <joel.hoglund@ri.se>
  */
@@ -33,7 +36,7 @@
 #define LOG_MODULE "C509-Nat-Sv"
 #define LOG_LEVEL  LOG_LEVEL_INFO
 
-static bool request_served = false;
+static int requests_served = 0;
 
 /*---------------------------------------------------------------------------*/
 static void
@@ -47,10 +50,9 @@ res_get_handler(coap_message_t *request, coap_message_t *response,
   coap_set_header_content_format(response, TEXT_PLAIN);
   coap_set_payload(response, buffer, sizeof(msg) - 1);
 
-  if(!request_served) {
-    request_served = true;
-    LOG_INFO("=== Native C509 Type-2 DTLS server exchange complete ===\n");
-  }
+  requests_served++;
+  LOG_INFO("=== Native C509 Type-2 DTLS server exchange complete (request %d) ===\n",
+           requests_served);
 }
 
 RESOURCE(res_hello,
