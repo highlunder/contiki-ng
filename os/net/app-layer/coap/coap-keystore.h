@@ -78,6 +78,14 @@ typedef struct {
 } coap_keystore_cert_entry_t;
 
 /**
+ * Maximum number of intermediate (Sub) CA certs supported per side of a
+ * Type-2 C509 chain (i.e. "chain-length" N means N intermediates between the
+ * leaf and the Root CA trust anchor). 2 covers the chain-length=2 evaluation
+ * variant (leaf -> Sub CA 2 -> Sub CA 1 -> Root CA).
+ */
+#define COAP_KEYSTORE_C509_MAX_INTERMEDIATES 2
+
+/**
  * The structure of a CoAP C509 certificate info.
  *
  * For DER-equivalent C509 (type 0/1/3): set ca_cert, own_cert, priv_key.
@@ -92,19 +100,22 @@ typedef struct {
                                      c509_native_verify_cb() to run a native
                                      chain check, since Mbed TLS cannot verify
                                      the (CBOR-signed) reconstructed DER. */
-  const uint8_t *intermediate_cert;      /**< C509 bytes of the intermediate
-                                               (Sub) CA cert that issued
-                                               own_cert, or NULL for a
-                                               chain-length-0 (CA issues the
-                                               leaf directly) setup. Sent to
-                                               the peer alongside own_cert
-                                               (Type-2 only). */
-  const uint8_t *peer_intermediate_cert; /**< C509 bytes of the intermediate
-                                               (Sub) CA cert that issued the
-                                               peer's cert, or NULL. Used by
-                                               c509_native_verify_cb() to
-                                               validate the peer's 2-cert
-                                               chain (Type-2 only). */
+  /** C509 bytes of the intermediate (Sub) CA certs that issued own_cert,
+   *  ordered leaf-to-root (intermediate_certs[0] issued own_cert,
+   *  intermediate_certs[1] issued intermediate_certs[0], etc). Unused
+   *  entries are NULL. Sent to the peer alongside own_cert (Type-2 only). */
+  const uint8_t *intermediate_certs[COAP_KEYSTORE_C509_MAX_INTERMEDIATES];
+  uint16_t intermediate_cert_lens[COAP_KEYSTORE_C509_MAX_INTERMEDIATES];
+  uint8_t intermediate_cert_count;       /**< Number of valid entries in
+                                               intermediate_certs/_lens. 0 for
+                                               a chain-length-0 setup. */
+  /** C509 bytes of the intermediate (Sub) CA certs that issued the peer's
+   *  cert, ordered leaf-to-root, mirroring intermediate_certs. Used by
+   *  c509_native_verify_cb() to validate the peer's chain (Type-2 only). */
+  const uint8_t *peer_intermediate_certs[COAP_KEYSTORE_C509_MAX_INTERMEDIATES];
+  uint16_t peer_intermediate_cert_lens[COAP_KEYSTORE_C509_MAX_INTERMEDIATES];
+  uint8_t peer_intermediate_cert_count;  /**< Number of valid entries in
+                                               peer_intermediate_certs/_lens. */
   const uint8_t *priv_key;
   const uint8_t *ca_pub_xy;   /**< CA trust anchor public key, raw 64-byte
                                     x||y coordinates (Type-2 only). Passed to
@@ -116,8 +127,6 @@ typedef struct {
   uint16_t ca_cert_len;
   uint16_t own_cert_len;
   uint16_t peer_cert_len;     /**< Length in bytes of peer_cert. */
-  uint16_t intermediate_cert_len;      /**< Length in bytes of intermediate_cert. */
-  uint16_t peer_intermediate_cert_len; /**< Length in bytes of peer_intermediate_cert. */
   uint16_t priv_key_len;
 } coap_keystore_c509_entry_t;
 

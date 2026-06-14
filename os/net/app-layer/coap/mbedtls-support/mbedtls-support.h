@@ -119,9 +119,10 @@ typedef struct coap_dtls_session_info {
 #ifdef COAP_DTLS_CONF_WITH_C509
   uint8_t *ca_der;                   /* Converted CA DER */
   uint8_t *own_der;                  /* Converted Own DER */
-  uint8_t *intermediate_der;         /* Converted intermediate (Sub) CA DER,
-                                         appended to own_cert's chain. NULL
-                                         for a chain-length-0 setup. */
+  uint8_t *intermediate_der[COAP_KEYSTORE_C509_MAX_INTERMEDIATES]; /* Converted
+                                         intermediate (Sub) CA DERs, appended to
+                                         own_cert's chain. NULL entries for a
+                                         chain-length-0 setup. */
   bool is_native_c509;               /* True when cert type is 2 (natively signed);
                                          set in setup_session() and consulted by
                                          c509_native_verify_cb() to decide whether
@@ -141,14 +142,18 @@ typedef struct coap_dtls_session_info {
                                          the keystore entry's ca_pk_alg for use
                                          by c509_native_verify_cb(). 0 defaults
                                          to secp256r1. */
-  const uint8_t *native_intermediate_c509;  /* Peer's intermediate (Sub) CA
-                                                cert in raw C509 CBOR form,
-                                                copied (by pointer) from the
-                                                keystore entry's
-                                                peer_intermediate_cert. NULL
-                                                for a chain-length-0 setup. */
-  size_t native_intermediate_c509_len;      /* Length in bytes of
-                                                native_intermediate_c509. */
+  const uint8_t *native_intermediate_c509[COAP_KEYSTORE_C509_MAX_INTERMEDIATES];
+                                      /* Peer's intermediate (Sub) CA certs in
+                                         raw C509 CBOR form, copied (by
+                                         pointer) from the keystore entry's
+                                         peer_intermediate_certs, ordered
+                                         leaf-to-root. NULL entries beyond
+                                         native_intermediate_c509_count. */
+  size_t native_intermediate_c509_len[COAP_KEYSTORE_C509_MAX_INTERMEDIATES];
+                                      /* Lengths in bytes, parallel to
+                                         native_intermediate_c509. */
+  uint8_t native_intermediate_c509_count; /* Number of valid entries in
+                                              native_intermediate_c509/_len. */
 #endif /* COAP_DTLS_CONF_WITH_C509 */
 #ifdef COAP_DTLS_CONF_WITH_SERVER
   bool in_use; /* Determines if this server session is in use by a client. */
