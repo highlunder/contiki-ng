@@ -1238,7 +1238,25 @@ coap_ep_dtls_disconnect(const coap_endpoint_t *ep)
   coap_dtls_session_info_t *info = coap_ep_get_dtls_session_info(ep);
   if(info != NULL) {
     mbedtls_ssl_close_notify(&info->ssl);
-    
+
+#ifdef COAP_DTLS_CONF_WITH_SERVER
+    if(info->role == COAP_MBEDTLS_ROLE_SERVER) {
+      /* Keep the session info struct, its conf (certs, ciphersuites,
+       * cookie ctx, session cache) and its ssl context's config pointer
+       * intact, so this slot can be reused by the next client.
+       * mbedtls_ssl_session_reset() resets the handshake/session state
+       * without tearing down the config -- the same call already used
+       * for the handshake-error retry path above. Freeing+reiniting
+       * ssl/conf here (as before) left ssl->conf pointing at freed
+       * memory, breaking any subsequent handshake on this slot. */
+      mbedtls_ssl_session_reset(&info->ssl);
+      info->in_use = false;
+      memset(&info->ep, 0, sizeof(coap_endpoint_t));
+      etimer_stop(&info->retransmission_et);
+      return;
+    }
+#endif /* COAP_DTLS_CONF_WITH_SERVER */
+
     free_session_resources(info);
 
 #ifdef COAP_DTLS_CONF_WITH_CLIENT
@@ -1247,15 +1265,5 @@ coap_ep_dtls_disconnect(const coap_endpoint_t *ep)
       memb_free(&dtls_session_info_memb, info);
     }
 #endif /* COAP_DTLS_CONF_WITH_CLIENT */
-#ifdef COAP_DTLS_CONF_WITH_SERVER
-    if(info->role == COAP_MBEDTLS_ROLE_SERVER) {
-      /* On server we might want to keep the session info struct but it must be ready for next client */
-      mbedtls_ssl_init(&info->ssl);
-      mbedtls_ssl_config_init(&info->conf);
-      info->in_use = false;
-      memset(&info->ep, 0, sizeof(coap_endpoint_t));
-      etimer_stop(&info->retransmission_et);
-    }
-#endif /* COAP_DTLS_CONF_WITH_SERVER */
   }
 }
