@@ -49,6 +49,10 @@
 #include "lib/sha-256.h"
 #include <string.h>
 
+#if EDHOC_SIGNATURE_ALG == EDDSA
+#include "ed25519_verify.h"
+#endif
+
 #include "sys/log.h"
 #define LOG_MODULE "COSE"
 #define LOG_LEVEL LOG_LEVEL_EDHOC
@@ -184,9 +188,13 @@ cose_sign1_sign(int8_t alg, const uint8_t *private_key,
                 const uint8_t *payload, size_t payload_len,
                 uint8_t *signature)
 {
-  if(alg != ES256) {
-    LOG_ERR("Unsupported COSE_Sign1 algorithm %d (only ES256=%d is supported)\n",
-            alg, ES256);
+  if(alg != ES256
+#if EDHOC_SIGNATURE_ALG == EDDSA
+     && alg != EDDSA
+#endif
+     ) {
+    LOG_ERR("Unsupported COSE_Sign1 algorithm %d (only ES256=%d/EDDSA=%d supported)\n",
+            alg, ES256, EDDSA);
     return 0;
   }
 
@@ -199,6 +207,15 @@ cose_sign1_sign(int8_t alg, const uint8_t *private_key,
     LOG_ERR("Failed to encode Sig_structure for COSE_Sign1 signing\n");
     return 0;
   }
+
+#if EDHOC_SIGNATURE_ALG == EDDSA
+  if(alg == EDDSA) {
+    /* PureEdDSA (RFC 8032 SS5.1.6): sign the Sig_structure directly, no
+     * SHA-256 pre-hash. private_key holds the 32-byte Ed25519 seed. */
+    ed25519_sign(private_key, sig_struct, sig_struct_len, signature);
+    return P256_SIGNATURE_LEN;
+  }
+#endif
 
   uint8_t hash[HASH_LEN];
   sha_256_hash(sig_struct, sig_struct_len, hash);
@@ -217,9 +234,13 @@ cose_sign1_verify(int8_t alg, const uint8_t *public_key,
                   const uint8_t *payload, size_t payload_len,
                   const uint8_t *signature, size_t signature_len)
 {
-  if(alg != ES256) {
-    LOG_ERR("Unsupported COSE_Sign1 algorithm %d (only ES256=%d is supported)\n",
-            alg, ES256);
+  if(alg != ES256
+#if EDHOC_SIGNATURE_ALG == EDDSA
+     && alg != EDDSA
+#endif
+     ) {
+    LOG_ERR("Unsupported COSE_Sign1 algorithm %d (only ES256=%d/EDDSA=%d supported)\n",
+            alg, ES256, EDDSA);
     return false;
   }
   if(signature_len != P256_SIGNATURE_LEN) {
@@ -237,6 +258,18 @@ cose_sign1_verify(int8_t alg, const uint8_t *public_key,
     LOG_ERR("Failed to encode Sig_structure for COSE_Sign1 verification\n");
     return false;
   }
+
+#if EDHOC_SIGNATURE_ALG == EDDSA
+  if(alg == EDDSA) {
+    /* PureEdDSA (RFC 8032 SS5.1.7): verify the Sig_structure directly, no
+     * SHA-256 pre-hash. public_key holds the 32-byte Ed25519 public key. */
+    if(ed25519_verify(public_key, signature, sig_struct, sig_struct_len) != 0) {
+      LOG_ERR("COSE_Sign1 (EdDSA) signature verification failed\n");
+      return false;
+    }
+    return true;
+  }
+#endif
 
   uint8_t hash[HASH_LEN];
   sha_256_hash(sig_struct, sig_struct_len, hash);

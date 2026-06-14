@@ -59,4 +59,24 @@
 int ed25519_verify(const uint8_t pk[32], const uint8_t sig[64],
                    const uint8_t *msg, size_t msg_len);
 
+/**
+ * Derive the 32-byte Ed25519 public key from a 32-byte private seed
+ * (RFC 8032 §5.1.5).
+ *
+ * @param seed    32-byte private key seed
+ * @param pub_out 32-byte output buffer for the public key
+ */
+void ed25519_pubkey_from_seed(const uint8_t seed[32], uint8_t pub_out[32]);
+
+/**
+ * Sign a message with Ed25519 PureEdDSA (RFC 8032 §5.1.6).
+ *
+ * @param seed    32-byte private key seed
+ * @param msg     message bytes
+ * @param msg_len message length
+ * @param sig_out 64-byte output buffer for the signature (R || S)
+ */
+void ed25519_sign(const uint8_t seed[32], const uint8_t *msg, size_t msg_len,
+                   uint8_t sig_out[64]);
+
 #endif /* ED25519_VERIFY_H */

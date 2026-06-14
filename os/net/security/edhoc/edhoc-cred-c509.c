@@ -52,6 +52,7 @@
  * implementation (selected via EDHOC_SIGNATURE_CURVE, edhoc-config.h). */
 #define C509_PK_ALG_SECP256R1 1
 #define C509_PK_ALG_BRAINPOOLP256R1 24
+#define C509_PK_ALG_ED25519 12
 
 /* COSE "crv" value for brainpoolP256r1. Not part of the IANA COSE Elliptic
  * Curves registry (which only covers P-256/P-384/P-521/X25519/X448/
@@ -60,6 +61,10 @@
  * edhoc_validate_key_setup() report a curve mismatch instead of falsely
  * claiming "P-256". */
 #define COSE_CRV_BRAINPOOLP256R1 255
+
+/* COSE "crv" value for Ed25519 (RFC 8152, IANA COSE Elliptic Curves
+ * registry). Used with kty=1 (OKP). */
+#define COSE_CRV_ED25519 6
 
 /* Log configuration */
 #include "sys/log.h"
@@ -210,7 +215,22 @@ edhoc_c509_extract_pub_key(const uint8_t *c509, size_t c509_len,
     return EDHOC_ERR_CREDENTIAL_NOT_FOUND;
   }
 
-  /* Only secp256r1 and brainpoolP256r1 are supported */
+  /* Ed25519 (OKP): subject_pk is the raw 32-byte public key, no point
+   * compression prefix and no curve decompression step. */
+  if(pk_alg == C509_PK_ALG_ED25519) {
+    if(pk_len != 32) {
+      LOG_ERR("extract_pub_key: unexpected Ed25519 pk length %zu (expected 32)\n", pk_len);
+      return EDHOC_ERR_CREDENTIAL_NOT_FOUND;
+    }
+    memset(key_out, 0, sizeof(*key_out));
+    key_out->kty = 1;  /* OKP */
+    key_out->crv = COSE_CRV_ED25519;
+    memcpy(key_out->ecc.pub.x, pk, 32);
+    LOG_DBG("extract_pub_key: Ed25519 key extracted from C509\n");
+    return EDHOC_SUCCESS;
+  }
+
+  /* Only secp256r1 and brainpoolP256r1 are supported for EC2 keys */
   uECC_Curve curve;
   uint8_t crv;
   switch(pk_alg) {

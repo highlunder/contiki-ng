@@ -290,6 +290,17 @@
 #define EDHOC_SIGNATURE_CURVE EDHOC_CURVE_P256
 #endif
 
+/* COSE_Sign1 signature algorithm for the credential's static authentication
+ * key, independent of the ciphersuite-derived default (ES256). Override via
+ * EDHOC_CONF_SIGNATURE_ALG in project-conf.h (e.g. EDDSA, see
+ * PLAN-c509-lice-followup.md SS5.3.3 Ed25519 scenario D). 0 means "use the
+ * ciphersuite default" (get_edhoc_sign_alg() in edhoc.c). */
+#ifdef EDHOC_CONF_SIGNATURE_ALG
+#define EDHOC_SIGNATURE_ALG EDHOC_CONF_SIGNATURE_ALG
+#else
+#define EDHOC_SIGNATURE_ALG 0
+#endif
+
 /* Common settings for supported cipher suites */
 #define ECC_KEY_LEN 32
 #define HASH_LEN 32

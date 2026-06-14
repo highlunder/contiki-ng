@@ -193,6 +193,10 @@ get_edhoc_curve(uint8_t ciphersuite_id)
 static int8_t
 get_edhoc_sign_alg(uint8_t ciphersuite_id)
 {
+  if(EDHOC_SIGNATURE_ALG != 0) {
+    return EDHOC_SIGNATURE_ALG;
+  }
+
   switch(ciphersuite_id) {
   case EDHOC_CIPHERSUITE_2:
   case EDHOC_CIPHERSUITE_3:

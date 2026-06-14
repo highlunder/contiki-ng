@@ -613,7 +613,117 @@ static void sc_reduce(uint8_t out[32], const uint8_t h64[64]) {
     }
 }
 
+/**
+ * @brief Compute s = (a*b + c) mod l (RFC 8032 §5.1.6 step 7).
+ *
+ * a, b, c and the result s are 32-byte little-endian scalars. The product
+ * a*b is formed with a schoolbook byte-wise multiply into a 64-byte
+ * accumulator (each partial sum a[i]*b[j] is at most 255*255 and at most 32
+ * such terms land on any one byte position, so the per-position accumulator
+ * never exceeds ~2^21 and fits comfortably in uint32_t even before carry
+ * propagation). c is added (zero-extended to 64 bytes) with carry, and the
+ * 512-bit result is reduced mod l via the existing `sc_reduce`.
+ */
+static void sc_muladd(uint8_t s[32], const uint8_t a[32], const uint8_t b[32],
+                       const uint8_t c[32]) {
+    uint32_t acc[64] = {0};
+    uint8_t prod[64];
+    int i, j;
+    uint32_t carry;
+
+    for (i = 0; i < 32; i++) {
+        for (j = 0; j < 32; j++) {
+            acc[i + j] += (uint32_t)a[i] * (uint32_t)b[j];
+        }
+    }
+
+    carry = 0;
+    for (i = 0; i < 64; i++) {
+        uint32_t v = acc[i] + carry + (i < 32 ? c[i] : 0);
+        prod[i] = (uint8_t)v;
+        carry = v >> 8;
+    }
+
+    sc_reduce(s, prod);
+}
+
+/**
+ * @brief Derive the 32-byte clamped scalar `a` and 32-byte `prefix` from a
+ * 32-byte Ed25519 seed, per RFC 8032 §5.1.5 steps 1-2.
+ */
+static void ed25519_expand_seed(const uint8_t seed[32], uint8_t a[32], uint8_t prefix[32]) {
+    uint8_t h[64];
+    mbedtls_sha512_context sha;
+
+    mbedtls_sha512_init(&sha);
+    mbedtls_sha512_starts(&sha, 0);
+    mbedtls_sha512_update(&sha, seed, 32);
+    mbedtls_sha512_finish(&sha, h);
+    mbedtls_sha512_free(&sha);
+
+    memcpy(a, h, 32);
+    a[0] &= 248;
+    a[31] &= 127;
+    a[31] |= 64;
+
+    memcpy(prefix, h + 32, 32);
+}
+
 /* ── Public API ──────────────────────────────────────────────────────────── */
+
+/**
+ * Derive the 32-byte Ed25519 public key from a 32-byte private seed
+ * (RFC 8032 §5.1.5).
+ */
+void ed25519_pubkey_from_seed(const uint8_t seed[32], uint8_t pub_out[32]) {
+    uint8_t a[32], prefix[32];
+    ge_p3 A;
+
+    ed25519_expand_seed(seed, a, prefix);
+    ge_scalarmult_base(&A, a);
+    ge_p3_to_bytes(pub_out, &A);
+}
+
+/**
+ * Sign a message with Ed25519 PureEdDSA (RFC 8032 §5.1.6).
+ */
+void ed25519_sign(const uint8_t seed[32], const uint8_t *msg, size_t msg_len,
+                   uint8_t sig_out[64]) {
+    uint8_t a[32], prefix[32], pub[32];
+    uint8_t h[64], r[32], k[32];
+    mbedtls_sha512_context sha;
+    ge_p3 R_point;
+
+    ed25519_expand_seed(seed, a, prefix);
+    ge_scalarmult_base(&R_point, a);
+    ge_p3_to_bytes(pub, &R_point);
+
+    /* r = SHA-512(prefix || msg) mod l */
+    mbedtls_sha512_init(&sha);
+    mbedtls_sha512_starts(&sha, 0);
+    mbedtls_sha512_update(&sha, prefix, 32);
+    mbedtls_sha512_update(&sha, msg, msg_len);
+    mbedtls_sha512_finish(&sha, h);
+    mbedtls_sha512_free(&sha);
+    sc_reduce(r, h);
+
+    /* R = [r]B */
+    ge_scalarmult_base(&R_point, r);
+    ge_p3_to_bytes(sig_out, &R_point);
+
+    /* k = SHA-512(R || A || msg) mod l */
+    mbedtls_sha512_init(&sha);
+    mbedtls_sha512_starts(&sha, 0);
+    mbedtls_sha512_update(&sha, sig_out, 32);
+    mbedtls_sha512_update(&sha, pub, 32);
+    mbedtls_sha512_update(&sha, msg, msg_len);
+    mbedtls_sha512_finish(&sha, h);
+    mbedtls_sha512_free(&sha);
+    sc_reduce(k, h);
+
+    /* S = (k*a + r) mod l */
+    sc_muladd(sig_out + 32, k, a, r);
+}
 
 int ed25519_verify(const uint8_t pk[32],
                    const uint8_t sig[64],

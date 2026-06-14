@@ -209,6 +209,65 @@ static int run_ed25519_verify_tests(void) {
     return fail;
 }
 
+/* Reuses the seed/pubkey/signature triples from run_ed25519_verify_tests():
+ * seed = 0x00..0x1f -> (pk1, sig1) for the empty message, and
+ * seed = 0x20..0x3f -> (pk3, sig3) for msg3 = {0xaf, 0x82}. */
+static int run_ed25519_sign_tests(void) {
+    int fail = 0;
+    int i;
+    printf("--- Test: ed25519-sign ---\n");
+
+    static const uint8_t pk1[32] = {
+        0x03,0xa1,0x07,0xbf,0xf3,0xce,0x10,0xbe,0x1d,0x70,0xdd,0x18,0xe7,0x4b,0xc0,0x99,
+        0x67,0xe4,0xd6,0x30,0x9b,0xa5,0x0d,0x5f,0x1d,0xdc,0x86,0x64,0x12,0x55,0x31,0xb8
+    };
+    static const uint8_t sig1[64] = {
+        0x9c,0xa5,0x35,0x79,0x53,0x06,0x54,0xd5,0xc3,0xdf,0x77,0x08,0x9e,0xf4,0x5e,0xda,
+        0x61,0x3e,0x2f,0xed,0xf6,0x70,0xe9,0x6b,0xed,0xac,0x46,0x39,0x50,0x4e,0x58,0x45,
+        0xef,0x4b,0x95,0xd5,0x79,0x30,0x77,0x23,0x3d,0xd1,0x68,0x17,0xb2,0x53,0x2e,0x9c,
+        0x55,0x25,0x87,0x2a,0x73,0xa4,0xad,0x74,0xb7,0x59,0x36,0x9a,0x9e,0x05,0xc1,0x02
+    };
+    static const uint8_t pk3[32] = {
+        0x29,0xac,0xba,0xe1,0x41,0xbc,0xca,0xf0,0xb2,0x2e,0x1a,0x94,0xd3,0x4d,0x0b,0xc7,
+        0x36,0x1e,0x52,0x6d,0x0b,0xfe,0x12,0xc8,0x97,0x94,0xbc,0x93,0x22,0x96,0x6d,0xd7
+    };
+    static const uint8_t sig3[64] = {
+        0x4e,0xc7,0x10,0xbb,0xcd,0x58,0x55,0xc7,0x37,0xea,0x4d,0x04,0x9a,0xb6,0x13,0x2c,
+        0x3a,0xe0,0x01,0xbd,0xdd,0x73,0xa6,0xb9,0x55,0x8c,0x68,0xf1,0x0e,0x98,0x46,0xc7,
+        0x98,0x77,0x24,0x57,0xca,0xf9,0xf0,0x17,0x3a,0xa4,0xbf,0xa7,0xc1,0xef,0x2a,0xbf,
+        0x7a,0x16,0xf7,0xc5,0x64,0x13,0x8f,0xf8,0xe6,0xa7,0xee,0x2f,0x2f,0x70,0x32,0x01
+    };
+    static const uint8_t msg3[2] = { 0xaf, 0x82 };
+
+    uint8_t seed1[32], seed3[32], pub[32], sig[64];
+    for(i = 0; i < 32; i++) { seed1[i] = (uint8_t)i; seed3[i] = (uint8_t)(0x20 + i); }
+
+    ed25519_pubkey_from_seed(seed1, pub);
+    if(memcmp(pub, pk1, 32) != 0) {
+        printf("FAILED: ed25519_pubkey_from_seed (seed1) mismatch\n");
+        fail++;
+    }
+    ed25519_sign(seed1, NULL, 0, sig);
+    if(memcmp(sig, sig1, 64) != 0) {
+        printf("FAILED: ed25519_sign (seed1, empty msg) mismatch\n");
+        fail++;
+    }
+
+    ed25519_pubkey_from_seed(seed3, pub);
+    if(memcmp(pub, pk3, 32) != 0) {
+        printf("FAILED: ed25519_pubkey_from_seed (seed3) mismatch\n");
+        fail++;
+    }
+    ed25519_sign(seed3, msg3, 2, sig);
+    if(memcmp(sig, sig3, 64) != 0) {
+        printf("FAILED: ed25519_sign (seed3, 2-byte msg) mismatch\n");
+        fail++;
+    }
+
+    if(fail == 0) printf("SUCCESS: Ed25519 sign/pubkey-from-seed vectors PASS\n");
+    return fail;
+}
+
 /* ── Test runners ──────────────────────────────────────────────────────── */
 
 /* Parses a C509 certificate and reconstructs the full X.509 DER certificate
@@ -376,7 +435,7 @@ static int run_csr_build_sign_test(void) {
     fake.signature.val = 64;
     fake.signature.ptr = csr_buf + (offset - 64);
 
-    if(c509_verify_signature(&fake, pk_key, pk_key_len) != CRYPTO_ERR_NONE) {
+    if(c509_verify_signature(&fake, pk_key, pk_key_len, C509_PK_SECP256R1) != CRYPTO_ERR_NONE) {
         printf("FAILED: signature verification failed\n");
         return -1;
     }
@@ -455,7 +514,7 @@ static int run_ca_issue_test(void) {
         csr_fake.signature.val = 64;
         csr_fake.signature.ptr = csr_buf + (csr_offset - 64);
 
-        if(c509_verify_signature(&csr_fake, pk_key, pk_key_len) != CRYPTO_ERR_NONE) {
+        if(c509_verify_signature(&csr_fake, pk_key, pk_key_len, C509_PK_SECP256R1) != CRYPTO_ERR_NONE) {
             printf("FAILED: CSR proof-of-possession signature verification failed\n");
             return -1;
         }
@@ -484,7 +543,7 @@ static int run_ca_issue_test(void) {
         issued.signature.val = 64;
         issued.signature.ptr = cert_buf + (cert_offset - 64);
 
-        if(c509_verify_signature(&issued, ca_pub_key, sizeof(ca_pub_key)) != CRYPTO_ERR_NONE) {
+        if(c509_verify_signature(&issued, ca_pub_key, sizeof(ca_pub_key), C509_PK_SECP256R1) != CRYPTO_ERR_NONE) {
             printf("FAILED: issued cert signature verification (CA key) failed\n");
             return -1;
         }
@@ -529,6 +588,9 @@ PROCESS_THREAD(test_c509_process, ev, data)
 
   /* Ed25519 signature verification */
   failures += run_ed25519_verify_tests();
+
+  /* Ed25519 signing + public-key derivation */
+  failures += run_ed25519_sign_tests();
 
   /* CertificateChain encode/decode (Phase 1 of LICE/C509 enrollment plan) */
   failures += (run_chain_test() != 0);
