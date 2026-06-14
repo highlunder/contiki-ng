@@ -30,4 +30,11 @@
 /* ---- 6LoWPAN ---- */
 #define QUEUEBUF_CONF_NUM 16
 
+/* ---- RPL link-metric tolerance (lossy-radio experiment) ----
+ * Default RPL_MRHOF_CONF_MAX_LINK_METRIC is 512 (= ETX 4). Raised to match
+ * the value already used by the EDHOC+OSCORE scenarios C/D, to test whether
+ * the sr=0.5 RPL-collapse cliff is caused by this conservative default. */
+#define RPL_MRHOF_CONF_MAX_LINK_METRIC 16384
+#define RPL_MRHOF_CONF_MAX_PATH_COST   32768
+
 #endif /* PROJECT_CONF_H_ */
