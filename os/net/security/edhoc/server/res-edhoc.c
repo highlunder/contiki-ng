@@ -39,7 +39,10 @@ res_edhoc_post_handler(coap_message_t *request,
                        uint16_t preferred_size,
                        int32_t *offset)
 {
-  int block_size = 300; /* FIXME: Make configurable */
+  /* Must not exceed COAP_MAX_CHUNK_SIZE: a larger value overflows the
+   * COAP_MAX_HEADER_SIZE + COAP_MAX_CHUNK_SIZE transaction buffer used by
+   * coap_serialize_message() for both this block and continuation blocks. */
+  int block_size = COAP_MAX_CHUNK_SIZE;
 
   if(*offset == 0) {
     if(coap_block1_handler(request, response, msg_rx, &msg_rx_len,
@@ -62,6 +65,7 @@ res_edhoc_post_handler(coap_message_t *request,
     if(response->payload_len > block_size) {
       coap_set_option(response, COAP_OPTION_BLOCK2);
       coap_set_header_block2(response, 0, 1, block_size);
+      response->payload_len = block_size;
     }
   } else {
     coap_set_status_code(response, CHANGED_2_04);
