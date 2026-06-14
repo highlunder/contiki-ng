@@ -120,4 +120,31 @@ edhoc_error_t edhoc_x509_validate_self_signed(const uint8_t *der,
                                                size_t der_len,
                                                void *app_ctx);
 
+/**
+ * \brief Sample edhoc_cert_validator_fn for X.509 certificate chains
+ *        (x5chain, chain-length >= 1), with a chain-length-0 fallback.
+ *
+ * If \p der is a single DER certificate (not a CBOR array), delegates to
+ * edhoc_x509_validate_self_signed().
+ *
+ * Otherwise \p der must be a CBOR array of DER certs (major type 4),
+ * [bstr<leaf>, bstr<issuer_1>, ..., bstr<issuer_N>] — the on-wire x5chain
+ * CRED_x produced by edhoc_x509_generate_cred_x() for chain-length >= 1.
+ * Verifies each cert[i] (i < N) against cert[i+1]'s embedded public key,
+ * and the top-of-chain cert (cert[N]) against a trust anchor registered via
+ * edhoc_set_c509_trust_store() (the trust-store API is cert-encoding-
+ * agnostic — see edhoc-trust-store.h).
+ *
+ * \param der      Peer's X.509 DER cert or cert-chain bytes (as received in
+ *                  CRED_x).
+ * \param der_len  Length of \p der in bytes.
+ * \param app_ctx  Ignored (passed through to the chain-length-0 fallback).
+ *
+ * \return EDHOC_SUCCESS if the cert/chain is valid,
+ *         EDHOC_ERR_CERTIFICATE_REJECTED otherwise.
+ */
+edhoc_error_t edhoc_x509_validate_chain(const uint8_t *der,
+                                         size_t der_len,
+                                         void *app_ctx);
+
 #endif /* EDHOC_CRED_X509_H_ */

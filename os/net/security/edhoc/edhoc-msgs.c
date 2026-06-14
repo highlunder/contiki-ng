@@ -779,12 +779,58 @@ parse_c5c_credential(cbor_reader_state_t *reader, cose_key_t *key)
   return EDHOC_SUCCESS;
 }
 /*---------------------------------------------------------------------------*/
-/* Parse ID_CRED_x for x5chain: value is bstr (single X.509 DER cert).
- * Extracts the public key inline from the received cert bytes. */
+/* Parse ID_CRED_x for x5chain: value is either bstr (single X.509 DER cert)
+ * or, for chain-length >= 1, a CBOR array of cert byte strings
+ * [bstr<leaf>, bstr<issuer_1>, ...]. Extracts the leaf's public key inline
+ * from the received cert bytes. */
 static edhoc_error_t
 parse_x5chain_credential(cbor_reader_state_t *reader, cose_key_t *key)
 {
-  /* Reader is positioned after the map key (33); read the bstr value */
+  /* Reader is positioned after the map key (33); value is either a bstr
+   * (single cert) or an array of bstrs (chain). */
+  if(cbor_peek_next(reader) == CBOR_MAJOR_TYPE_ARRAY) {
+    const uint8_t *start = cbor_get_position(reader);
+    size_t n = cbor_read_array(reader);
+    if(n == SIZE_MAX || n < 1) {
+      LOG_ERR("x5chain: invalid cert chain array\n");
+      return EDHOC_ERR_ID_CRED_MALFORMED;
+    }
+
+    /* First element is the leaf cert — extract its public key. */
+    size_t leaf_sz;
+    const uint8_t *leaf = cbor_read_data(reader, &leaf_sz);
+    if(!leaf || leaf_sz == 0) {
+      LOG_ERR("x5chain: missing or empty leaf cert bstr in chain\n");
+      return EDHOC_ERR_ID_CRED_MALFORMED;
+    }
+    edhoc_error_t result = edhoc_x509_extract_pub_key(leaf, leaf_sz, key);
+    if(result != EDHOC_SUCCESS) {
+      LOG_ERR("x5chain: failed to extract public key from leaf cert in chain\n");
+      return result;
+    }
+
+    /* Skip remaining chain elements (issuer certs) */
+    for(size_t i = 1; i < n; i++) {
+      if(!cbor_skip_next(reader)) {
+        LOG_ERR("x5chain: failed to skip chain element %zu\n", i);
+        return EDHOC_ERR_ID_CRED_MALFORMED;
+      }
+    }
+    const uint8_t *end = cbor_get_position(reader);
+
+    /* Store a reference to the whole chain array (it lives in the receive
+     * buffer for the duration of the EDHOC session). This matches what
+     * edhoc_x509_generate_cred_x()/edhoc_x509_generate_id_cred_x5chain() emit
+     * for the local side's own chain, so CRED_x reconstruction agrees. */
+    key->c509_data = start;
+    key->c509_len  = (size_t)(end - start);
+
+    LOG_DBG("x5chain: peer key extracted from leaf of %zu-cert chain (%zu bytes)\n",
+            n, key->c509_len);
+    return EDHOC_SUCCESS;
+  }
+
+  /* Single cert: value is bstr<X.509 DER cert> */
   size_t cert_sz;
   const uint8_t *cert = cbor_read_data(reader, &cert_sz);
   if(!cert || cert_sz == 0) {

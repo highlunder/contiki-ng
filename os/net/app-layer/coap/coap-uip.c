@@ -276,17 +276,19 @@ coap_endpoint_is_connected(const coap_endpoint_t *ep)
 #endif
 
 #ifdef WITH_DTLS
-  if(coap_ep_is_dtls_peer(ep)) {
-    /* only if handshake is done! */
-    LOG_DBG("DTLS peer state for ");
-    LOG_DBG_COAP_EP(ep);
-    LOG_DBG_(" is %sconnected\n", coap_ep_is_dtls_connected(ep) ? "" : "not ");
-    return coap_ep_is_dtls_connected(ep);
-  } else {
-    LOG_DBG("DTLS did not find peer ");
-    LOG_DBG_COAP_EP(ep);
-    LOG_DBG_("\n");
-    return false;
+  if(coap_endpoint_is_secure(ep)) {
+    if(coap_ep_is_dtls_peer(ep)) {
+      /* only if handshake is done! */
+      LOG_DBG("DTLS peer state for ");
+      LOG_DBG_COAP_EP(ep);
+      LOG_DBG_(" is %sconnected\n", coap_ep_is_dtls_connected(ep) ? "" : "not ");
+      return coap_ep_is_dtls_connected(ep);
+    } else {
+      LOG_DBG("DTLS did not find peer ");
+      LOG_DBG_COAP_EP(ep);
+      LOG_DBG_("\n");
+      return false;
+    }
   }
 #endif /* WITH_DTLS */
 
