@@ -1,0 +1,16 @@
+CONTIKI_PROJECT = psk-native-dtls-client
+all: $(CONTIKI_PROJECT)
+
+CONTIKI = ../../..
+
+MAKE_WITH_DTLS              = 1
+MAKE_COAP_DTLS_WITH_PSK     = 1
+MAKE_COAP_DTLS_WITH_CLIENT  = 1
+MAKE_COAP_DTLS_KEYSTORE     = MAKE_COAP_DTLS_KEYSTORE_SIMPLE
+
+MODULES += os/net/app-layer/coap
+MODULES += os/lib
+
+CFLAGS += -DCOOJA_MTARCH_STACKSIZE=65536
+
+include $(CONTIKI)/Makefile.include
