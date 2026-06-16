@@ -45,11 +45,14 @@
 static struct simple_udp_connection oscore_udp;
 static oscore_security_context_t client_oscore;
 static bool oscore_ready = false;
+static bool oscore_test_passed = false;
 
 static uint8_t saved_piv[OSCORE_MAX_PIV_LEN];
 static uint8_t saved_piv_len;
 static uint8_t saved_kid[OSCORE_MAX_ID_LEN];
 static uint8_t saved_kid_len;
+
+PROCESS_NAME(edhoc_oscore_c5c_chain2_client);
 
 /*---------------------------------------------------------------------------*/
 static void
@@ -103,6 +106,8 @@ oscore_response_callback(struct simple_udp_connection *c,
 
   if(code == COAP_CODE_CONTENT) {
     LOG_INFO("=== EDHOC+OSCORE c5c-chain2 end-to-end test PASSED ===\n");
+    oscore_test_passed = true;
+    process_post(&edhoc_oscore_c5c_chain2_client, PROCESS_EVENT_CONTINUE, NULL);
   } else {
     LOG_WARN("Unexpected response code 0x%02x\n", code);
   }
@@ -230,6 +235,15 @@ PROCESS_THREAD(edhoc_oscore_c5c_chain2_client, ev, data)
       PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
 
       send_oscore_request(&server_ep.ipaddr);
+      etimer_set(&timer, CLOCK_SECOND * 5);
+      while(!oscore_test_passed) {
+        PROCESS_WAIT_EVENT();
+        if(etimer_expired(&timer)) {
+          LOG_INFO("OSCORE GET timeout, retrying\n");
+          send_oscore_request(&server_ep.ipaddr);
+          etimer_reset(&timer);
+        }
+      }
       break;
     }
     if(ret < 0) {
