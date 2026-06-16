@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 
 /* ── Existing test vectors ─────────────────────────────────────────────── */
 
@@ -554,6 +555,88 @@ static int run_ca_issue_test(void) {
     return 0;
 }
 
+/* ── Microbenchmarks (RW-6: computational cost) ───────────────────────── */
+static long
+ns_diff(const struct timespec *a, const struct timespec *b)
+{
+  return (long)(b->tv_sec - a->tv_sec) * 1000000000L
+       + (b->tv_nsec - a->tv_nsec);
+}
+
+static void
+run_timing_benchmarks(void)
+{
+#define BENCH_ITERS 200
+  struct timespec t0, t1;
+  long total_ns;
+  int i;
+
+  /* 1. C509 parse + x509_encode_full_cert() — the extra step scenario B
+   *    adds over scenario A.  Cert: secp256r1 Type-2 leaf (138 B → ~384 B DER). */
+  {
+    uint8_t der_buf[512];
+    c509_cert_t cert;
+    c509_parse_cert(&cert, c509_secp256r1, sizeof(c509_secp256r1));
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    for(i = 0; i < BENCH_ITERS; i++) {
+      uint32_t off = 0;
+      x509_encode_full_cert(der_buf, sizeof(der_buf), &off, &cert);
+    }
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    total_ns = ns_diff(&t0, &t1);
+    printf("BENCH x509_encode_full_cert (C509->DER): %ld us/call (%d iters)\n",
+           total_ns / 1000 / BENCH_ITERS, BENCH_ITERS);
+  }
+
+  /* 2. ed25519_verify() — signature verify in COSE_Sign1 EdDSA path */
+  {
+    static const uint8_t pk[] = {
+      0xd7, 0x5a, 0x98, 0x01, 0x82, 0x6a, 0x3d, 0x12,
+      0x65, 0x15, 0xec, 0x27, 0x10, 0x08, 0x13, 0xaf,
+      0xe5, 0x0a, 0x03, 0x8c, 0x02, 0x32, 0x2c, 0xf9,
+      0x44, 0x47, 0x18, 0x53, 0x44, 0x29, 0x99, 0x36
+    };
+    static const uint8_t sig[] = {
+      0xe5, 0x56, 0x43, 0x00, 0xc3, 0x60, 0xac, 0x72,
+      0x90, 0x86, 0xe2, 0xcc, 0x80, 0x6e, 0x82, 0x8a,
+      0x84, 0x87, 0x7f, 0x1e, 0xb8, 0xe5, 0xd9, 0x74,
+      0xd8, 0x73, 0xe0, 0x65, 0x22, 0x49, 0x01, 0x55,
+      0x5f, 0xb8, 0x82, 0x15, 0x90, 0xa3, 0x3b, 0xac,
+      0xc6, 0x1e, 0x39, 0x70, 0x1c, 0xf9, 0xb4, 0x6b,
+      0xd2, 0x5b, 0xf5, 0xf0, 0x59, 0x5b, 0xbe, 0x24,
+      0x10, 0x64, 0x25, 0x96, 0x4d, 0x55, 0x92, 0x09
+    };
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    for(i = 0; i < BENCH_ITERS; i++) {
+      ed25519_verify(pk, sig, NULL, 0);
+    }
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    total_ns = ns_diff(&t0, &t1);
+    printf("BENCH ed25519_verify (empty msg): %ld us/call (%d iters)\n",
+           total_ns / 1000 / BENCH_ITERS, BENCH_ITERS);
+  }
+
+  /* 3. ed25519_sign() — sign in COSE_Sign1 EdDSA path */
+  {
+    static const uint8_t seed[] = {
+      0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60,
+      0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c, 0x44,
+      0xc2, 0xaa, 0x4d, 0x09, 0x9e, 0xd1, 0x0b, 0x3f,
+      0xb4, 0xc9, 0xb6, 0x3b, 0x90, 0x12, 0x10, 0x02
+    };
+    uint8_t out[64];
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    for(i = 0; i < BENCH_ITERS; i++) {
+      ed25519_sign(seed, NULL, 0, out);
+    }
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    total_ns = ns_diff(&t0, &t1);
+    printf("BENCH ed25519_sign (empty msg): %ld us/call (%d iters)\n",
+           total_ns / 1000 / BENCH_ITERS, BENCH_ITERS);
+  }
+#undef BENCH_ITERS
+}
+
 PROCESS(test_c509_process, "C509 Test Process");
 AUTOSTART_PROCESSES(&test_c509_process);
 
@@ -606,6 +689,10 @@ PROCESS_THREAD(test_c509_process, ev, data)
   } else {
     printf("C509: %d test(s) FAILED\n", failures);
   }
+
+  /* Computational cost microbenchmarks (RW-6) */
+  run_timing_benchmarks();
+
   exit(failures != 0);
   PROCESS_END();
 }
