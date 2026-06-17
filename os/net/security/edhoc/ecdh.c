@@ -49,6 +49,7 @@
 #include "dev/watchdog.h"
 #include "ecdh.h"
 #include "edhoc-config.h"
+#include "edhoc-profile.h"
 #include "lib/ecc.h"
 #include "lib/ecc-curve.h"
 #include "sys/process-mutex.h"
@@ -104,10 +105,12 @@ ecdh_generate_keypair(uint8_t curve_id,
   uint8_t public_key[2 * ECC_KEY_LEN];
   int result = -1;
 
+  EDHOC_PROFILE_DECL(edhoc_profile_t0);
   PT_INIT(ecc_get_protothread());
   while(PT_SCHEDULE(ecc_generate_key_pair(public_key, priv, &result))) {
     watchdog_periodic();
   }
+  EDHOC_PROFILE_REPORT(edhoc_profile_t0, "ecc_generate_key_pair");
 
   ecc_disable();
 
@@ -157,11 +160,13 @@ ecdh_generate_ikm(uint8_t curve_id,
     return false;
   }
 
+  EDHOC_PROFILE_DECL(edhoc_profile_t0);
   PT_INIT(ecc_get_protothread());
   while(PT_SCHEDULE(ecc_generate_shared_secret(public_key, private_key,
                                                ikm, &result))) {
     watchdog_periodic();
   }
+  EDHOC_PROFILE_REPORT(edhoc_profile_t0, "ecc_generate_shared_secret");
 
   ecc_disable();
 
@@ -187,10 +192,12 @@ ecc_sign_hash(uint8_t curve_id,
   }
 
   int result = -1;
+  EDHOC_PROFILE_DECL(edhoc_profile_t0);
   PT_INIT(ecc_get_protothread());
   while(PT_SCHEDULE(ecc_sign(hash, private_key, signature, &result))) {
     watchdog_periodic();
   }
+  EDHOC_PROFILE_REPORT(edhoc_profile_t0, "ecc_sign");
 
   ecc_disable();
 
@@ -216,10 +223,12 @@ ecc_verify_hash(uint8_t curve_id,
   }
 
   int result = -1;
+  EDHOC_PROFILE_DECL(edhoc_profile_t0);
   PT_INIT(ecc_get_protothread());
   while(PT_SCHEDULE(ecc_verify(signature, hash, public_key, &result))) {
     watchdog_periodic();
   }
+  EDHOC_PROFILE_REPORT(edhoc_profile_t0, "ecc_verify");
 
   ecc_disable();
 

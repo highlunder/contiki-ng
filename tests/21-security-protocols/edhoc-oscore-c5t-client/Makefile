@@ -11,6 +11,13 @@ MODULES += os/net/security/oscore
 CFLAGS += -DuECC_OPTIMIZATION_LEVEL=4
 CFLAGS += -DuECC_SQUARE_FUNC=1
 
+# Opt-in DWT cycle + wall-clock profiling of the EDHOC crypto path
+# (per-op ecc_* cycles in ecdh.c + whole-handshake wall-clock here).
+# Build with EDHOC_PROFILE=1 to enable; off by default (zero cost).
+ifeq ($(EDHOC_PROFILE),1)
+  CFLAGS += -DEDHOC_PROFILE_CYCLES
+endif
+
 # CoAP CON retransmit timeout in seconds (default 3).  Raised to 15 for both
 # emulated and real nRF52840 because:
 #  - A SEQUENCE_ERROR on MSG_1 triggers a second round trip before MSG_2 arrives.

@@ -30,6 +30,7 @@
 #include "edhoc-exporter.h"
 #include "edhoc-cred-c509-test.h"   /* auth_c509_client_template, auth_c509_server_template,
                                         c509_test_attach_cert() */
+#include "edhoc-profile.h"          /* opt-in DWT cycle profiling (EDHOC_PROFILE_CYCLES) */
 #include "oscore.h"
 
 #include "sys/log.h"
@@ -151,8 +152,14 @@ AUTOSTART_PROCESSES(&edhoc_oscore_c5t_client);
 PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
 {
   static struct etimer timer;
+#ifdef EDHOC_PROFILE_CYCLES
+  /* static: must survive the PROCESS_WAIT_EVENT yields spanning the handshake */
+  static clock_time_t edhoc_profile_hs_start;
+#endif
 
   PROCESS_BEGIN();
+
+  edhoc_profile_init();   /* enable the DWT cycle counter (no-op if profiling off) */
 
   simple_udp_register(&oscore_udp, OSCORE_UDP_PORT, NULL, OSCORE_UDP_PORT,
                        oscore_response_callback);
@@ -192,12 +199,20 @@ PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
     PROCESS_EXIT();
   }
 
+#ifdef EDHOC_PROFILE_CYCLES
+  edhoc_profile_hs_start = clock_time();
+#endif
   edhoc_client_run();
 
   while(1) {
     PROCESS_WAIT_EVENT();
     int8_t ret = edhoc_client_callback(ev, data);
     if(ret > 0) {
+#ifdef EDHOC_PROFILE_CYCLES
+      printf("PROFILE handshake_wallclock: %lu ms\n",
+             (unsigned long)((clock_time() - edhoc_profile_hs_start)
+                             * 1000 / CLOCK_SECOND));
+#endif
       LOG_INFO("EDHOC finished\n");
 
       oscore_ctx_t edhoc_out;

@@ -1,0 +1,111 @@
+# =============================================================================
+# nRF52840 CryptoCell-310 (CC310) hardware-crypto backend for lib/ecc.h.
+# Included from Makefile.nrf52840 when ECC_HW_BACKEND=cc310.
+#
+# Routes ecc_sign / ecc_verify / ecc_generate_shared_secret /
+# ecc_generate_key_pair onto CC310 via Nordic's nrf_crypto frontend + cc310
+# backend (both vendored in Contiki's nrf52-sdk subset) plus the closed-source
+# CC310 runtime blob and CRYS/SaSi headers taken from the FULL nRF5 SDK 17.1.0
+# (those two are not part of the vendored subset).
+# See arch/cpu/nrf52840/dev/nrf52840-cc310-ecc.c for the full rationale.
+# =============================================================================
+
+# Full nRF5 SDK 17.1.0 root — provides the CC310 blob + CRYS/SaSi headers.
+# Override on the make command line if the SDK lives elsewhere.
+NRF_CC310_SDK ?= $(CONTIKI)/../nRF5_SDK_17.1.0_ddde560
+
+CC310_BLOB := $(NRF_CC310_SDK)/external/nrf_cc310/lib/cortex-m4/hard-float/libnrf_cc310_0.9.13.a
+ifeq (,$(wildcard $(CC310_BLOB)))
+  $(error CC310 blob not found at $(CC310_BLOB) -- set NRF_CC310_SDK to your nRF5 SDK 17.1.0 root)
+endif
+
+# --- the lib/ecc.h hardware backend itself ---
+CONTIKI_CPU_SOURCEFILES += nrf52840-cc310-ecc.c
+
+# --- vendored nrf_crypto frontend (Contiki's nrf52-sdk subset) ---
+CONTIKI_CPU_DIRS        += lib/nrf52-sdk/components/libraries/crypto
+CONTIKI_CPU_SOURCEFILES += nrf_crypto_ecc.c nrf_crypto_ecdsa.c nrf_crypto_ecdh.c \
+                           nrf_crypto_rng.c nrf_crypto_shared.c nrf_crypto_init.c
+
+# --- vendored CC310 backend ---
+CONTIKI_CPU_DIRS        += lib/nrf52-sdk/components/libraries/crypto/backend/cc310
+CONTIKI_CPU_SOURCEFILES += cc310_backend_ecc.c cc310_backend_ecdsa.c \
+                           cc310_backend_ecdh.c cc310_backend_init.c \
+                           cc310_backend_mutex.c cc310_backend_shared.c \
+                           cc310_backend_rng.c
+
+# --- mem manager (nrf_crypto allocates key/operation contexts through it) ---
+CONTIKI_CPU_DIRS        += lib/nrf52-sdk/components/libraries/mem_manager
+CONTIKI_CPU_SOURCEFILES += mem_manager.c
+
+# --- atomics (cc310 mutex uses nrf_atomic_u32_fetch_store) ---
+CONTIKI_CPU_DIRS        += lib/nrf52-sdk/components/libraries/atomic
+CONTIKI_CPU_SOURCEFILES += nrf_atomic.c
+
+# --- include paths (vendored headers) ---
+# The nrf_crypto frontend (nrf_crypto_*_backend.h) #includes EVERY backend's
+# header unconditionally; each compiles to nothing unless its
+# NRF_CRYPTO_BACKEND_<X>_ENABLED flag is set, but all must be on the include
+# path.  So add every backend dir, not just cc310.
+NRF_CC310_INC_PATHS += components/libraries/crypto
+NRF_CC310_INC_PATHS += components/libraries/crypto/backend/cc310
+NRF_CC310_INC_PATHS += components/libraries/crypto/backend/cc310_bl
+NRF_CC310_INC_PATHS += components/libraries/crypto/backend/cifra
+NRF_CC310_INC_PATHS += components/libraries/crypto/backend/mbedtls
+NRF_CC310_INC_PATHS += components/libraries/crypto/backend/micro_ecc
+NRF_CC310_INC_PATHS += components/libraries/crypto/backend/nrf_hw
+NRF_CC310_INC_PATHS += components/libraries/crypto/backend/nrf_sw
+NRF_CC310_INC_PATHS += components/libraries/crypto/backend/oberon
+NRF_CC310_INC_PATHS += components/libraries/crypto/backend/optiga
+NRF_CC310_INC_PATHS += components/libraries/mem_manager
+NRF_CC310_INC_PATHS += components/libraries/stack_info
+NRF_CC310_INC_PATHS += components/libraries/mutex
+NRF_CC310_INC_PATHS += components/libraries/atomic
+EXTERNALDIRS += $(addprefix $(NRF5_SDK_ROOT)/, $(NRF_CC310_INC_PATHS))
+
+# CRYS / SaSi headers from the full SDK (sns_silib.h, crys_ecpki_*.h, ...).
+CFLAGS += -I$(NRF_CC310_SDK)/external/nrf_cc310/include
+
+# --- enable the CC310 crypto backend in nrf_crypto + select secp256r1 ---
+# The nrf_crypto headers gate every feature on NRF_MODULE_ENABLED(<flag>)
+# (i.e. <flag>_ENABLED).  Set ONLY the backend-selection flags: each CC310
+# backend header then defines the corresponding generic feature flag itself
+# (e.g. cc310_backend_ecc.h sets NRF_CRYPTO_ECC_SECP256R1_ENABLED from
+# NRF_CRYPTO_BACKEND_CC310_ECC_SECP256R1_ENABLED) and #errors if we had
+# already defined it (its "more than one backend" guard).  Enable only what
+# scenarios C/D need: the CC310 backend, secp256r1 ECC, and the RNG (CC310
+# ECDSA draws its per-signature nonce from the on-chip TRNG).  All other
+# curves stay undefined and compile to nothing.
+CFLAGS += -DNRF_CRYPTO_ENABLED=1
+CFLAGS += -DNRF_CRYPTO_BACKEND_CC310_ENABLED=1
+CFLAGS += -DNRF_CRYPTO_BACKEND_CC310_ECC_SECP256R1_ENABLED=1
+CFLAGS += -DNRF_CRYPTO_BACKEND_CC310_RNG_ENABLED=1
+# Auto-initialise the CC310 TRNG inside nrf_crypto_init() so it is ready
+# before the first ECDSA sign (which draws its nonce from it).
+CFLAGS += -DNRF_CRYPTO_RNG_AUTO_INIT_ENABLED=1
+# Busy-wait for CC310 completion rather than using the CRYPTOCELL IRQ —
+# matches this backend's blocking single-shot protothread design and avoids
+# wiring an interrupt handler.
+CFLAGS += -DNRF_CRYPTO_BACKEND_CC310_INTERRUPTS_ENABLED=0
+
+# GCC 13 mis-reads nrf_crypto_init.c's linker-section walk (NRF_SECTION_ITEM_GET)
+# as an out-of-bounds access on a zero-length array — a false positive in
+# vendored Nordic SDK code that we keep pristine.  Suppress array-bounds for the
+# CC310 build only; -Warray-bounds (and -Werror) stay fully active in the
+# default / software-crypto builds, which compile the same shared code.
+CFLAGS += -Wno-array-bounds
+
+# --- vendored linker script ---
+# nrf_crypto registers its backends into a "crypto_data" linker section
+# (CRYPTO_BACKEND_REGISTER); nrf_crypto_init() walks it via
+# __start_crypto_data / __stop_crypto_data.  The stock mdk nrf_common.ld has no
+# such section, so we ship a patched copy in this platform's ld/ directory and
+# put it ahead of the SDK's on the linker search path, leaving the nrf52-sdk
+# submodule untouched.  (nrf52840.ld does INCLUDE "nrf_common.ld"; ld resolves
+# it from the first -L match.)  This -L is added here, before the SDK's mdk -L
+# in Makefile.nrf52840, so the patched copy wins — for CC310 builds only.
+LDFLAGS += -L $(CONTIKI_CPU)/ld
+
+# --- the closed-source CC310 runtime (hard-float, matches the platform ABI:
+#     -mfloat-abi=hard -mfpu=fpv4-sp-d16) ---
+TARGET_LIBFILES += $(CC310_BLOB)
