@@ -46,8 +46,23 @@
 #ifndef DBG_CONF_USB
 #define DBG_CONF_USB 0
 #endif
+#ifndef DBG_CONF_RTT
+#define DBG_CONF_RTT 0
+#endif
 
-#if DBG_CONF_USB
+#if DBG_CONF_RTT
+/*
+ * DIAGNOSTIC: routes all console output through SEGGER RTT instead of the
+ * UART peripheral, so UART (and its NVIC RX interrupt, dev/uart0.c) is
+ * never touched at all -- testing whether UART activity is part of the
+ * unresolved CC310 TRNG instantiation failure, the same way
+ * NETSTACK_RADIO.off() tested the radio. See
+ * tests/21-security-protocols/cc310-bringup/ecc-bench/.
+ */
+#include "SEGGER_RTT.h"
+#define write_byte(b) SEGGER_RTT_PutChar(0, (char)(b))
+#define flush()
+#elif DBG_CONF_USB
 #define write_byte(b) usb_serial_writeb(b)
 #define flush()       usb_serial_flush()
 #else

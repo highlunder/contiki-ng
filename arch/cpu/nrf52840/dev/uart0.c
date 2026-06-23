@@ -76,8 +76,14 @@ uart0_writeb(unsigned char c)
 {
   nrf_uart_txd_set(UART_INSTANCE, c);
 
-  /* Block if previous TX is ongoing */
-  // while(nrf_uart_event_check(UART_INSTANCE, NRF_UART_EVENT_TXDRDY) == false);
+  /*
+   * Block until the byte has been shifted out (TXDRDY). Re-enabled for the
+   * CC310 bring-up work: without this busy-wait, bytes queued back-to-back are
+   * dropped and the console log becomes unreliable, which makes the bring-up
+   * ladder (board-check / ecc-bench) hard to interpret. Reliable TX matters
+   * more than throughput here.
+   */
+  while(nrf_uart_event_check(UART_INSTANCE, NRF_UART_EVENT_TXDRDY) == false);
   nrf_uart_event_clear(UART_INSTANCE, NRF_UART_EVENT_TXDRDY);
 }
 /*---------------------------------------------------------------------------*/

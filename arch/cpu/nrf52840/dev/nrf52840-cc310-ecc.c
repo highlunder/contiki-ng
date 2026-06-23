@@ -59,9 +59,11 @@
 #include "lib/ecc-curve.h"
 #include "lib/csprng.h"
 #include "dev/watchdog.h"
+#include "sys/int-master.h"
 #include "sys/process-mutex.h"
 #include "sys/pt.h"
 #include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
 
 /* Nordic nRF5 SDK crypto abstraction (CC310 backend). */
@@ -70,6 +72,10 @@
 #include "nrf_crypto_ecdsa.h"
 #include "nrf_crypto_ecdh.h"
 #include "nrf_crypto_error.h"
+#include "nrf_crypto_rng.h"
+#include "cc310_backend_shared.h"
+#include "sns_silib.h"
+#include "crys_rnd.h"
 
 /*
  * uECC is kept linked solely for software point decompression (see
@@ -100,6 +106,27 @@
 static struct pt main_protothread;
 static const ecc_curve_t *curve;
 static process_mutex_t mutex;
+
+/*
+ * nrf_crypto's default allocator on this toolchain is the ALLOCA one
+ * (NRF_CRYPTO_ALLOC_ON_STACK == 1, see nrf_crypto_mem.h) -- and
+ * nrf_crypto_rng_init() explicitly refuses a NULL context in that case
+ * (returns NRF_ERROR_CRYPTO_ALLOC_FAILED) rather than handing back a
+ * stack-allocated pointer that would dangle the instant the function
+ * returns, since the RNG context must stay valid across every later
+ * nrf_crypto_rng_vector_generate() call. A persistent (static) context is
+ * required; passing NULL (as both the boot-time NRF_CRYPTO_RNG_AUTO_INIT
+ * call and an earlier version of ecc_session_begin() did) always fails.
+ *
+ * The temp work buffer has the same stack-lifetime problem in spirit, plus
+ * a size problem: it is 6112 bytes (CRYS_RND_WORK_BUFFER_SIZE_WORDS=1528,
+ * crys_rnd.h) and the default nRF52840 stack is only 8192 bytes
+ * (gcc_startup_nrf52840.S) -- alloca'ing it (passing NULL, the only other
+ * option) at this call depth risks overflowing the stack outright. Static
+ * for both, for the same reason.
+ */
+static nrf_crypto_rng_context_t rng_context;
+static nrf_crypto_rng_temp_buffer_t rng_temp_buffer;
 
 /* Map a lib/ecc.h curve to the nrf_crypto curve_info.  NULL => unsupported. */
 static const nrf_crypto_ecc_curve_info_t *
@@ -350,6 +377,59 @@ ecc_disable(void)
 {
   curve = NULL;
   process_mutex_unlock(&mutex);
+}
+/*---------------------------------------------------------------------------*/
+void
+ecc_session_begin(void)
+{
+  /*
+   * Begin a CC310 crypto session: power the block on, ensure the CC310
+   * runtime library is initialised for this power-up, and instantiate the
+   * TRNG-seeded CTR-DRBG once for the whole session.
+   *
+   * ROOT CAUSE of the long CC310 bring-up failure (confirmed 2026-06-19,
+   * PLAN section 9.11.4): the CC310 TRNG seeds the DRBG by sampling
+   * ring-oscillator jitter over a bounded CPU-cycle window. Any unrelated
+   * interrupt firing during that window -- notably Contiki's 128 Hz RTC0
+   * system tick (clock.c) -- injects latency that blows the window and
+   * fails the TRNG startup test (CRYS_RND_STARTUP_FAILED /
+   * CRYS_RND_INSTANTIATION_ERROR). The bare-metal SDK reference has no such
+   * interrupts and works. The instantiation must therefore run with all
+   * interrupts masked EXCEPT CC310's own completion interrupt -- masking
+   * that one too (e.g. via PRIMASK / __disable_irq) deadlocks, because the
+   * entropy-wait needs it to make progress. BASEPRI gives exactly that:
+   * raise CRYPTOCELL_IRQn to the top priority (0) and block every priority
+   * >= 1. This only matters for the TRNG seeding; once the DRBG is
+   * instantiated, per-op output (keygen / ECDSA nonce) is deterministic
+   * AES-CTR and needs no isolation.
+   *
+   * SaSi_LibInit() is called here (not just at boot) because it sets up
+   * CC310 HW state on the current power-up and clears NRF_CRYPTOCELL->ENABLE
+   * on exit -- so ENABLE is explicitly re-asserted before instantiation.
+   */
+  cc310_backend_enable();                 /* NRF_CRYPTOCELL->ENABLE = 1 */
+
+  NVIC_SetPriority(CRYPTOCELL_IRQn, 0);   /* highest priority: never BASEPRI-masked */
+  NVIC_EnableIRQ(CRYPTOCELL_IRQn);
+  uint32_t old_basepri = __get_BASEPRI();
+  __set_BASEPRI(1u << (8u - __NVIC_PRIO_BITS)); /* mask all IRQs of priority >= 1 */
+
+  SaSi_LibInit();
+  *(volatile uint32_t *)0x5002A500UL = 1; /* SaSi_LibInit clears ENABLE; re-assert */
+  ret_code_t ret = nrf_crypto_rng_init(&rng_context, &rng_temp_buffer);
+
+  __set_BASEPRI(old_basepri);
+
+  if(ret != NRF_SUCCESS) {
+    LOG_ERR("ecc_session_begin: nrf_crypto_rng_init failed (0x%lx)\n",
+            (unsigned long)ret);
+  }
+}
+/*---------------------------------------------------------------------------*/
+void
+ecc_session_end(void)
+{
+  cc310_backend_disable();
 }
 /*---------------------------------------------------------------------------*/
 
