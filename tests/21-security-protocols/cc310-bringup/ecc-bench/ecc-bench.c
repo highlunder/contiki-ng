@@ -36,6 +36,14 @@
 #define ECC_BENCH_BACKEND "software (uECC)"
 #endif
 
+/* Firmware build stamp for record-keeping. FW_BUILD_ID is a short date id the
+ * Makefile injects (-DFW_BUILD_ID, default below); printed alongside the
+ * compiler's own __DATE__/__TIME__ so any pasted result log is self-identifying
+ * (which source/firmware revision produced it). */
+#ifndef FW_BUILD_ID
+#define FW_BUILD_ID "dev"
+#endif
+
 #define CPU_HZ        64000000UL   /* nRF52840 core clock */
 #ifndef BENCH_ITERS
 #define BENCH_ITERS   100          /* override from Makefile: ITERS=<n> */
@@ -99,6 +107,21 @@ static inline uint32_t
 dwt_now(void)
 {
   return DWT_CYCCNT;
+}
+
+/* nRF52840 NVMC instruction cache config (base 0x4001E000 + 0x540), CACHEEN=bit0.
+ * Contiki's nRF startup leaves the I-cache DISABLED, so flash-resident hot loops
+ * (uECC) pay flash wait-states (~2x). Enable it so the per-op cost is realistic
+ * and comparable to published M4 numbers; done identically in p256m-bench so the
+ * software/p256-m/CC310 rows share one memory system. (CC310 does its math in the
+ * CryptoCell engine, so it is largely insensitive to this -- which is exactly why
+ * the hw-vs-sw gap must be measured with the cache ON to be fair.) */
+#define NVMC_ICACHECNF (*(volatile uint32_t *)0x4001E540UL)
+
+static inline void
+icache_enable(void)
+{
+  NVMC_ICACHECNF = 1UL;   /* CACHEEN = Enabled, profiling off */
 }
 
 /*
@@ -253,6 +276,10 @@ PROCESS_THREAD(ecc_bench_process, ev, data)
 
   printf("\n=== nRF52840 ECC benchmark (%s) ===\n", ECC_BENCH_CURVE_NAME);
   printf("backend: %s\n", ECC_BENCH_BACKEND);
+  printf("fw-build: %s  (compiled %s %s)\n", FW_BUILD_ID, __DATE__, __TIME__);
+
+  icache_enable();
+  printf("NVMC I-cache: %s\n", (NVMC_ICACHECNF & 1UL) ? "ENABLED" : "disabled");
 
   /* rung 3: is the DWT cycle counter alive? */
   dwt_init();
@@ -319,8 +346,8 @@ PROCESS_THREAD(ecc_bench_process, ev, data)
 
   /* Aggregate summary (computed from the buffers -- still no timing impact).
    * Pasting just this block is enough for the paper tables. */
-  printf("\n=== SUMMARY (%s, %s, %d iters) ===\n",
-         ECC_BENCH_CURVE_NAME, ECC_BENCH_BACKEND, BENCH_ITERS);
+  printf("\n=== SUMMARY (%s, %s, %d iters, fw %s) ===\n",
+         ECC_BENCH_CURVE_NAME, ECC_BENCH_BACKEND, BENCH_ITERS, FW_BUILD_ID);
   printf("op        n  nfail   min_us   mean_us    max_us    sd_us\n");
   for(g = 0; g < N_GROUPS; g++) {
     sum = 0;
@@ -348,7 +375,9 @@ PROCESS_THREAD(ecc_bench_process, ev, data)
       }
     }
     mean_cyc = (uint32_t)(sum / n_samp);
-    var = (sumsq - sum * sum / n_samp) / n_samp;   /* population variance */
+    /* population variance E[X^2]-E[X]^2; avoid forming sum*sum, which overflows
+     * uint64 once cyc ~ 7e7 (e.g. verify with the I-cache off). */
+    var = sumsq / n_samp - (uint64_t)mean_cyc * mean_cyc;
     sd_cyc = isqrt64(var);
     printf("%-8s %4u  %5u  %8lu  %8lu  %8lu  %8lu\n",
            op_groups[g].name, n_samp, fails,

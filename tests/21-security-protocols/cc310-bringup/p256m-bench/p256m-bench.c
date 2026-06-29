@@ -22,10 +22,31 @@
 #define BENCH_ITERS 100
 #endif
 
+/* Firmware build stamp for record-keeping. FW_BUILD_ID is a short date id the
+ * Makefile injects (-DFW_BUILD_ID, default below); printed with the compiler's
+ * own __DATE__/__TIME__ so any pasted result log is self-identifying. */
+#ifndef FW_BUILD_ID
+#define FW_BUILD_ID "dev"
+#endif
+
 /* --- self-contained ARM Cortex-M DWT cycle counter (raw regs, no CMSIS) --- */
 #define DWT_CYCCNT (*(volatile uint32_t *)0xE0001004UL)
 #define DWT_CTRL   (*(volatile uint32_t *)0xE0001000UL)
 #define DEMCR      (*(volatile uint32_t *)0xE000EDFCUL)
+
+/* nRF52840 NVMC instruction cache config (base 0x4001E000 + 0x540), CACHEEN=bit0.
+ * Contiki's nRF startup leaves the I-cache DISABLED, so flash-resident hot loops
+ * (uECC, p256-m) pay flash wait-states (~2x). Enable it so the per-op cost is the
+ * realistic, as-deployed figure and is comparable to published M4 numbers (whose
+ * reference boards have zero-wait flash). Done identically in ecc-bench so the
+ * software/p256-m/CC310 rows are measured under the same memory system. */
+#define NVMC_ICACHECNF (*(volatile uint32_t *)0x4001E540UL)
+
+static void
+icache_enable(void)
+{
+  NVMC_ICACHECNF = 1UL;   /* CACHEEN = Enabled, profiling off */
+}
 
 static void
 cyc_start(void)
@@ -86,8 +107,11 @@ PROCESS_THREAD(p256m_bench_process, ev, data)
     hash[i] = (uint8_t)(i * 7 + 1);
   }
 
+  icache_enable();
   cyc_start();
   printf("\n=== nRF52840 P-256 benchmark (p256-m, %d iters) ===\n", BENCH_ITERS);
+  printf("fw-build: %s  (compiled %s %s)\n", FW_BUILD_ID, __DATE__, __TIME__);
+  printf("NVMC I-cache: %s\n", (NVMC_ICACHECNF & 1UL) ? "ENABLED" : "disabled");
 
   /* DWT sanity. */
   t0 = cyc_read();
@@ -116,8 +140,8 @@ PROCESS_THREAD(p256m_bench_process, ev, data)
     PROCESS_PAUSE();   /* yield so the watchdog/console keep up */
   }
 
-  printf("\n=== SUMMARY (secp256r1, software (p256-m), %d iters) ===\n",
-         BENCH_ITERS);
+  printf("\n=== SUMMARY (secp256r1, software (p256-m), %d iters, fw %s) ===\n",
+         BENCH_ITERS, FW_BUILD_ID);
   printf("op        n  nfail   min_us   mean_us    max_us    sd_us\n");
   for(op = 0; op < N_OPS; op++) {
     uint64_t sum = 0, sumsq = 0;
@@ -132,7 +156,9 @@ PROCESS_THREAD(p256m_bench_process, ev, data)
       if(res_log[i][op] != 0) { fails++; }
     }
     uint32_t mean_cyc = (uint32_t)(sum / BENCH_ITERS);
-    uint64_t var = (sumsq - sum * sum / BENCH_ITERS) / BENCH_ITERS;
+    /* var = E[X^2] - E[X]^2; compute this way (not (sumsq - sum*sum/N)/N) so we
+     * never form sum*sum, which overflows uint64 once cyc ~ 7e7 (verify). */
+    uint64_t var = sumsq / BENCH_ITERS - (uint64_t)mean_cyc * mean_cyc;
     uint32_t sd_cyc = (uint32_t)isqrt64(var);
     printf("%-8s %4u  %5u  %8lu  %8lu  %8lu  %8lu\n",
            op_name[op], BENCH_ITERS, fails,

@@ -16,6 +16,12 @@ else
   CFLAGS += -DECC_BENCH_BACKEND='"software (uECC)"'
 endif
 
+# Short build id stamped into the result printout for record-keeping. Defaults
+# to the UTC date the hex is built; override with FW_ID=<id> (e.g. FW_ID=20260626b).
+# Always clean-build (rm -rf build) so the stamp is regenerated.
+FW_ID ?= $(shell date -u +%Y%m%d)
+CFLAGS += -DFW_BUILD_ID='"$(FW_ID)"'
+
 # Curve under test. Default secp256r1; BP256=1 selects brainpoolP256r1
 # (software backend only -- CC310 does not support brainpool).
 # The uECC fork ships a full brainpoolP256r1 implementation but gates it behind

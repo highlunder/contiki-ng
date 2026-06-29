@@ -1,0 +1,65 @@
+################################################################################
+# SUPERSEDED — pre-stamp raw capture, NVMC I-cache OFF.  DO NOT cite.
+#
+# These runs predate the build stamp and the NVMC I-cache enable. They are kept
+# only as a historical raw log. The CURRENT, canonical numbers are the
+# fw `20260626` (I-cache ON) runs in:
+#     ../BENCH-RESULTS-LOG.md   <-- main results
+# (p256-m `verify` sd 1162359 here is the since-fixed uint64 variance overflow.)
+################################################################################
+
+=== nRF52840 ECC benchmark (secp256r1) ===
+backend: software (uECC)
+DWT sanity: 1 ms delay measured 64025 cyc (expect ~64000)
+............................................................ 10/100
+............................................................ 20/100
+............................................................ 30/100
+............................................................ 40/100
+............................................................ 50/100
+............................................................ 60/100
+............................................................ 70/100
+............................................................ 80/100
+............................................................ 90/100
+............................................................ 100/100
+
+=== SUMMARY (secp256r1, software (uECC), 100 iters) ===
+op        n  nfail   min_us   mean_us    max_us    sd_us
+keygen    200      0    171662    171912    172187        98
+sign      100      0    185821    186116    186438       120
+verify    100      0    197654    208717    214905      3337
+ecdh      200      0    171424    171695    171927        97
+
+******************************
+
+=== nRF52840 P-256 benchmark (p256-m, 100 iters) ===
+DWT sanity: 1 ms delay measured 64522 cyc (expect ~64000)
+
+=== SUMMARY (secp256r1, software (p256-m), 100 iters) ===
+op        n  nfail   min_us   mean_us    max_us    sd_us
+keygen    100      0    554104    554112    554117         1
+sign      100      0    596945    596950    596955         3
+verify    100      0   1190366   1190371   1190376   1162359
+ecdh      100      0    553832    553840    553842         2
+p256-m benchmark complete
+
+=== nRF52840 P-256 benchmark (p256-m, 100 iters) ===
+DWT sanity: 1 ms delay measured 64521 cyc (expect ~64000)
+
+=== SUMMARY (secp256r1, software (p256-m), 100 iters) ===
+op        n  nfail   min_us   mean_us    max_us    sd_us
+keygen    100      0    554105    554112    554117         1
+sign      100      0    596946    596950    596955         3
+verify    100      0   1190366   1190370   1190376   1162359
+ecdh      100      0    553833    553840    553842         2
+p256-m benchmark complete
+
+******************************
+
+=== SUMMARY (secp256r1, CC310 hardware, 100 iters) ===
+op        n  nfail   min_us   mean_us    max_us    sd_us
+keygen    200      0     19049     19056     19071         3
+sign      100      0     21124     21154     21199        29
+verify    100      0     21321     22212     23114       347
+ecdh      200      0     19402     19407     19419         3
+
+=== RESULT: PASS (CC310 hardware) ===

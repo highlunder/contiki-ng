@@ -40,10 +40,23 @@ finishes, so no UART traffic ever falls inside a measured window.
 | `ecc-bench-secp256r1-sw.hex`    | secp256r1 (P-256) | software (uECC)    | Table `bp256-arm-timing` — SW P-256 column (the ~8x-slower baseline) |
 | `ecc-bench-bp256-sw.hex`        | brainpoolP256r1   | software (uECC)    | `sec:eval-algo` brainpool row (CC310 cannot do brainpool — SW only) |
 
-Measured (real HW, full RPL/CSMA/IPv6 + radio, 2026-06-19), CC310 P-256:
-keygen 18.86 ms, sign 20.80 ms, verify 21.92 ms, ECDH 19.15 ms — ~6 ops ×
-~19 ms ≈ 114 ms, consistent with Fedrecheski 2024's ~135 ms CC310 EDHOC
-handshake. Re-run the SW images for the matching software column.
+**Canonical numbers live in `../BENCH-RESULTS-LOG.md`** (fw-stamped, I-cache ON,
+firmware register + per-run blocks). Cite that file for the paper, not the raw
+`results.txt` here (which is a superseded, pre-stamp, I-cache-OFF capture).
+
+Latest bare-bench, fw `20260626`, I-cache ON, 100 iters (mean ms):
+
+| op | uECC (sw) | p256-m (sw) | CC310 (hw) |
+|---|---|---|---|
+| keygen | 150.6 | 341.6 | 18.6 |
+| sign   | 161.2 | 367.4 | 20.4 |
+| verify | 180.0 | 732.3 | 21.5 |
+| ecdh   | 150.5 | 341.1 | 18.8 |
+
+CC310 ~8× faster than the best software (uECC); p256-m slowest (constant-time +
+~2.9 KB code). 4-op sums: uECC 642 ms · p256-m 1782 ms · CC310 79 ms —
+consistent with the earlier full-netstack ~6 ops × ~19 ms ≈ 114 ms and
+Fedrecheski 2024's ~135 ms CC310 EDHOC handshake.
 
 Note: there is no `ecc-bench-bp256-cc310.hex` on purpose — the CC310 backend's
 `map_curve()` returns NULL for brainpool, so that combination does not exist.

@@ -17,4 +17,10 @@ ifneq ($(ITERS),)
   CFLAGS += -DBENCH_ITERS=$(ITERS)
 endif
 
+# Short build id stamped into the result printout for record-keeping. Defaults
+# to the UTC date the hex is built; override with FW_ID=<id>. Always clean-build
+# (rm -rf build) so the stamp is regenerated.
+FW_ID ?= $(shell date -u +%Y%m%d)
+CFLAGS += -DFW_BUILD_ID='"$(FW_ID)"'
+
 include $(CONTIKI)/Makefile.include
