@@ -53,6 +53,9 @@
  * pk_alg = 1 (secp256r1), subject_pk prefix = 0xFD (odd y).
  */
 static const uint8_t c509_test_cert[] = {
+  /* draft-20: C509Certificate is the full CBOR array(11); the `8B` header is part
+   * of the certificate (the unwrapped ~C509Certificate sequence is gone). */
+  0x8b,
   0x03, 0x42, 0x12, 0x34, 0x00, 0xf6,
   0x1a, 0x67, 0x75, 0xd7, 0x00,
   0x1a, 0x69, 0x57, 0x0a, 0x80,

@@ -110,6 +110,9 @@ edhoc_c509_generate_id_cred_c5t(const cose_key_t *key,
     return 0;
   }
 
+  /* draft-20: c5t (COSE_CertHash) is computed over the C509Certificate, i.e. the
+   * full CBOR array including its `8B` header (c509_data is stored in array form).
+   * In -19 the hash was over the unwrapped ~C509Certificate sequence. */
   uint8_t hash[EDHOC_C5T_HASH_LEN];
   edhoc_c509_hash_cert(key->c509_data, key->c509_len, hash, EDHOC_C5T_HASH_LEN);
 
@@ -142,21 +145,26 @@ edhoc_c509_generate_id_cred_c5c(const cose_key_t *key,
     return 0;
   }
 
-  /* Build {25: h'<C509 bytes>'}
-   *   CBOR map(1)
-   *     key:   uint 25
-   *     value: bstr <C509 cert>
+  /* Build {25: COSE_C509}.
    *
-   * Chain case: if c509_data already holds a CBOR array of cert byte
-   * strings (chain-length >= 1, [bstr<leaf>, bstr<issuer>, ...]; major
-   * type 4), write it verbatim as the map value instead of wrapping it
-   * in an outer bstr — i.e. {25: [bstr, bstr, ...]}.
+   * draft-20: COSE_C509 = C509CertData / [2* C509CertData], where
+   * C509CertData = bytes .cbor C509Certificate. A single C509Certificate is a
+   * CBOR array whose first element is the certificateType integer; a certificate
+   * chain is a CBOR array of byte strings (each element a C509CertData). Both are
+   * CBOR major type 4, so distinguish by the FIRST INNER element:
+   *   - byte string (major type 2)  => chain: write the array verbatim
+   *                                    -> {25: [bstr, bstr, ...]}.
+   *   - otherwise (the type int)    => single cert: wrap as one C509CertData
+   *                                    -> {25: bstr<C509Certificate>}.
+   * (A legacy headerless ~C509Certificate sequence also takes the single-cert
+   * branch and is wrapped as one byte string.)
    */
   cbor_writer_state_t w;
   cbor_init_writer(&w, out, out_sz);
   cbor_open_map(&w);
   cbor_write_unsigned(&w, COSE_HEADER_LABEL_C5C);
-  if((key->c509_data[0] >> 5) == 4) {
+  if(key->c509_len > 1 &&
+     (key->c509_data[0] >> 5) == 4 && (key->c509_data[1] >> 5) == 2) {
     cbor_write_object(&w, key->c509_data, key->c509_len);
   } else {
     cbor_write_data(&w, key->c509_data, key->c509_len);
