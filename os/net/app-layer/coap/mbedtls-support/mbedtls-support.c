@@ -282,6 +282,15 @@ perform_handshake(coap_dtls_session_info_t *session_info)
 
   if(ret == 0) {
     LOG_INFO("DTLS handshake succesful\n");
+    /* Peak HEAPMEM high-water mark during the DTLS handshake. mbedTLS is the
+     * only heapmem user (the EDHOC+OSCORE scenarios are all-static), and
+     * max_heap_usage is monotonic, so this reports the per-scenario peak. */
+    {
+      heapmem_stats_t hm;
+      heapmem_stats(&hm);
+      LOG_INFO("HEAPMEM peak (max_heap_usage): %u bytes\n",
+               (unsigned)hm.max_heap_usage);
+    }
   } else if(ret < 0) {
   /* Handshake error handling */
     if(ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
