@@ -128,8 +128,10 @@ static const cose_key_t c509_chain_root_ca_anchor = {
 
 /*---------------------------------------------------------------------------*/
 /* Buffer for the on-wire c5c chain CRED_x: CBOR array [bstr<leaf>, bstr<Sub CA>].
- * Sizing: 1 (array(2) header) + 2 (bstr header, len 136) + 136 (leaf)
- *       + 2 (bstr header, len 146) + 146 (Sub CA) = 287 bytes -> 300 (margin).
+ * Sizing (draft-20, certs are CBOR arrays incl. the 8B header):
+ *   1 (array(2) header) + 2 (bstr header, len 137) + 137 (leaf)
+ *       + 2 (bstr header, len 147) + 147 (Sub CA) = 289 bytes -> 300 (margin).
+ *   (draft-19 was 287 with unwrapped 136/146 certs; +1/cert for the array header.)
  */
 #define C509_CHAIN_C5C_CRED_BUF_LEN 300
 
