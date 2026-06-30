@@ -26,6 +26,60 @@ plink -serial COM5 -sercfg 115200,8,n,1,N
 
 A green LED + a `RESULT: PASS (...)` line = the run is healthy.
 
+## EDHOC handshake hardware testing (c5t, CC310 vs software)
+
+The current hw-test focus: measuring a **whole EDHOC handshake** on real silicon
+(per-op crypto cycles + end-to-end wall-clock), CC310 vs software. These run the
+`edhoc-oscore-c5t-client` app (Method 0, C509 c5t credential) built with
+`EDHOC_PROFILE=1`, so they print `PROFILE <op>: <n> cycles` per ECC op plus
+`PROFILE handshake_wallclock: <ms> ms` at the end.
+
+> **draft-20 update (2026-06-30):** the C509 credential is now the full CBOR
+> array `C509Certificate` (with the `8B` header), so **c5t is hashed over the
+> array** (draft-20 abolished the unwrapped `~C509Certificate` sequence). For the
+> test cert this changes c5t from `0484e54cdbfc1cce` (-19) to
+> `f61cea26d1efd231` (-20). The staged `fw 20260629` hexes below are **pre-20** —
+> rebuild the client hexes (and the native server) from the `c509-eval-phase5`
+> branch with the draft-20 code (`FW_ID=20260630`) before re-running. Client and
+> server share the credential blob, so the new c5t matches on both ends.
+
+Each prints a self-identifying stamp at boot (built fw `20260629`):
+```
+fw-build: 20260629  (compiled <date> <time>)  ecc-backend: CC310 hardware
+```
+The `ecc-backend:` field tells you which image is running, so a pasted log is
+unambiguous. `FW_BUILD_ID` is Makefile-injected (`FW_ID=`), same scheme as the
+benches.
+
+| Hex file | Role | Backend | Notes |
+|---|---|---|---|
+| `edhoc-c5t-client-cc310.hex` | EDHOC client (DUT) | **CC310 hardware** | the measured handshake; `ecc-backend: CC310 hardware` |
+| `edhoc-c5t-client-sw.hex`    | EDHOC client (DUT) | software (uECC)    | sw baseline for hw-vs-sw handshake comparison |
+| `slip-radio-dk.hex`          | radio↔SLIP bridge  | n/a                | second DK; bridges the client's 802.15.4 radio to the host |
+
+**Topology (Client DK ↔ host server over SLIP):**
+1. **DK #1** = the DUT — flash `edhoc-c5t-client-cc310.hex` (or `-sw.hex`). Runs
+   the EDHOC client over its 802.15.4 radio (channel 26, PANID 0xabcd defaults).
+2. **DK #2** = flash `slip-radio-dk.hex`; connect to the host by USB. On the host
+   run `tunslip6` + an RPL border-router so the client gets a routable prefix.
+3. **Host** runs the c5t responder (the native `edhoc-oscore-c5t-server`, or the
+   `setest` EDHOC module) reachable over that prefix.
+4. Read the DUT's UART: `=== EDHOC+OSCORE c5t end-to-end test PASSED ===` plus the
+   `PROFILE ...` lines = a good run. Compare CC310 vs sw wall-clock + per-op.
+
+**Rebuild** (from `tests/21-security-protocols/edhoc-oscore-c5t-client/`, clean
+between backends so the stamp + backend objects refresh):
+```
+# CC310 (draft-20: FW_ID bumped to 20260630):
+make TARGET=nrf52840 BOARD=dk ECC_HW_BACKEND=cc310 \
+     NRF_CC310_SDK=/path/to/nRF5_SDK_17.1.0_ddde560 EDHOC_PROFILE=1 FW_ID=20260630
+# software:
+make TARGET=nrf52840 BOARD=dk EDHOC_PROFILE=1 FW_ID=20260630
+```
+then `arm-none-eabi-objcopy -O ihex build/nrf52840/dk/edhoc-oscore-c5t-client.nrf52840 <name>.hex`.
+(CC310 build needs the `nrf52840-cc310-ecc-backend` integration, present on the
+`c509-eval-phase5` branch.)
+
 ## Paper-experiment firmwares
 
 These three are THE images for the paper's ARM ECC-timing numbers. All run
