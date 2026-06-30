@@ -34,18 +34,18 @@ The current hw-test focus: measuring a **whole EDHOC handshake** on real silicon
 `EDHOC_PROFILE=1`, so they print `PROFILE <op>: <n> cycles` per ECC op plus
 `PROFILE handshake_wallclock: <ms> ms` at the end.
 
-> **draft-20 update (2026-06-30):** the C509 credential is now the full CBOR
-> array `C509Certificate` (with the `8B` header), so **c5t is hashed over the
-> array** (draft-20 abolished the unwrapped `~C509Certificate` sequence). For the
-> test cert this changes c5t from `0484e54cdbfc1cce` (-19) to
-> `f61cea26d1efd231` (-20). The staged `fw 20260629` hexes below are **pre-20** —
-> rebuild the client hexes (and the native server) from the `c509-eval-phase5`
-> branch with the draft-20 code (`FW_ID=20260630`) before re-running. Client and
-> server share the credential blob, so the new c5t matches on both ends.
+> **draft-20 (fw `20260630`):** the C509 credential is now the full CBOR array
+> `C509Certificate` (with the `8B` header), so **c5t is hashed over the array**
+> (draft-20 abolished the unwrapped `~C509Certificate` sequence). For the test
+> cert this changes c5t from `0484e54cdbfc1cce` (-19) to `f61cea26d1efd231` (-20).
+> The hexes below are **draft-20** (rebuilt from `c509-eval-phase5`, `FW_ID=20260630`);
+> the host native `edhoc-oscore-c5t-server` is draft-20 too. Client and server
+> share the credential blob, so the new c5t matches on both ends — expect the
+> handshake to pass exactly as before, now over the draft-20 wire format.
 
-Each prints a self-identifying stamp at boot (built fw `20260629`):
+Each prints a self-identifying stamp at boot (built fw `20260630`):
 ```
-fw-build: 20260629  (compiled <date> <time>)  ecc-backend: CC310 hardware
+fw-build: 20260630  (compiled <date> <time>)  ecc-backend: CC310 hardware
 ```
 The `ecc-backend:` field tells you which image is running, so a pasted log is
 unambiguous. `FW_BUILD_ID` is Makefile-injected (`FW_ID=`), same scheme as the
