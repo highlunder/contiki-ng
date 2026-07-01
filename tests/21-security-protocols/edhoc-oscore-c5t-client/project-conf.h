@@ -61,7 +61,9 @@
 
 /* EDHOC session watchdog: 100 s conservative for both emulated and real HW.
  * Reduce to ~30 s if tighter failure detection is needed on production HW. */
-#define EDHOC_CONF_TIMEOUT 100000
+#undef  EDHOC_CONF_ATTEMPTS
+#define EDHOC_CONF_ATTEMPTS 4      /* E0 recovery hardening */
+#define EDHOC_CONF_TIMEOUT 10000  /* E0: was 100000 */
 
 #define LOG_CONF_LEVEL_EDHOC LOG_LEVEL_INFO
 

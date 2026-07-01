@@ -15,6 +15,7 @@ CFLAGS += -DuECC_SQUARE_FUNC=1
 # edhoc-oscore-x509-client/Makefile for the rationale; the chain-length-1
 # x5chain cert is even larger (782 B CRED_x vs 384 B), so block-wise
 # delivery takes more round trips.
-CFLAGS += -DCOAP_RESPONSE_TIMEOUT=15
+CFLAGS += -DCOAP_RESPONSE_TIMEOUT=3
+CFLAGS += -DCOAP_MAX_RETRANSMIT=2
 
 include $(CONTIKI)/Makefile.include

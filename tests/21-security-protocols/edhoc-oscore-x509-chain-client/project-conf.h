@@ -36,7 +36,7 @@
 
 /* Prevent competing EDHOC session from starting during MSG_2 transit. */
 #undef  EDHOC_CONF_ATTEMPTS
-#define EDHOC_CONF_ATTEMPTS 1
+#define EDHOC_CONF_ATTEMPTS 4  /* E0: was 1 (no retry) */
 
 /* --- Timing / RPL tuning — emulated vs real nRF52840 hardware ---
  * See edhoc-oscore-c5c-client/project-conf.h for the full rationale; the
@@ -60,7 +60,7 @@
 #define LPM_CONF_MAX_PM 1
 
 /* EDHOC session watchdog: 100 s conservative for both emulated and real HW. */
-#define EDHOC_CONF_TIMEOUT 100000
+#define EDHOC_CONF_TIMEOUT 10000  /* E0: was 100000 (100s watchdog) */
 
 #define LOG_CONF_LEVEL_EDHOC LOG_LEVEL_INFO
 
