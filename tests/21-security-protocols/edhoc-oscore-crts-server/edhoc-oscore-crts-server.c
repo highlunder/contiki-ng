@@ -75,6 +75,17 @@ static const uint8_t issued_serial[] = { 0x05 };
 #define ISSUED_NOT_BEFORE 1700000000
 #define ISSUED_NOT_AFTER  2000000000
 
+/* /sen idempotency cache (restart-on-failure recovery): remembers the last CSR
+ * issued and the cert returned for it, so a client that retransmits /sen after
+ * losing our response gets the SAME cert back instead of a duplicate issuance
+ * (the CA signs with fresh randomness, so re-issuing would differ). A single
+ * entry suffices for the one-client enrollment test; generalise to a small LRU
+ * for a multi-client CA. */
+static uint8_t g_last_csr[256];
+static size_t  g_last_csr_len = 0;
+static uint8_t g_last_cert[256];
+static size_t  g_last_cert_len = 0;
+
 static struct simple_udp_connection oscore_udp;
 static oscore_security_context_t server_oscore;
 static bool oscore_ready = false;
@@ -154,35 +165,54 @@ oscore_request_callback(struct simple_udp_connection *c,
     /* /sen (Phase 3.2): req_payload is a C509 Type-3 CSR. Verify its PoP
      * self-signature, then issue a new Type-2 cert for the CSR's
      * subject/key. */
-    int64_t csr_type, csr_sig_alg, csr_pk_alg;
-    const uint8_t *subject, *pk_key, *sig;
-    size_t subject_len, pk_key_len, tbs_len, sig_len;
-
-    if(c509_csr_parse(req_payload, req_payload_len,
-                       &csr_type, &csr_sig_alg,
-                       &subject, &subject_len,
-                       &csr_pk_alg, &pk_key, &pk_key_len,
-                       &tbs_len, &sig, &sig_len) != 0 ||
-       csr_type != 3 || csr_sig_alg != C509_SIG_ECDSA_SHA256 ||
-       csr_pk_alg != C509_PK_SECP256R1) {
-      LOG_ERR("/sen: CSR parse failed or unsupported algorithm\n");
-      resp_code = COAP_CODE_BAD_REQUEST;
-    } else if(c509_csr_verify_pop(req_payload, tbs_len, pk_key, pk_key_len, sig, sig_len) != 0) {
-      LOG_ERR("/sen: CSR proof-of-possession verification failed\n");
-      resp_code = COAP_CODE_BAD_REQUEST;
-    } else if(c509_ca_issue_cert(resp_payload, sizeof(resp_payload), &resp_payload_len,
-                                  issued_serial, sizeof(issued_serial),
-                                  ca_issuer_name, sizeof(ca_issuer_name) - 1,
-                                  ISSUED_NOT_BEFORE, ISSUED_NOT_AFTER,
-                                  subject, subject_len,
-                                  csr_pk_alg, pk_key, pk_key_len,
-                                  ca_priv_key_d, sizeof(ca_priv_key_d)) != 0) {
-      LOG_ERR("/sen: c509_ca_issue_cert failed\n");
-      resp_code = COAP_CODE_BAD_REQUEST;
-      resp_payload_len = 0;
-    } else {
+    if(g_last_csr_len != 0 && g_last_csr_len == req_payload_len &&
+       memcmp(req_payload, g_last_csr, req_payload_len) == 0) {
+      /* Idempotent retransmit of a CSR we already issued: return the cached
+       * cert (no duplicate issuance). */
+      memcpy(resp_payload, g_last_cert, g_last_cert_len);
+      resp_payload_len = g_last_cert_len;
       resp_code = COAP_CODE_CREATED;
-      LOG_INFO("/sen: issued %zu-byte Type-2 cert for CSR subject\n", resp_payload_len);
+      LOG_INFO("/sen: idempotent replay — returning cached %zu-byte cert\n",
+               resp_payload_len);
+    } else {
+      int64_t csr_type, csr_sig_alg, csr_pk_alg;
+      const uint8_t *subject, *pk_key, *sig;
+      size_t subject_len, pk_key_len, tbs_len, sig_len;
+
+      if(c509_csr_parse(req_payload, req_payload_len,
+                         &csr_type, &csr_sig_alg,
+                         &subject, &subject_len,
+                         &csr_pk_alg, &pk_key, &pk_key_len,
+                         &tbs_len, &sig, &sig_len) != 0 ||
+         csr_type != 3 || csr_sig_alg != C509_SIG_ECDSA_SHA256 ||
+         csr_pk_alg != C509_PK_SECP256R1) {
+        LOG_ERR("/sen: CSR parse failed or unsupported algorithm\n");
+        resp_code = COAP_CODE_BAD_REQUEST;
+      } else if(c509_csr_verify_pop(req_payload, tbs_len, pk_key, pk_key_len, sig, sig_len) != 0) {
+        LOG_ERR("/sen: CSR proof-of-possession verification failed\n");
+        resp_code = COAP_CODE_BAD_REQUEST;
+      } else if(c509_ca_issue_cert(resp_payload, sizeof(resp_payload), &resp_payload_len,
+                                    issued_serial, sizeof(issued_serial),
+                                    ca_issuer_name, sizeof(ca_issuer_name) - 1,
+                                    ISSUED_NOT_BEFORE, ISSUED_NOT_AFTER,
+                                    subject, subject_len,
+                                    csr_pk_alg, pk_key, pk_key_len,
+                                    ca_priv_key_d, sizeof(ca_priv_key_d)) != 0) {
+        LOG_ERR("/sen: c509_ca_issue_cert failed\n");
+        resp_code = COAP_CODE_BAD_REQUEST;
+        resp_payload_len = 0;
+      } else {
+        resp_code = COAP_CODE_CREATED;
+        LOG_INFO("/sen: issued %zu-byte Type-2 cert for CSR subject\n", resp_payload_len);
+        /* Cache (CSR -> cert) so a retransmit is idempotent. */
+        if(req_payload_len <= sizeof(g_last_csr) &&
+           resp_payload_len <= sizeof(g_last_cert)) {
+          memcpy(g_last_csr, req_payload, req_payload_len);
+          g_last_csr_len = req_payload_len;
+          memcpy(g_last_cert, resp_payload, resp_payload_len);
+          g_last_cert_len = resp_payload_len;
+        }
+      }
     }
   } else {
     LOG_WARN("Unsupported request code 0x%02x\n", code);

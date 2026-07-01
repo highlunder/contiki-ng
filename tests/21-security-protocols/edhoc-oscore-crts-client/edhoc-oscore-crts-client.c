@@ -90,6 +90,27 @@ static uint8_t saved_kid_len;
 
 static cose_key_t client_key;
 
+/* Enrollment request recovery (restart-on-failure): on a response timeout the
+ * outstanding /crts or /sen request is retransmitted with a fresh OSCORE PIV
+ * (a new oscore_protect_request call — a byte-identical resend would be dropped
+ * by the receiver's replay window). The signed CSR is cached so a /sen retry is
+ * byte-identical, which the server treats idempotently (no duplicate issuance).
+ * The retransmit timer/backoff is driven by the process; the UDP callback only
+ * advances the state machine and polls the process. */
+#ifndef ENROLL_MAX_RETX
+#define ENROLL_MAX_RETX 5
+#endif
+#ifndef ENROLL_RETX_T0
+#define ENROLL_RETX_T0 (2 * CLOCK_SECOND)
+#endif
+static uint8_t g_csr[256];
+static size_t  g_csr_len = 0;
+static volatile bool g_advanced = false;      /* callback advanced the FSM */
+static volatile bool g_enroll_done = false;
+static volatile bool g_enroll_failed = false;
+
+PROCESS_NAME(edhoc_oscore_crts_client);
+
 static void send_oscore_post_request(const uip_ipaddr_t *server_addr,
                                       const uint8_t *payload, size_t payload_len);
 static size_t build_and_sign_csr(const cose_key_t *key, uint8_t *csr_buf, size_t csr_buf_size);
@@ -145,6 +166,8 @@ oscore_response_callback(struct simple_udp_connection *c,
       LOG_WARN("/crts: unexpected response code 0x%02x or empty payload\n", code);
       LOG_INFO("=== EDHOC OSCORE enroll end-to-end test FAILED ===\n");
       client_state = CLIENT_STATE_NONE;
+      g_enroll_failed = true;
+      process_poll(&edhoc_oscore_crts_client);
       return;
     }
 
@@ -156,6 +179,8 @@ oscore_response_callback(struct simple_udp_connection *c,
       LOG_ERR("c509_chain_decode failed\n");
       LOG_INFO("=== EDHOC OSCORE enroll end-to-end test FAILED ===\n");
       client_state = CLIENT_STATE_NONE;
+      g_enroll_failed = true;
+      process_poll(&edhoc_oscore_crts_client);
       return;
     }
 
@@ -181,18 +206,22 @@ oscore_response_callback(struct simple_udp_connection *c,
     }
 
     /* Phase 3.3 step 3-4: build+sign a CSR for our own key and POST it to
-     * /sen. */
-    static uint8_t csr_buf[256];
-    size_t csr_len = build_and_sign_csr(&client_key, csr_buf, sizeof(csr_buf));
-    if(csr_len == 0) {
+     * /sen. Cache it (g_csr) so a /sen retransmit is byte-identical -> the
+     * server returns the same cert idempotently. */
+    g_csr_len = build_and_sign_csr(&client_key, g_csr, sizeof(g_csr));
+    if(g_csr_len == 0) {
       LOG_ERR("CSR build/sign failed\n");
       LOG_INFO("=== EDHOC OSCORE enroll end-to-end test FAILED ===\n");
       client_state = CLIENT_STATE_NONE;
+      g_enroll_failed = true;
+      process_poll(&edhoc_oscore_crts_client);
       return;
     }
 
     client_state = CLIENT_STATE_AWAIT_SEN;
-    send_oscore_post_request(&saved_server_addr, csr_buf, csr_len);
+    send_oscore_post_request(&saved_server_addr, g_csr, g_csr_len);
+    g_advanced = true;                       /* new step -> reset the retx timer */
+    process_poll(&edhoc_oscore_crts_client);
     return;
   }
 
@@ -202,6 +231,8 @@ oscore_response_callback(struct simple_udp_connection *c,
                code, payload_len);
       LOG_INFO("=== EDHOC OSCORE enroll end-to-end test FAILED (sen) ===\n");
       client_state = CLIENT_STATE_NONE;
+      g_enroll_failed = true;
+      process_poll(&edhoc_oscore_crts_client);
       return;
     }
 
@@ -216,11 +247,14 @@ oscore_response_callback(struct simple_udp_connection *c,
                             sig, 64) == 0) {
       LOG_INFO("/sen: issued %zu-byte cert verified against CA public key\n", payload_len);
       LOG_INFO("=== EDHOC OSCORE enroll end-to-end test: TEST PASSED ===\n");
+      g_enroll_done = true;
     } else {
       LOG_INFO("/sen: issued cert signature verification FAILED\n");
       LOG_INFO("=== EDHOC OSCORE enroll end-to-end test: TEST FAILED (sen) ===\n");
+      g_enroll_failed = true;
     }
     client_state = CLIENT_STATE_NONE;
+    process_poll(&edhoc_oscore_crts_client);
     return;
   }
 
@@ -346,6 +380,8 @@ AUTOSTART_PROCESSES(&edhoc_oscore_crts_client);
 PROCESS_THREAD(edhoc_oscore_crts_client, ev, data)
 {
   static struct etimer timer;
+  static struct etimer retx_timer;
+  static uint8_t enroll_attempt;
 
   PROCESS_BEGIN();
 
@@ -429,8 +465,48 @@ PROCESS_THREAD(edhoc_oscore_crts_client, ev, data)
       etimer_set(&timer, CLOCK_SECOND / 2);
       PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
 
+      /* Enrollment with restart-on-failure: send /crts, then retransmit the
+       * outstanding request (fresh OSCORE PIV) on a response timeout, bounded
+       * by ENROLL_MAX_RETX with exponential backoff. The callback advances the
+       * state machine (/crts -> /sen -> done) and polls us; g_advanced resets
+       * the timer for each new step. */
       client_state = CLIENT_STATE_AWAIT_CRTS;
+      g_advanced = false;
+      g_enroll_done = false;
+      g_enroll_failed = false;
+      enroll_attempt = 0;
       send_oscore_request(&saved_server_addr);
+      etimer_set(&retx_timer, ENROLL_RETX_T0);
+
+      while(!g_enroll_done && !g_enroll_failed) {
+        PROCESS_WAIT_EVENT();
+        if(g_advanced) {
+          g_advanced = false;
+          enroll_attempt = 0;
+          etimer_set(&retx_timer, ENROLL_RETX_T0);
+          continue;
+        }
+        if(etimer_expired(&retx_timer)) {
+          const char *what = (client_state == CLIENT_STATE_AWAIT_CRTS) ? "/crts" : "/sen";
+          if(enroll_attempt < ENROLL_MAX_RETX) {
+            enroll_attempt++;
+            LOG_WARN("Enrollment %s response timeout — retransmit attempt %u\n",
+                     what, enroll_attempt);
+            if(client_state == CLIENT_STATE_AWAIT_CRTS) {
+              send_oscore_request(&saved_server_addr);
+            } else if(client_state == CLIENT_STATE_AWAIT_SEN) {
+              send_oscore_post_request(&saved_server_addr, g_csr, g_csr_len);
+            }
+            /* exponential backoff, capped at 8*T0 */
+            etimer_set(&retx_timer,
+                       ENROLL_RETX_T0 << (enroll_attempt < 3 ? enroll_attempt : 3));
+          } else {
+            LOG_ERR("Enrollment %s retransmit budget exhausted\n", what);
+            LOG_INFO("=== EDHOC OSCORE enroll end-to-end test FAILED (timeout) ===\n");
+            g_enroll_failed = true;
+          }
+        }
+      }
       break;
     }
     if(ret < 0) {
