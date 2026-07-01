@@ -24,4 +24,8 @@ CFLAGS += -DuECC_OPTIMIZATION_LEVEL=4
 CFLAGS += -DuECC_SQUARE_FUNC=1
 CFLAGS += -DCOAP_RESPONSE_TIMEOUT=15
 
+# restart-on-failure Phase 2: give the EDHOC handshake more attempts under lossy
+# links (default 2), with exponential inter-attempt backoff (edhoc-config.h).
+CFLAGS += -DEDHOC_CONF_ATTEMPTS=5
+
 include $(CONTIKI)/Makefile.include

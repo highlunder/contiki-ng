@@ -359,6 +359,22 @@
 #endif
 
 /**
+ * \brief Exponential backoff between EDHOC handshake (re)attempts.
+ *
+ * When enabled, the wait before restarting a failed/timed-out handshake grows
+ * as CL_TIMEOUT_VAL * 2^attempt (capped by EDHOC_CONF_RETRY_BACKOFF_MAX), which
+ * de-correlates successive attempts from a bursty channel (a fixed wait can keep
+ * landing retries inside the same fade). Set EDHOC_CONF_RETRY_BACKOFF 0 for the
+ * legacy fixed wait.
+ */
+#ifndef EDHOC_CONF_RETRY_BACKOFF
+#define EDHOC_CONF_RETRY_BACKOFF 1
+#endif
+#ifndef EDHOC_CONF_RETRY_BACKOFF_MAX
+#define EDHOC_CONF_RETRY_BACKOFF_MAX 4   /* cap the 2^attempt multiplier */
+#endif
+
+/**
  * \brief The max length of the EDHOC message
  */
 #ifdef EDHOC_CONF_MAX_PAYLOAD_LEN

@@ -559,8 +559,15 @@ static void
 handle_retry(struct etimer *wait_timer, uint8_t *attempt)
 {
   if(*attempt < EDHOC_CONF_ATTEMPTS) {
-    LOG_INFO("Attempt %d\n", *attempt);
-    etimer_set(wait_timer, CLOCK_SECOND * (CL_TIMEOUT_VAL / 1000));
+    clock_time_t wait = CLOCK_SECOND * (CL_TIMEOUT_VAL / 1000);
+#if EDHOC_CONF_RETRY_BACKOFF
+    uint8_t shift = (*attempt < EDHOC_CONF_RETRY_BACKOFF_MAX)
+                    ? *attempt : EDHOC_CONF_RETRY_BACKOFF_MAX;
+    wait <<= shift;                        /* CL_TIMEOUT_VAL * 2^attempt, capped */
+#endif
+    LOG_INFO("Attempt %d (backoff %lus)\n", *attempt,
+             (unsigned long)(wait / CLOCK_SECOND));
+    etimer_set(wait_timer, wait);
     (*attempt)++;
   } else {
     LOG_ERR("Expire EDHOC client attempts\n");
