@@ -22,7 +22,14 @@ CFLAGS += -I$(CONTIKI)/os/services/c509
 
 CFLAGS += -DuECC_OPTIMIZATION_LEVEL=4
 CFLAGS += -DuECC_SQUARE_FUNC=1
-CFLAGS += -DCOAP_RESPONSE_TIMEOUT=15
+# restart-on-failure Phase 2.5: bound the CoAP retransmit budget for the (small,
+# chain-less c5t) EDHOC handshake messages so a message that gets no ACK under loss
+# gives up quickly -> the EDHOC-level recovery (validate_response NULL -> EVT_RESTART
+# -> handle_retry) preempts it WITHIN the run budget, instead of the CoAP CON
+# retransmitting for ~245 s (COAP_RESPONSE_TIMEOUT 15 * exp) and outlasting it.
+# (Only the EDHOC handshake uses CoAP here; /crts+/sen use their own UDP retransmit.)
+CFLAGS += -DCOAP_RESPONSE_TIMEOUT=3
+CFLAGS += -DCOAP_MAX_RETRANSMIT=2
 
 # restart-on-failure Phase 2: give the EDHOC handshake more attempts under lossy
 # links (default 2), with exponential inter-attempt backoff (edhoc-config.h).

@@ -591,6 +591,7 @@ PROCESS_THREAD(edhoc_client, ev, data)
   PROCESS_BEGIN();
 
   static struct etimer wait_timer;
+  static struct etimer hs_deadline;
   edhoc_client_init();
 
   if(!edhoc_initialize_context(edhoc_ctx)) {
@@ -604,34 +605,64 @@ PROCESS_THREAD(edhoc_client, ev, data)
                          edhoc_ctx->creds.ephemeral_key.priv);
 
   edhoc_client_start((uint8_t *)edhoc_state.ad.ad_1, edhoc_state.ad.ad_1_sz);
+#if EDHOC_CONF_HS_DEADLINE_SEC
+  etimer_set(&hs_deadline, EDHOC_CONF_HS_DEADLINE_SEC * CLOCK_SECOND);
+#endif
 
   while(1) {
     PROCESS_WAIT_EVENT();
-    if(ev == edhoc_event && data == &edhoc_state) {
-      if(edhoc_state.val == EVT_RESTART || edhoc_state.val == EVT_TIMEOUT) {
-        LOG_ERR("%s\n", edhoc_state.val == EVT_RESTART ? "Error" : "Expire timeout");
-        handle_retry(&wait_timer, &attempt);
-        if(attempt < EDHOC_CONF_ATTEMPTS) {
-          PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&wait_timer));
-          etimer_stop(&wait_timer);
-          edhoc_client_start((uint8_t *)edhoc_state.ad.ad_1,
-                             edhoc_state.ad.ad_1_sz);
-        } else {
-          break;
-        }
-      } else if(edhoc_state.val == EVT_FINISHED) {
-        LOG_INFO("Client has finished\n");
-        break;
-      } else if(edhoc_state.val == EVT_BLOCK1) {
-        edhoc_client_post_blocks();
-      } else if(edhoc_state.val == EVT_POST) {
-        edhoc_client_post();
-        edhoc_client_post_blocks();
-      } else if(edhoc_state.val == EVT_BLOCKING) {
-        edhoc_client_protocol_run();
-      } else if(edhoc_state.val == EVT_TRIES_EXPIRE) {
+
+#if EDHOC_CONF_HS_DEADLINE_SEC
+    /* No-progress deadline: preempt a stalled handshake (nothing else fired). */
+    if(ev == PROCESS_EVENT_TIMER && data == &hs_deadline) {
+      LOG_WARN("EDHOC handshake deadline (%us) — preempting stalled handshake\n",
+               (unsigned)EDHOC_CONF_HS_DEADLINE_SEC);
+      edhoc_state.val = EVT_TIMEOUT;
+    } else
+#endif
+    if(!(ev == edhoc_event && data == &edhoc_state)) {
+      continue;                         /* unrelated event */
+    }
+
+    if(edhoc_state.val == EVT_RESTART || edhoc_state.val == EVT_TIMEOUT) {
+      LOG_ERR("%s\n", edhoc_state.val == EVT_RESTART ? "Error" : "Expire timeout");
+      handle_retry(&wait_timer, &attempt);
+      if(attempt < EDHOC_CONF_ATTEMPTS) {
+        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&wait_timer));
+        etimer_stop(&wait_timer);
+        coap_timer_stop(&timer);        /* drop any stale watchdog */
+        edhoc_client_start((uint8_t *)edhoc_state.ad.ad_1,
+                           edhoc_state.ad.ad_1_sz);
+#if EDHOC_CONF_HS_DEADLINE_SEC
+        etimer_set(&hs_deadline, EDHOC_CONF_HS_DEADLINE_SEC * CLOCK_SECOND);
+#endif
+      } else {
         break;
       }
+    } else if(edhoc_state.val == EVT_FINISHED) {
+#if EDHOC_CONF_HS_DEADLINE_SEC
+      etimer_stop(&hs_deadline);
+#endif
+      LOG_INFO("Client has finished\n");
+      break;
+    } else if(edhoc_state.val == EVT_BLOCK1) {
+#if EDHOC_CONF_HS_DEADLINE_SEC
+      etimer_restart(&hs_deadline);     /* progress -> reset the deadline */
+#endif
+      edhoc_client_post_blocks();
+    } else if(edhoc_state.val == EVT_POST) {
+#if EDHOC_CONF_HS_DEADLINE_SEC
+      etimer_restart(&hs_deadline);
+#endif
+      edhoc_client_post();
+      edhoc_client_post_blocks();
+    } else if(edhoc_state.val == EVT_BLOCKING) {
+#if EDHOC_CONF_HS_DEADLINE_SEC
+      etimer_restart(&hs_deadline);
+#endif
+      edhoc_client_protocol_run();
+    } else if(edhoc_state.val == EVT_TRIES_EXPIRE) {
+      break;
     }
   }
   PROCESS_END();

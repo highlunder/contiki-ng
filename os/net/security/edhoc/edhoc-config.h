@@ -375,6 +375,21 @@
 #endif
 
 /**
+ * \brief Hard no-progress deadline (seconds) for one handshake attempt.
+ *
+ * A safety net that preempts a stalled handshake and triggers a retry even when
+ * neither the CoAP transaction nor the coap_timer watchdog fires (observed under
+ * burst loss when the first message stalls at the network layer right as the RPL
+ * route comes up: MSG_1 is generated but never sent, and nothing times out). The
+ * deadline is reset on every handshake-progress event, so it only fires on a true
+ * stall; keep it above the CoAP give-up time so it does not preempt normal CoAP
+ * recovery. 0 disables it.
+ */
+#ifndef EDHOC_CONF_HS_DEADLINE_SEC
+#define EDHOC_CONF_HS_DEADLINE_SEC 12
+#endif
+
+/**
  * \brief The max length of the EDHOC message
  */
 #ifdef EDHOC_CONF_MAX_PAYLOAD_LEN

@@ -31,8 +31,12 @@
 /* Keep the radio responsive during ECDH on real HW; harmless in emulation. */
 #define LPM_CONF_MAX_PM 1
 
-/* Conservative handshake timeout for emulated and real HW alike. */
-#define EDHOC_CONF_TIMEOUT 100000
+/* EDHOC handshake watchdog + inter-attempt backoff base (ms). Was 100000 (100 s),
+ * which made both the coap_timer watchdog and the retry backoff too long to recover
+ * within a run budget under loss (restart-on-failure Phase 2.5). 10 s is above the
+ * bounded CoAP give-up (~9 s) so it only catches true stalls; the backoff is capped
+ * low so several attempts fit the budget. */
+#define EDHOC_CONF_TIMEOUT 10000
 #define LOG_CONF_LEVEL_EDHOC LOG_LEVEL_INFO
 
 #endif /* PROJECT_CONF_H_ */
