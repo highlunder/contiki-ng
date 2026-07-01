@@ -41,12 +41,38 @@
 #define OSCORE_UDP_PORT 5686
 #endif
 
+/* Firmware build stamp for record-keeping. FW_BUILD_ID is a short date id the
+ * Makefile injects (-DFW_BUILD_ID, default below); ECC_BACKEND_NAME names the
+ * crypto path (CC310 hardware vs software). Printed at startup alongside the
+ * compiler's __DATE__/__TIME__ so any pasted handshake log is self-identifying
+ * (which firmware/backend produced the PROFILE timings). Mirrors the
+ * cc310-bringup benches. */
+#ifndef FW_BUILD_ID
+#define FW_BUILD_ID "dev"
+#endif
+#ifndef ECC_BACKEND_NAME
+#define ECC_BACKEND_NAME "software (uECC)"
+#endif
+
 #define COAP_CODE_GET     0x01
 #define COAP_CODE_CONTENT 0x45
 
 static struct simple_udp_connection oscore_udp;
 static oscore_security_context_t client_oscore;
 static bool oscore_ready = false;
+
+/* Post-EDHOC OSCORE round-trip recovery: the GET is fire-and-forget UDP, and under
+ * loss it can arrive before the server's OSCORE context is ready (ignored) or its
+ * response can be lost. Retransmit with a fresh OSCORE PIV until a response,
+ * bounded, rather than ending the client after a single send. */
+static volatile bool oscore_done = false;
+#ifndef OSCORE_GET_MAX_RETX
+#define OSCORE_GET_MAX_RETX 6
+#endif
+#ifndef OSCORE_GET_RETX_T0
+#define OSCORE_GET_RETX_T0 (2 * CLOCK_SECOND)
+#endif
+PROCESS_NAME(edhoc_oscore_c5t_client);
 
 static uint8_t saved_piv[OSCORE_MAX_PIV_LEN];
 static uint8_t saved_piv_len;
@@ -105,6 +131,8 @@ oscore_response_callback(struct simple_udp_connection *c,
 
   if(code == COAP_CODE_CONTENT) {
     LOG_INFO("=== EDHOC+OSCORE c5t end-to-end test PASSED ===\n");
+    oscore_done = true;
+    process_poll(&edhoc_oscore_c5t_client);
   } else {
     LOG_WARN("Unexpected response code 0x%02x\n", code);
   }
@@ -152,12 +180,17 @@ AUTOSTART_PROCESSES(&edhoc_oscore_c5t_client);
 PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
 {
   static struct etimer timer;
+  static struct etimer retx;
+  static uint8_t get_attempt;
 #ifdef EDHOC_PROFILE_CYCLES
   /* static: must survive the PROCESS_WAIT_EVENT yields spanning the handshake */
   static clock_time_t edhoc_profile_hs_start;
 #endif
 
   PROCESS_BEGIN();
+
+  printf("fw-build: %s  (compiled %s %s)  ecc-backend: %s\n",
+         FW_BUILD_ID, __DATE__, __TIME__, ECC_BACKEND_NAME);
 
   edhoc_profile_init();   /* enable the DWT cycle counter (no-op if profiling off) */
 
@@ -235,7 +268,30 @@ PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
       etimer_set(&timer, CLOCK_SECOND / 2);
       PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
 
+      /* Bounded OSCORE-GET retransmission (fresh PIV each try) until a response,
+       * to ride out the readiness race / a lost response under loss. */
+      get_attempt = 0;
+      oscore_done = false;
       send_oscore_request(&server_ep.ipaddr);
+      etimer_set(&retx, OSCORE_GET_RETX_T0);
+      while(!oscore_done) {
+        PROCESS_WAIT_EVENT();
+        if(oscore_done) {
+          break;
+        }
+        if(etimer_expired(&retx)) {
+          if(get_attempt < OSCORE_GET_MAX_RETX) {
+            get_attempt++;
+            LOG_WARN("OSCORE GET response timeout — retransmit %u\n", get_attempt);
+            send_oscore_request(&server_ep.ipaddr);
+            etimer_set(&retx,
+                       OSCORE_GET_RETX_T0 << (get_attempt < 3 ? get_attempt : 3));
+          } else {
+            LOG_ERR("OSCORE GET retransmit budget exhausted\n");
+            break;
+          }
+        }
+      }
       break;
     }
     if(ret < 0) {
