@@ -23,7 +23,12 @@ flashed, the console tells you what it is.
 
 DTLS rungs (2–4) have two `.hex` each: **`N-name.hex`** (release, INFO) and
 **`N-name-dbg.hex`** (verbose RPL+DTLS+MAC — flash if a rung misbehaves). EDHOC
-rungs (5–6) ship a single INFO build (EDHOC already logs its handshake steps).
+rungs (5–6) ship two ECC-backend builds: **`N-name.hex`** (software uECC) and
+**`N-name-cc310.hex`** (nRF52840 CryptoCell hardware ECC, ~8–9× faster per P-256
+op). Each boot printout stamps `ecc-backend: software | CC310 hardware`, so a
+handshake log is self-identifying — flash both to compare whole-handshake
+wall-clock over real RF. (CC310 needs the nRF5 SDK 17.1.0 blob; `build-edhoc-rungs.sh`
+finds it at `../nRF5_SDK_17.1.0_ddde560`.)
 
 > Rung 4 (C509 Type-2) is **staged**: the board presents a CA-issued Type-2 C509
 > and verifies the peer in the CBOR domain, but stock `setest` B2 does standard

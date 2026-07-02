@@ -33,20 +33,31 @@ OBJCOPY="$ARM/arm-none-eabi-objcopy"
 # initial value and the app Makefile's `CFLAGS +=` appends to it.
 SERVER_EP_CFLAG="-DEDHOC_CONF_SERVER_EP='\"coap://[fd01::302:304:506:1]\"'"
 
-build_one() {   # $1 = client app dir, $2 = output hex basename
-  local app="$1" out="$2"
+# Each rung is built twice: software ECC (uECC) and CC310 hardware ECC
+# (ECC_HW_BACKEND=cc310 routes EDHOC's ecc_sign/verify/ECDH onto the nRF52840
+# CryptoCell -- ~8-9x faster per P-256 op). The CC310 build needs the nRF5 SDK
+# 17.1.0 blob (NRF_CC310_SDK, default ../nRF5_SDK_17.1.0_ddde560). The backend is
+# stamped into each boot printout (ecc-backend: software / CC310 hardware) so a
+# handshake log is self-identifying. Add EDHOC_PROFILE=1 for per-op DWT cycles +
+# whole-handshake wall-clock.
+build_one() {   # $1 = client app dir, $2 = output hex basename, $3 = sw|cc310
+  local app="$1" out="$2" backend="$3"
   local dir="$TESTS/$app"
-  echo "=== build $app -> $out (SERVER_EP=coap://[fd01::1]) ==="
+  local extra="" suffix=""
+  if [ "$backend" = cc310 ]; then extra="ECC_HW_BACKEND=cc310"; suffix="-cc310"; fi
+  echo "=== build $app -> $out$suffix ($backend, SERVER_EP=coap://[fd01::302:304:506:1]) ==="
   make -C "$dir" TARGET=nrf52840 BOARD=dk clean >/dev/null 2>&1 || true
   env CFLAGS="$SERVER_EP_CFLAG" \
-    make -C "$dir" TARGET=nrf52840 BOARD=dk $TOOLS
-  "$OBJCOPY" -O ihex "$dir/build/nrf52840/dk/$app.nrf52840" "$HERE/$out.hex"
-  echo "  -> $HERE/$out.hex"
+    make -C "$dir" TARGET=nrf52840 BOARD=dk $extra $TOOLS
+  "$OBJCOPY" -O ihex "$dir/build/nrf52840/dk/$app.nrf52840" "$HERE/$out$suffix.hex"
+  echo "  -> $HERE/$out$suffix.hex"
 }
 
-build_one edhoc-oscore-c5t-client 5-edhoc-c5t
-build_one edhoc-oscore-c5c-client 6-edhoc-c5c
+build_one edhoc-oscore-c5t-client 5-edhoc-c5t sw
+build_one edhoc-oscore-c5t-client 5-edhoc-c5t cc310
+build_one edhoc-oscore-c5c-client 6-edhoc-c5c sw
+build_one edhoc-oscore-c5c-client 6-edhoc-c5c cc310
 
 echo ""
-echo "=== EDHOC OTA rungs built: ==="
-ls -1 "$HERE"/5-edhoc-c5t.hex "$HERE"/6-edhoc-c5c.hex
+echo "=== EDHOC OTA rungs built (software + CC310 hardware ECC): ==="
+ls -1 "$HERE"/5-edhoc-c5t*.hex "$HERE"/6-edhoc-c5c*.hex
