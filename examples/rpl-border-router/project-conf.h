@@ -36,6 +36,16 @@
 #define QUEUEBUF_CONF_NUM              4
 #define UIP_CONF_BUFFER_SIZE         140
 #define BORDER_ROUTER_CONF_WEBSERVER   0
+#else
+/* This router forwards large fragmented datagrams to the mesh — e.g. a DTLS
+ * X.509 certificate flight is ~11 6LoWPAN fragments. The default pool of 8
+ * queue buffers cannot hold a single such burst, so it silently drops
+ * fragments and the mote's reassembly never completes (deterministic, even at
+ * close range). Size the pool for a full ~1280 B datagram (~16 fragments) plus
+ * headroom. Costs ~a few KB RAM; fine on CC2538/nRF52840. */
+#ifndef QUEUEBUF_CONF_NUM
+#define QUEUEBUF_CONF_NUM             24
+#endif
 #endif
 
 #ifndef WEBSERVER_CONF_CFS_CONNS
