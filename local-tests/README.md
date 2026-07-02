@@ -12,36 +12,44 @@ flashed, the console tells you what it is.
 
 ## The ladder
 
-| # | `.hex` | what it exercises | setest scenario | server |
-|---|--------|-------------------|-----------------|--------|
-| 1 | `1-net-join` | RPL join + connectivity (no crypto) | — | none (ping it from the host) |
-| 2 | `2-dtls-psk` | DTLS handshake + PSK | `psk` | `[fd00::1]:5686` |
-| 3 | `3-dtls-x509` | DTLS handshake + X.509 | `A` | `[fd00::1]:5684` |
-| 4 | `4-dtls-c509` | DTLS handshake + C509 (Type-2) | `B2` | `[fd00::1]:5687` |
+| # | `.hex` | what it exercises | setest scenario | server | status |
+|---|--------|-------------------|-----------------|--------|--------|
+| 1 | `1-net-join` | RPL join + connectivity (no crypto) | — | none (ping from host) | ✅ |
+| 2 | `2-dtls-psk` | DTLS handshake + PSK | `psk` | `[fd00::1]:5686` | ✅ PASS |
+| 3 | `3-dtls-x509` | DTLS handshake + X.509 | `A` | `[fd00::1]:5684` | ✅ PASS |
+| 4 | `4-dtls-c509` | DTLS handshake + C509 (Type-2) | `B2` | `[fd00::1]:5687` | ⚠️ Type-2 gap |
+| 5 | `5-edhoc-c5t` | EDHOC+OSCORE + C509 **c5t** | `D` | `[fd01::1]:5686`\* | 🔬 OTA bring-up |
+| 6 | `6-edhoc-c5c` | EDHOC+OSCORE + C509 **c5c** | `Dc` | `[fd01::1]:5686`\* | 🔬 OTA bring-up |
 
-Each rung has two `.hex`:
-- **`N-name.hex`** — release (INFO logging; clean output).
-- **`N-name-dbg.hex`** — debug (verbose RPL + DTLS + MAC logging; flash this if a
-  rung misbehaves and you want to see why).
+DTLS rungs (2–4) have two `.hex` each: **`N-name.hex`** (release, INFO) and
+**`N-name-dbg.hex`** (verbose RPL+DTLS+MAC — flash if a rung misbehaves). EDHOC
+rungs (5–6) ship a single INFO build (EDHOC already logs its handshake steps).
 
 > Rung 4 (C509 Type-2) is **staged**: the board presents a CA-issued Type-2 C509
-> and verifies the peer in the CBOR domain, but stock `setest` B2 serves a
-> *self-signed* Type-2. Full interop needs the out-of-band verifier
-> (`PLAN-c509-type2-dtls.md`, Task 10). Until then rung 4 exercises the C509
-> credential + network path over the air but may not complete the handshake.
+> and verifies the peer in the CBOR domain, but stock `setest` B2 does standard
+> X.509 verification (Type-2 signs over CBOR, so the reconstructed DER fails). It
+> reaches certificate verification over the air (transport OK) but can't complete
+> until the out-of-band verifier lands (`PLAN-c509-type2-dtls.md`, Task 10 / #16).
 
-**EDHOC is not in this ladder yet:** the EDHOC scenarios (C/D/Dc) are served by a
-*native* responder, not the Python `setest` (lakers/aiocoap can't do EDHOC).
-Adding EDHOC-over-OTA rungs needs that responder wired to the tun — a later step.
+> \* **EDHOC rungs target a *different* endpoint, `fd01::1`.** The EDHOC scenarios
+> can't be served by Python `setest` (lakers/aiocoap are CCS-only); they run the
+> board's own EDHOC code as a **native responder**. For OTA that responder runs on
+> a second host tun (`fd01::/64`) and IPv6 forwarding bridges it to the Firefly
+> mesh — see `../../secure-endpoint-test-server/run-edhoc-gateway.sh`. This is
+> where C509's real **wire-size** win shows (c5t sends a cert *hash*, c5c an inline
+> cert — vs the full X.509 chain in DTLS). EDHOC rungs reuse the existing
+> `edhoc-oscore-c5{t,c}-client` (already OTA-ready radio nodes) with only the
+> server endpoint repointed via `EDHOC_CONF_SERVER_EP`.
 
 ## Build
 
 ```
-./build-all.sh          # builds all rungs × {release, debug}, collects *.hex here
+./build-all.sh            # DTLS ladder (rungs 1–4) × {release, debug}
+./build-edhoc-rungs.sh    # EDHOC rungs 5–6 (repointed to coap://[fd01::1])
 ```
 Requires the ARM toolchain at `/home/joel/toolchains/arm-gcc` (build in the
-container). Sources live in `N-name/` subdirs; each is a normal Contiki-NG app
-(radio node, no SLIP/border-router).
+container). DTLS sources live in `N-name/` subdirs; EDHOC rungs reuse the
+`tests/21-security-protocols/edhoc-oscore-c5{t,c}-client` apps.
 
 ## Run each rung (on the WSL host, with the Firefly gateway up)
 
