@@ -18,8 +18,8 @@ flashed, the console tells you what it is.
 | 2 | `2-dtls-psk` | DTLS handshake + PSK | `psk` | `[fd00::1]:5686` | ✅ PASS |
 | 3 | `3-dtls-x509` | DTLS handshake + X.509 | `A` | `[fd00::1]:5684` | ✅ PASS |
 | 4 | `4-dtls-c509` | DTLS handshake + C509 (Type-2) | `B2` | `[fd00::1]:5687` | ⚠️ Type-2 gap |
-| 5 | `5-edhoc-c5t` | EDHOC+OSCORE + C509 **c5t** | `D` | `[fd01::1]:5686`\* | 🔬 OTA bring-up |
-| 6 | `6-edhoc-c5c` | EDHOC+OSCORE + C509 **c5c** | `Dc` | `[fd01::1]:5686`\* | 🔬 OTA bring-up |
+| 5 | `5-edhoc-c5t` | EDHOC+OSCORE + C509 **c5t** | `D` | `[fd01::302:304:506:1]:5686`\* | 🔬 OTA bring-up |
+| 6 | `6-edhoc-c5c` | EDHOC+OSCORE + C509 **c5c** | `Dc` | `[fd01::302:304:506:1]:5686`\* | 🔬 OTA bring-up |
 
 DTLS rungs (2–4) have two `.hex` each: **`N-name.hex`** (release, INFO) and
 **`N-name-dbg.hex`** (verbose RPL+DTLS+MAC — flash if a rung misbehaves). EDHOC
@@ -31,7 +31,7 @@ rungs (5–6) ship a single INFO build (EDHOC already logs its handshake steps).
 > reaches certificate verification over the air (transport OK) but can't complete
 > until the out-of-band verifier lands (`PLAN-c509-type2-dtls.md`, Task 10 / #16).
 
-> \* **EDHOC rungs target a *different* endpoint, `fd01::1`.** The EDHOC scenarios
+> \* **EDHOC rungs target a *different* endpoint, `fd01::302:304:506:1`.** The EDHOC scenarios
 > can't be served by Python `setest` (lakers/aiocoap are CCS-only); they run the
 > board's own EDHOC code as a **native responder**. For OTA that responder runs on
 > a second host tun (`fd01::/64`) and IPv6 forwarding bridges it to the Firefly
@@ -45,7 +45,7 @@ rungs (5–6) ship a single INFO build (EDHOC already logs its handshake steps).
 
 ```
 ./build-all.sh            # DTLS ladder (rungs 1–4) × {release, debug}
-./build-edhoc-rungs.sh    # EDHOC rungs 5–6 (repointed to coap://[fd01::1])
+./build-edhoc-rungs.sh    # EDHOC rungs 5–6 (repointed to coap://[fd01::302:304:506:1])
 ```
 Requires the ARM toolchain at `/home/joel/toolchains/arm-gcc` (build in the
 container). DTLS sources live in `N-name/` subdirs; EDHOC rungs reuse the

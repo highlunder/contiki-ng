@@ -24,11 +24,14 @@ AR=$ARM/arm-none-eabi-ar OBJCOPY=$ARM/arm-none-eabi-objcopy NM=$ARM/arm-none-eab
 SIZE=$ARM/arm-none-eabi-size"
 OBJCOPY="$ARM/arm-none-eabi-objcopy"
 
-# Point the client at the bridged native responder (host tun fd01::1). The
-# '"..."' idiom keeps the C string quotes intact through make's shell invocation
-# (same trick the app Makefiles use for FW_ID); env CFLAGS is the initial value
-# and the app Makefile's `CFLAGS +=` appends to it, preserving the app's flags.
-SERVER_EP_CFLAG="-DEDHOC_CONF_SERVER_EP='\"coap://[fd01::1]\"'"
+# Point the client at the bridged native responder. Its address is the native
+# uIP node address = prefix + IID-from-LL-addr, i.e. fd01::302:304:506:1 for
+# CONTIKI_NODE_ID=1 (NOT fd01::1, which is nobody, nor the fd01::100 tun host
+# side) -- confirmed from the responder's "Added global IPv6 address" log line.
+# The '"..."' idiom keeps the C string quotes intact through make's shell
+# invocation (same trick the app Makefiles use for FW_ID); env CFLAGS is the
+# initial value and the app Makefile's `CFLAGS +=` appends to it.
+SERVER_EP_CFLAG="-DEDHOC_CONF_SERVER_EP='\"coap://[fd01::302:304:506:1]\"'"
 
 build_one() {   # $1 = client app dir, $2 = output hex basename
   local app="$1" out="$2"
