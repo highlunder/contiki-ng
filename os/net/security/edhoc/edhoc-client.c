@@ -45,6 +45,7 @@
 #include "edhoc-msg-handlers.h"
 #include "edhoc-trace.h"
 #include "lib/memb.h"
+#include "lib/ecc.h"
 #include <assert.h>
 
 #include "sys/log.h"
@@ -125,6 +126,13 @@ edhoc_client_callback(process_event_t ev, void *data)
 void
 edhoc_client_run(void)
 {
+  /* Begin the ECC crypto session for the whole handshake (incl. internal
+   * retries, which stay within this process run). No-op for the software
+   * backend; the CC310 hardware backend needs it to power on CryptoCell and
+   * instantiate the BASEPRI-isolated TRNG-seeded DRBG -- without it every
+   * CC310 ECC op fails (CONTEXT_NOT_INITIALIZED / INTERNAL). Paired with
+   * ecc_session_end() in edhoc_client_close(). */
+  ecc_session_begin();
   process_start(&edhoc_client, NULL);
 }
 /*---------------------------------------------------------------------------*/
@@ -584,6 +592,7 @@ edhoc_client_close(void)
   coap_timer_stop(&timer);
   client_context_free(client);
   edhoc_finalize(edhoc_ctx);
+  ecc_session_end();   /* pairs with ecc_session_begin() in edhoc_client_run() */
 }
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(edhoc_client, ev, data)
