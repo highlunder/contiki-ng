@@ -508,6 +508,11 @@ edhoc_client_protocol_run(void)
 static void
 edhoc_client_init(void)
 {
+  /* Fresh handshake: reset the retry counter, which is static and otherwise
+   * persists across edhoc_client_run() calls -- so a re-run (e.g. a benchmark
+   * loop, or any second handshake in one boot) would start already at/above
+   * EDHOC_CONF_ATTEMPTS and give up immediately. */
+  attempt = 0;
   if(edhoc_event == PROCESS_EVENT_NONE) {
     edhoc_event = process_alloc_event();
   }
