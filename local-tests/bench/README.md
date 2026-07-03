@@ -20,6 +20,17 @@ Copy that line and you have the whole result, no host-side reduction. Fields:
 The label encodes experiment + ECC backend + MAC. Harness: `bench-stats.h` (no
 libm — integer sqrt; durations in µs, printed ms.mmm).
 
+**Copy the FINAL line for the result.** After the last iteration the run prints a
+robust summary (median + p95 alongside mean/sd), computed by sorting the stored
+successful durations once at the end:
+```
+[BENCH edhoc-c5t-cc310-csma FINAL] n=100 fail=1 mean=... median=... p95=... sd=... min=... max=... hops=... retx_tot=... dbg=0 (ms)
+```
+Handshake latency over real RF is right-skewed (slow tails from link retransmit
+bursts), so **`median` is the honest central value** and `p95` shows the tail;
+`mean`/`sd` are kept but are outlier-sensitive. The per-iteration `[BENCH …]`
+lines stay purely incremental (mean/sd/min/max) for live monitoring.
+
 **Quiet by default:** EDHOC trace/info logging is off (LOG levels lowered) so
 console I/O doesn't inflate the timed handshake. Build with `BENCH_DEBUG=1` to
 restore full logging for diagnosis — the BENCH line then reports `dbg=1`.
