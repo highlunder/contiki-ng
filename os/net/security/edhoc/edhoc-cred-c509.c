@@ -69,7 +69,13 @@
 /* Log configuration */
 #include "sys/log.h"
 #define LOG_MODULE "EDHOC-C509"
+/* Part of the EDHOC subsystem: follow LOG_CONF_LEVEL_EDHOC so it can be quieted
+ * with the rest of EDHOC (e.g. in the benchmarks); default INFO. */
+#ifdef LOG_CONF_LEVEL_EDHOC
+#define LOG_LEVEL LOG_CONF_LEVEL_EDHOC
+#else
 #define LOG_LEVEL LOG_LEVEL_INFO
+#endif
 
 /*---------------------------------------------------------------------------*/
 size_t
@@ -376,7 +382,7 @@ edhoc_c509_validate_self_signed(const uint8_t *c509, size_t c509_len,
      * TBSCertificate.  Full verification requires reconstructing DER, which
      * needs the full C509→DER conversion layer.  Structural check (public
      * key extraction succeeded above) is sufficient here. */
-    LOG_INFO("validate_self_signed: type-%d (DER-equiv) — structural check OK\n",
+    LOG_INFO("validate_self_signed: type-%d (DER-equiv) -- structural check OK\n",
              cert_type);
     return EDHOC_SUCCESS;
   }
@@ -638,7 +644,7 @@ edhoc_c509_validate_chain(const uint8_t *c509, size_t c509_len, void *app_ctx)
 
   if(cert_type != 2) {
     /* Types 0, 1, 3 — DER-equivalent.  Structural check passed above. */
-    LOG_INFO("validate_chain: type-%d (DER-equiv) — structural check OK\n",
+    LOG_INFO("validate_chain: type-%d (DER-equiv) -- structural check OK\n",
              cert_type);
     return EDHOC_SUCCESS;
   }
