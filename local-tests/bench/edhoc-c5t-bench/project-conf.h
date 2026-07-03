@@ -69,6 +69,12 @@
 #define EDHOC_CONF_ATTEMPTS 4      /* E0 recovery hardening */
 #define EDHOC_CONF_TIMEOUT 10000  /* E0: was 100000 */
 
+/* Benchmark: quiet EDHOC (trace + info) by default so console I/O does not
+ * inflate the timed handshake. -DBENCH_DEBUG=1 restores full logging. */
+#ifdef BENCH_DEBUG
 #define LOG_CONF_LEVEL_EDHOC LOG_LEVEL_INFO
+#else
+#define LOG_CONF_LEVEL_EDHOC LOG_LEVEL_ERR
+#endif
 
 #endif /* PROJECT_CONF_H_ */

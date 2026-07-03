@@ -136,6 +136,15 @@ edhoc_client_run(void)
   process_start(&edhoc_client, NULL);
 }
 /*---------------------------------------------------------------------------*/
+uint8_t
+edhoc_client_get_attempt(void)
+{
+  /* Number of handshake re-attempts (EDHOC-level restarts) used; 0 = the
+   * handshake completed on the first try. Read after a handshake for benchmark
+   * / reliability bookkeeping. */
+  return attempt;
+}
+/*---------------------------------------------------------------------------*/
 void
 edhoc_client_set_ad_1(const void *data_buffer, uint8_t buffer_size)
 {

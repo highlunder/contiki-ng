@@ -134,6 +134,13 @@ int8_t edhoc_client_callback(process_event_t ev, void *data);
 void edhoc_client_close(void);
 
 /**
+ * \brief Number of handshake re-attempts (EDHOC-level restarts) used by the
+ *        most recent handshake. 0 means it completed on the first try. Useful
+ *        for benchmark / reliability bookkeeping (read after the handshake).
+ */
+uint8_t edhoc_client_get_attempt(void);
+
+/**
  * \brief Get the Application Data received in EDHOC message 2
  * \param buf A pointer to a buffer to copy the Application data
  * \param buf_sz The size of the destination buffer

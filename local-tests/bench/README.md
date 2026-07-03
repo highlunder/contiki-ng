@@ -6,13 +6,23 @@ RTIMER, and prints **one incremental (Welford) statistics line per completed
 cycle** — so the **last printed line alone is the complete result**:
 
 ```
-[BENCH edhoc-c5t-cc310-csma] n=30 fail=0 last=812.443 mean=825.101 sd=38.900 min=780.010 max=910.775 (ms)
+[BENCH edhoc-c5t-cc310-csma] n=30 fail=0 last=812.443 mean=825.101 sd=38.900 min=780.010 max=910.775 hops=1 retx_last=0 retx_tot=1 dbg=0 (ms)
 ```
 
-Copy that line and you have `n / mean / sample-stddev / min / max` (ms), no
-host-side reduction. The label encodes experiment + ECC backend + MAC, so a
-pasted line is self-identifying. Harness: `bench-stats.h` (no libm — integer
-sqrt; durations in µs, printed ms.mmm).
+Copy that line and you have the whole result, no host-side reduction. Fields:
+- `n` / `fail` — completed / failed operations.
+- `last mean sd min max` — this-cycle + running mean / **sample** stddev / min / max (ms).
+- `hops` — radio hops to the RPL root (for multi-hop re-use; `-1` if not joined).
+- `retx_last` / `retx_tot` — EDHOC handshake re-attempts (restarts) this cycle / cumulative.
+- `dbg` — **0 = quiet (timing-accurate); 1 = verbose logging compiled in** (inflates
+  timing). Always check this before trusting a number.
+
+The label encodes experiment + ECC backend + MAC. Harness: `bench-stats.h` (no
+libm — integer sqrt; durations in µs, printed ms.mmm).
+
+**Quiet by default:** EDHOC trace/info logging is off (LOG levels lowered) so
+console I/O doesn't inflate the timed handshake. Build with `BENCH_DEBUG=1` to
+restore full logging for diagnosis — the BENCH line then reports `dbg=1`.
 
 These are **separate** from the functional rungs in `../` (those are kept
 intact); the bench apps reuse the same client/EDHOC code with a loop wrapper.

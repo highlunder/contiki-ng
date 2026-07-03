@@ -36,7 +36,17 @@
 
 #include "sys/log.h"
 #define LOG_MODULE "c5t-bench"
+/* Quiet by default: console I/O is slow and blocking, so verbose logging inside
+ * the timed handshake would inflate the numbers. Build with -DBENCH_DEBUG=1 to
+ * restore INFO logging (also raises LOG_CONF_LEVEL_EDHOC in project-conf.h);
+ * either way the BENCH line reports dbg=0/1 so a timing is never mis-read. */
+#ifdef BENCH_DEBUG
 #define LOG_LEVEL  LOG_LEVEL_INFO
+#define BENCH_DBG  1
+#else
+#define LOG_LEVEL  LOG_LEVEL_WARN
+#define BENCH_DBG  0
+#endif
 
 /* Benchmark config. BENCH_LABEL identifies the experiment+config in each stats
  * line (the build script sets it, e.g. "edhoc-c5t-cc310-csma"); BENCH_ITERS is
@@ -254,8 +264,11 @@ PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
                     LOG_ERR("EDHOC failure: %d\n", ret); break; }
     }
 
+    /* Re-attempts (EDHOC restarts) this handshake took; read before close. */
+    uint32_t hs_attempts = edhoc_client_get_attempt();
+
     if(hs_ok) {
-      bench_stats_add_us(&stats, bench_elapsed_us(t0, t1));
+      bench_stats_add_us(&stats, bench_elapsed_us(t0, t1), hs_attempts);
 
       /* Complete the cycle: derive OSCORE + one protected GET (untimed) so the
        * responder finishes this session and is ready for the next iteration. */
@@ -292,8 +305,9 @@ PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
 
     edhoc_client_close();
 
-    /* One self-contained cumulative-stats line per completed cycle. */
-    bench_stats_print(BENCH_LABEL, &stats);
+    /* One self-contained cumulative-stats line per completed cycle
+     * (incl. radio hops to the RPL root + re-attempts + debug indicator). */
+    bench_stats_print(BENCH_LABEL, &stats, bench_rpl_hops(), BENCH_DBG);
 
     /* Settle before the next iteration (server reset + RPL). */
     etimer_set(&settle, CLOCK_SECOND * BENCH_SETTLE_S);

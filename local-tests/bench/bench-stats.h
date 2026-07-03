@@ -38,13 +38,15 @@ bench_isqrt64(uint64_t x)
 }
 
 typedef struct {
-  uint32_t n;         /* completed samples */
-  uint32_t fail;      /* failed/aborted operations (not counted in stats) */
-  double   mean_us;   /* Welford running mean */
-  double   m2_us;     /* Welford running sum of squared deviations */
+  uint32_t n;          /* completed samples */
+  uint32_t fail;       /* failed/aborted operations (not counted in stats) */
+  double   mean_us;    /* Welford running mean */
+  double   m2_us;      /* Welford running sum of squared deviations */
   uint32_t min_us;
   uint32_t max_us;
   uint32_t last_us;
+  uint32_t retx_last;  /* re-attempts of the last operation */
+  uint32_t retx_total; /* cumulative re-attempts over all completed operations */
 } bench_stats_t;
 
 static inline void
@@ -53,14 +55,18 @@ bench_stats_init(bench_stats_t *s)
   s->n = 0; s->fail = 0;
   s->mean_us = 0.0; s->m2_us = 0.0;
   s->min_us = 0; s->max_us = 0; s->last_us = 0;
+  s->retx_last = 0; s->retx_total = 0;
 }
 
-/* Record one successful operation of duration x_us. */
+/* Record one successful operation: duration x_us, and `retx` re-attempts /
+ * retransmits it took (0 = first-try success). */
 static inline void
-bench_stats_add_us(bench_stats_t *s, uint32_t x_us)
+bench_stats_add_us(bench_stats_t *s, uint32_t x_us, uint32_t retx)
 {
   double d, d2;
   s->last_us = x_us;
+  s->retx_last = retx;
+  s->retx_total += retx;
   s->n++;
   d = (double)x_us - s->mean_us;
   s->mean_us += d / (double)s->n;
@@ -102,23 +108,48 @@ bench_stats_stddev_us(const bench_stats_t *s)
  * experiment + configuration (e.g. "edhoc-c5t-cc310-csma"). Copy the last such
  * line for the run's statistics. Format is stable and grep/awk-friendly:
  *
- *   [BENCH <label>] n=<ok> fail=<x> last=<ms> mean=<ms> sd=<ms> min=<ms> max=<ms> (ms)
+ *   [BENCH <label>] n=<ok> fail=<x> last/mean/sd/min/max=<ms> hops=<h> \
+ *       retx_last=<r> retx_tot=<R> dbg=<0|1> (ms)
+ *
+ * `hops` = radio hops to the RPL root (for multi-hop re-use); `dbg` flags
+ * whether verbose logging was compiled in (which inflates timing) so the line
+ * is never silently mis-read.
  */
 static inline void
-bench_stats_print(const char *label, const bench_stats_t *s)
+bench_stats_print(const char *label, const bench_stats_t *s, int hops, int dbg)
 {
   uint32_t sd = bench_stats_stddev_us(s);
   uint32_t mean = (uint32_t)(s->mean_us + 0.5);
   printf("[BENCH %s] n=%lu fail=%lu last=%lu.%03lu mean=%lu.%03lu "
-         "sd=%lu.%03lu min=%lu.%03lu max=%lu.%03lu (ms)\n",
+         "sd=%lu.%03lu min=%lu.%03lu max=%lu.%03lu hops=%d "
+         "retx_last=%lu retx_tot=%lu dbg=%d (ms)\n",
          label,
          (unsigned long)s->n, (unsigned long)s->fail,
          BENCH_MS_INT(s->last_us), BENCH_MS_FRAC(s->last_us),
          BENCH_MS_INT(mean),       BENCH_MS_FRAC(mean),
          BENCH_MS_INT(sd),         BENCH_MS_FRAC(sd),
          BENCH_MS_INT(s->min_us),  BENCH_MS_FRAC(s->min_us),
-         BENCH_MS_INT(s->max_us),  BENCH_MS_FRAC(s->max_us));
+         BENCH_MS_INT(s->max_us),  BENCH_MS_FRAC(s->max_us),
+         hops,
+         (unsigned long)s->retx_last, (unsigned long)s->retx_total, dbg);
 }
+
+/* Radio hops to the RPL root (DAG depth - 1); -1 if not in a DAG. Uses RPL-lite
+ * curr_instance; RPL runs over both CSMA and TSCH. */
+#include "net/routing/routing.h"
+#if ROUTING_CONF_RPL_LITE
+#include "net/routing/rpl-lite/rpl.h"
+static inline int
+bench_rpl_hops(void)
+{
+  if(!curr_instance.used || curr_instance.dag.rank == RPL_INFINITE_RANK) {
+    return -1;
+  }
+  return (int)DAG_RANK(curr_instance.dag.rank) - 1;
+}
+#else
+static inline int bench_rpl_hops(void) { return -1; }
+#endif
 
 /* --- timing --- */
 static inline rtimer_clock_t
