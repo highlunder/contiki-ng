@@ -99,6 +99,11 @@ now works after the cooja-ng merge — see the TSCH-energy plan).
 
 ## TODO — remaining experiments
 Same harness + loop pattern:
+- **`EDHOC_PROFILE=1` profiling variant** of the EDHOC benches — rebuild with
+  `EDHOC_PROFILE=1` so each iteration also prints per-op DWT cycles (ecc_* in
+  ecdh.c) + the crypto wall-clock. This measures the crypto-vs-RF split directly
+  (rather than inferring it from the sw-vs-CC310 whole-handshake difference, see
+  BENCH-RESULTS-LOG.md). Add these as `*-prof` firmwares to build-bench-rungs.sh.
 - `bench-edhoc-x509` (EDHOC + X.509 x5chain, scenario C).
 - `bench-enroll` — full EDHOC+OSCORE /crts+/sen CSR enrollment cycle.
 - Stand up the TSCH border-router + responder so the `-tsch` firmwares have a
