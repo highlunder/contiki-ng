@@ -44,7 +44,7 @@
 #define BENCH_LABEL "dtls"
 #endif
 #ifndef BENCH_SETTLE_S
-#define BENCH_SETTLE_S 3
+#define BENCH_SETTLE_S 5
 #endif
 
 #ifndef LOCAL_SERVER_ADDR
@@ -104,6 +104,7 @@ PROCESS_THREAD(dtls_x509_test, ev, data)
   static int ticks, iter;
   static rtimer_clock_t t0, t1;
   static bench_stats_t stats;
+  static uint32_t bench_samples[BENCH_ITERS];  /* successful durations (us) */
   static bool ok;
 
   PROCESS_BEGIN();
@@ -161,7 +162,9 @@ PROCESS_THREAD(dtls_x509_test, ev, data)
 
     if(ok) {
       /* retx=0: DTLS flight retransmits are not exposed by mbedtls-support. */
-      bench_stats_add_us(&stats, bench_elapsed_us(t0, t1), 0);
+      uint32_t dur_us = bench_elapsed_us(t0, t1);
+      bench_samples[stats.n] = dur_us;
+      bench_stats_add_us(&stats, dur_us, 0);
       /* Complete the cycle with one CoAP GET (untimed) to verify + keep the
        * server exchange sane. */
       coap_init_message(request, COAP_TYPE_CON, COAP_GET, 0);
@@ -182,6 +185,9 @@ PROCESS_THREAD(dtls_x509_test, ev, data)
   printf("=== BENCH %s DONE: %lu ok / %lu fail of %d ===\n",
          BENCH_LABEL, (unsigned long)stats.n, (unsigned long)stats.fail,
          BENCH_ITERS);
+  /* Robust final summary (median + p95) -- copy this line as the result. */
+  bench_stats_print_final(BENCH_LABEL, &stats, bench_samples,
+                          bench_rpl_hops(), BENCH_DBG);
   PROCESS_END();
 }
 /*---------------------------------------------------------------------------*/

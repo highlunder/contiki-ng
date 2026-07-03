@@ -134,6 +134,62 @@ bench_stats_print(const char *label, const bench_stats_t *s, int hops, int dbg)
          (unsigned long)s->retx_last, (unsigned long)s->retx_total, dbg);
 }
 
+/* In-place ascending sort (insertion; n<=BENCH_ITERS, done once at the end, so
+ * no libc qsort dependency). */
+static inline void
+bench_sort_u32(uint32_t *a, uint32_t n)
+{
+  uint32_t i, j, v;
+  for(i = 1; i < n; i++) {
+    v = a[i]; j = i;
+    while(j > 0 && a[j - 1] > v) { a[j] = a[j - 1]; j--; }
+    a[j] = v;
+  }
+}
+
+/* Nearest-rank percentile (pct 0..100) on a sorted array. */
+static inline uint32_t
+bench_percentile_us(const uint32_t *sorted, uint32_t n, uint32_t pct)
+{
+  if(n == 0) { return 0; }
+  return sorted[(uint32_t)(((uint64_t)pct * (n - 1)) / 100)];
+}
+
+/*
+ * Final summary line with ROBUST stats (median + p95) alongside mean/sd, for the
+ * right-skewed handshake-latency data where a few slow tails make mean/sd
+ * outlier-sensitive. `samples` holds the first s->n successful durations (us);
+ * this sorts it in place. Call once after the loop; copy this line as the result.
+ *
+ *   [BENCH <label> FINAL] n= fail= mean= median= p95= sd= min= max= hops= \
+ *       retx_tot= dbg= (ms)
+ */
+static inline void
+bench_stats_print_final(const char *label, const bench_stats_t *s,
+                        uint32_t *samples, int hops, int dbg)
+{
+  uint32_t sd = bench_stats_stddev_us(s);
+  uint32_t mean = (uint32_t)(s->mean_us + 0.5);
+  uint32_t median = 0, p95 = 0;
+  if(s->n > 0) {
+    bench_sort_u32(samples, s->n);
+    median = (s->n & 1u) ? samples[s->n / 2]
+                         : (samples[s->n / 2 - 1] + samples[s->n / 2]) / 2;
+    p95 = bench_percentile_us(samples, s->n, 95);
+  }
+  printf("[BENCH %s FINAL] n=%lu fail=%lu mean=%lu.%03lu median=%lu.%03lu "
+         "p95=%lu.%03lu sd=%lu.%03lu min=%lu.%03lu max=%lu.%03lu hops=%d "
+         "retx_tot=%lu dbg=%d (ms)\n",
+         label, (unsigned long)s->n, (unsigned long)s->fail,
+         BENCH_MS_INT(mean),      BENCH_MS_FRAC(mean),
+         BENCH_MS_INT(median),    BENCH_MS_FRAC(median),
+         BENCH_MS_INT(p95),       BENCH_MS_FRAC(p95),
+         BENCH_MS_INT(sd),        BENCH_MS_FRAC(sd),
+         BENCH_MS_INT(s->min_us), BENCH_MS_FRAC(s->min_us),
+         BENCH_MS_INT(s->max_us), BENCH_MS_FRAC(s->max_us),
+         hops, (unsigned long)s->retx_total, dbg);
+}
+
 /* Radio hops to the RPL root (DAG depth - 1); -1 if not in a DAG. Uses RPL-lite
  * curr_instance; RPL runs over both CSMA and TSCH. */
 #include "net/routing/routing.h"

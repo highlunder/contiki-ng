@@ -56,7 +56,7 @@
 #define BENCH_LABEL "edhoc-c5c"
 #endif
 #ifndef BENCH_SETTLE_S
-#define BENCH_SETTLE_S 3
+#define BENCH_SETTLE_S 5
 #endif
 
 #ifndef OSCORE_UDP_PORT
@@ -207,6 +207,7 @@ PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
   static struct etimer hs_deadline;
   static uint8_t get_attempt;
   static bench_stats_t stats;
+  static uint32_t bench_samples[BENCH_ITERS];  /* successful durations (us) for median/p95 */
   static int iter;
   static rtimer_clock_t t0, t1;
   static bool hs_ok;
@@ -289,7 +290,9 @@ PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
     uint32_t hs_attempts = edhoc_client_get_attempt();
 
     if(hs_ok) {
-      bench_stats_add_us(&stats, bench_elapsed_us(t0, t1), hs_attempts);
+      uint32_t dur_us = bench_elapsed_us(t0, t1);
+      bench_samples[stats.n] = dur_us;   /* store before add (stats.n = index) */
+      bench_stats_add_us(&stats, dur_us, hs_attempts);
 
       /* Complete the cycle: derive OSCORE + one protected GET (untimed) so the
        * responder finishes this session and is ready for the next iteration. */
@@ -340,6 +343,9 @@ PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
   printf("=== BENCH %s DONE: %lu ok / %lu fail of %d ===\n",
          BENCH_LABEL, (unsigned long)stats.n, (unsigned long)stats.fail,
          BENCH_ITERS);
+  /* Robust final summary (median + p95) -- copy this line as the result. */
+  bench_stats_print_final(BENCH_LABEL, &stats, bench_samples,
+                          bench_rpl_hops(), BENCH_DBG);
   PROCESS_END();
 }
 /*---------------------------------------------------------------------------*/
