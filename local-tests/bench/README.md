@@ -37,8 +37,8 @@ intact); the bench apps reuse the same client/EDHOC code with a loop wrapper.
 | `bench-dtls-x509-{csma,tsch}.hex` | DTLS handshake + X.509 | mbedtls | CSMA / TSCH | setest `[fd00::1]:5684` |
 | `bench-dtls-c509-{csma,tsch}.hex` | DTLS handshake + C509 (Type-2) | mbedtls | CSMA / TSCH | setest `[fd00::1]:5687` |
 
-Build: `./build-bench-rungs.sh`. Iterations default to 30; override for the whole
-build with `BENCH_ITERS=100 ./build-bench-rungs.sh` (or per-app
+Build: `./build-bench-rungs.sh`. Iterations default to **100**; override for the
+whole build with `BENCH_ITERS=30 ./build-bench-rungs.sh` (or per-app
 `-DBENCH_ITERS=`). It's a compile-time constant, so changing it means a rebuild.
 
 ## Failure recovery (long runs)

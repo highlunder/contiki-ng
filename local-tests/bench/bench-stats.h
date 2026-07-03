@@ -167,7 +167,7 @@ bench_elapsed_us(rtimer_clock_t start, rtimer_clock_t end)
 }
 
 #ifndef BENCH_ITERS
-#define BENCH_ITERS 30          /* default repetitions; override with -DBENCH_ITERS= */
+#define BENCH_ITERS 100         /* default repetitions; override with -DBENCH_ITERS= */
 #endif
 
 /* Robustness knobs so a long run recovers from failures instead of stalling:
