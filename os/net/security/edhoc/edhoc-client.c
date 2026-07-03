@@ -247,7 +247,14 @@ static bool
 validate_response(coap_callback_request_state_t *callback_state)
 {
   if(callback_state->state.response == NULL) {
-    LOG_WARN("Request timed out\n");
+    /* The coap-callback-api calls the handler once more with response == NULL
+     * and status FINISHED *after* the real response was already delivered and
+     * processed -- a normal end-of-transaction signal, not a timeout. Only warn
+     * on an actual timeout (or other error status); FINISHED is benign. */
+    if(callback_state->state.status != COAP_REQUEST_STATUS_FINISHED) {
+      LOG_WARN("Request failed (coap status %d)\n",
+               callback_state->state.status);
+    }
     return false;
   }
 
