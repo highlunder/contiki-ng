@@ -1,0 +1,23 @@
+{
+    "title": "EDHOC+OSCORE c5t handshake bench on EMULATED nRF52840-DK (hw-vs-sim, software ECC)",
+    "timeout_ms": 250000,
+    "seed": 1,
+    "startup_delay_ms": 1000,
+    "radiomedium": {
+        "type": "udgm",
+        "tx_range": 55.0,
+        "interference_range": 110.0,
+        "success_ratio_tx": 1.0,
+        "success_ratio_rx": 1.0
+    },
+    "nodes": [
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/bench/emul/edhoc-c5t-server.nrf52840",      "id": 2, "x":  0.0, "y": 0.0 },
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/bench/emul/edhoc-c5t-bench-emul.nrf52840", "id": 1, "x": 30.0, "y": 0.0 }
+    ],
+    "test": {
+        "description": "Same c5t sw bench firmware as hardware, run against an emulated nRF52840 EDHOC responder (RPL root, node 2). UDGM lossless -> a clean sw handshake-time distribution to compare with the hardware run (BENCH-RESULTS-LOG.md). Passes when the client prints its FINAL summary.",
+        "validators": [
+            { "pattern": "BENCH edhoc-c5t-sw-emul FINAL", "node": 1, "min_count": 1 }
+        ]
+    }
+}

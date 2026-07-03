@@ -44,6 +44,23 @@ RF/protocol floor dilutes it.
 [BENCH edhoc-c5c-sw-csma FINAL] n=100 fail=0 mean=832.324 median=822.784 p95=923.936 sd=52.648 min=721.520 max=947.760 hops=1 retx_tot=0 dbg=0 (ms)
 ```
 
+## Hardware vs emulator (cooja-ng, same sw firmware)
+Running the *exact same* `edhoc-c5t-sw` nRF52840 firmware on a real DK and on an
+emulated nRF52840 in cooja-ng (`emul/emul-edhoc-c5t.json`, 2 nodes, UDGM lossless):
+
+| env | n | median | p95 | sd | notes |
+|-----|---|--------|-----|----|-------|
+| hardware  | 100 | 689.2 | 760.4 | 42.7 | real DK ↔ Firefly |
+| emulator  | 30  | 955.9 | 1009.8 | 42.3 | emulated DK ↔ emulated responder; 7.1× real-time |
+
+**Emulator ≈ 1.4× the hardware time** (956 vs 689 ms), same tight sd — a
+consistent, *calibratable* offset, not noise. Likely the emulated nRF
+cycle/instruction timing + UDGM radio model vs real silicon; useful as a fixed
+correction factor. Emulator lets us then scale node count (hardware can't).
+```
+[BENCH edhoc-c5t-sw-emul FINAL] n=30 fail=0 mean=954.113 median=955.928 p95=1009.776 sd=42.294 min=876.976 max=1048.848 hops=1 retx_tot=0 dbg=0 (ms)
+```
+
 ## Still to collect (same setup)
 - edhoc-c5t-**sw**-csma  (software baseline -> sw-vs-CC310 speedup)
 - edhoc-**c5c**-{sw,cc310}-csma  (inline cert vs cert-hash)
