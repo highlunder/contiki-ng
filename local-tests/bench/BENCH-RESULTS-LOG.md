@@ -11,10 +11,28 @@ BENCH_ITERS=100, BENCH_SETTLE_S=5, dbg=0 (quiet build) unless noted.
 | date | config | n | fail | median | p95 | mean | sd | min | max | hops | notes |
 |------|--------|---|------|--------|-----|------|----|-----|-----|------|-------|
 | 2026-07-03 | edhoc-c5t-cc310-csma | 100 | 0 | 327.7 | 404.3 | 332.5 | 43.6 | 228.4 | 444.5 | 1 | first clean run; settle=5 removed the slow tails |
+| 2026-07-03 | edhoc-c5t-**sw**-csma | 100 | 0 | 689.2 | 760.4 | 692.4 | 42.7 | 616.8 | 823.1 | 1 | software (uECC) baseline |
+
+### CC310 vs software (c5t, CSMA, real RF)
+Whole-handshake **speedup = 689.2 / 327.7 ≈ 2.1×** (median). It is *not* the ~8×
+per-op CC310 speedup because most of the handshake is RF/protocol time (message
+transmission, 6LoWPAN fragmentation, CoAP round-trips), which hardware crypto
+doesn't touch. Decomposition (assuming CC310 ECC ~8× faster, consistent with the
+per-op benches):
+- ECC saved by CC310 = 689.2 − 327.7 ≈ **361 ms**.
+- => sw ECC ≈ 413 ms, CC310 ECC ≈ 52 ms, and the **RF/protocol floor ≈ 276 ms**
+  (the same in both: 689−413 = 328−52 = 276). Both fit, so the model is
+  self-consistent. Confirm the split directly with `EDHOC_PROFILE=1` (per-op DWT
+  cycles + wall-clock).
+
+Takeaway for the paper: hardware ECC roughly halves the *whole* EDHOC handshake
+over a real radio (2.1×), even though the crypto itself is ~8× — the ~276 ms
+RF/protocol floor dilutes it.
 
 ## Raw FINAL lines
 ```
 [BENCH edhoc-c5t-cc310-csma FINAL] n=100 fail=0 mean=332.472 median=327.704 p95=404.304 sd=43.616 min=228.416 max=444.464 hops=1 retx_tot=0 dbg=0 (ms)
+[BENCH edhoc-c5t-sw-csma FINAL] n=100 fail=0 mean=692.445 median=689.216 p95=760.352 sd=42.660 min=616.768 max=823.056 hops=1 retx_tot=0 dbg=0 (ms)
 ```
 
 ## Still to collect (same setup)
