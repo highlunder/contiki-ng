@@ -31,10 +31,20 @@ intact); the bench apps reuse the same client/EDHOC code with a loop wrapper.
 
 | firmware | operation | ECC | MAC | server |
 |---|---|---|---|---|
-| `bench-edhoc-c5t-{sw,cc310}-{csma,tsch}.hex` | EDHOC+OSCORE c5t handshake | sw / CC310 | CSMA / TSCH | native responder `[fd01::302:304:506:1]` |
+| `bench-edhoc-c5t-{sw,cc310}-{csma,tsch}.hex` | EDHOC+OSCORE **c5t** handshake (cert hash) | sw / CC310 | CSMA / TSCH | native responder `[fd01::302:304:506:1]` |
+| `bench-edhoc-c5c-{sw,cc310}-{csma,tsch}.hex` | EDHOC+OSCORE **c5c** handshake (inline cert) | sw / CC310 | CSMA / TSCH | native responder `[fd01::302:304:506:1]` |
+| `bench-dtls-psk-{csma,tsch}.hex` | DTLS handshake + PSK | mbedtls | CSMA / TSCH | setest `[fd00::1]:5686` |
+| `bench-dtls-x509-{csma,tsch}.hex` | DTLS handshake + X.509 | mbedtls | CSMA / TSCH | setest `[fd00::1]:5684` |
+| `bench-dtls-c509-{csma,tsch}.hex` | DTLS handshake + C509 (Type-2) | mbedtls | CSMA / TSCH | setest `[fd00::1]:5687` |
 
-Build: `./build-bench-rungs.sh` (matrix sw/cc310 × csma/tsch). `BENCH_ITERS`
-defaults to 30 (`-DBENCH_ITERS=`); inter-iteration settle `BENCH_SETTLE_S=3`.
+Build: `./build-bench-rungs.sh`. `BENCH_ITERS` defaults to 30 (`-DBENCH_ITERS=`);
+inter-iteration settle `BENCH_SETTLE_S=3`. EDHOC gets the sw/CC310 axis (its ECC
+routes through the switchable `os/services/ecc`); DTLS uses mbedtls' own crypto,
+so no CC310 axis. DTLS benches target the Python setest at `fd00::1` (which
+already loops per connection); EDHOC targets the bridged native responder.
+`retx` on DTLS is always 0 (mbedtls flight retransmits aren't exposed);
+on EDHOC it's the handshake restart count. Every firmware prints a
+`[BENCH] connected: joined DODAG, hops=N ...` line once it joins, before timing.
 
 ## Run (EDHOC c5t)
 1. Firefly gateway up + EDHOC bridge up: `run-edhoc-gateway.sh D` (see
@@ -58,12 +68,12 @@ TSCH-built native responder. The CSMA variants run on the current gateway as-is.
 Bringing up the TSCH border-router + responder is the next step (in-emulator TSCH
 now works after the cooja-ng merge — see the TSCH-energy plan).
 
-## TODO — extend to the rest of the paper's experiments
+## TODO — remaining experiments
 Same harness + loop pattern:
-- `bench-edhoc-c5c` (inline cert), `bench-edhoc-x509` (x5chain).
-- `bench-dtls-{psk,x509,c509}` — simplest loop (coap_endpoint reconnect per
-  iteration; python `_serve_forever` already loops).
+- `bench-edhoc-x509` (EDHOC + X.509 x5chain, scenario C).
 - `bench-enroll` — full EDHOC+OSCORE /crts+/sen CSR enrollment cycle.
-Then wire each into `build-bench-rungs.sh` and add a results log.
+- Stand up the TSCH border-router + responder so the `-tsch` firmwares have a
+  network (they build, but need the whole path on TSCH).
+- A results log (paste the last `[BENCH]` line per config).
 
 SECURITY NOTICE: Test credentials only. Never use in production.

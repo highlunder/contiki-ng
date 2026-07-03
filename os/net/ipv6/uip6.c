@@ -999,14 +999,6 @@ uip_process(uint8_t flag)
   uint8_t protocol;
   uint8_t *next_header;
 
-  //printf("DEBUG: uip_process, uip_len=%u\n", uip_len);
-  if(uip_len > 40) {
-    //printf("DEBUG: uip_process src=");
-    LOG_INFO_6ADDR(&UIP_IP_BUF->srcipaddr);
-    printf(" dest=");
-    LOG_INFO_6ADDR(&UIP_IP_BUF->destipaddr);
-    printf(" next_hdr=%u\n", UIP_IP_BUF->proto);
-  }
   struct uip_ext_hdr *ext_ptr;
 #if UIP_TCP
   int c;

@@ -228,7 +228,10 @@ PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
     etimer_reset(&timer);
   }
-  LOG_INFO("Network ready\n");
+  /* Joined the DODAG and the root is reachable -- always printed (not
+   * log-gated) so the operator sees the node is ready before timing starts. */
+  printf("[BENCH] connected: joined DODAG, hops=%d -- starting %s (%d iters)\n",
+         bench_rpl_hops(), BENCH_LABEL, BENCH_ITERS);
 
   bench_stats_init(&stats);
 
