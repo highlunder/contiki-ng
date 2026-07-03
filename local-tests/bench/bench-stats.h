@@ -170,4 +170,17 @@ bench_elapsed_us(rtimer_clock_t start, rtimer_clock_t end)
 #define BENCH_ITERS 30          /* default repetitions; override with -DBENCH_ITERS= */
 #endif
 
+/* Robustness knobs so a long run recovers from failures instead of stalling:
+ *  - HS_DEADLINE: per-iteration hard cap; abort a stuck operation (below the
+ *    protocol's own internal retry budget so one bad iteration can't hang ~40 s).
+ *  - FAIL_SETTLE: longer inter-iteration pause after a failure, to let RPL/ETX
+ *    heal (rapid back-to-back handshakes inflate rank and degrade the route).
+ * The loop also re-waits for node_is_reachable() before each iteration. */
+#ifndef BENCH_HS_DEADLINE_S
+#define BENCH_HS_DEADLINE_S 15
+#endif
+#ifndef BENCH_FAIL_SETTLE_S
+#define BENCH_FAIL_SETTLE_S 15
+#endif
+
 #endif /* BENCH_STATS_H_ */

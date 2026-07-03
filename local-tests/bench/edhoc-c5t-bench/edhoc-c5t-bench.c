@@ -204,6 +204,7 @@ PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
   static struct etimer timer;
   static struct etimer retx;
   static struct etimer settle;
+  static struct etimer hs_deadline;
   static uint8_t get_attempt;
   static bench_stats_t stats;
   static int iter;
@@ -236,6 +237,12 @@ PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
   bench_stats_init(&stats);
 
   for(iter = 0; iter < BENCH_ITERS; iter++) {
+    /* Recover before each iteration: RPL churn or a prior failure may have
+     * dropped the route -- wait until the root is reachable again. */
+    while(!NETSTACK_ROUTING.node_is_reachable()) {
+      etimer_set(&timer, CLOCK_SECOND * 2);
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
+    }
     /* (Re)build the credential key list each iteration -- edhoc_create_key_list
      * re-initialises it, so this is a clean per-iteration setup. */
     if(edhoc_create_key_list() != EDHOC_SUCCESS) {
@@ -259,12 +266,18 @@ PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
     oscore_ready = false;
     t0 = bench_time_now();
     edhoc_client_run();
+    /* Hard per-iteration deadline: abort a stuck handshake so it can't hang the
+     * whole run on the protocol's internal retry budget. */
+    etimer_set(&hs_deadline, CLOCK_SECOND * BENCH_HS_DEADLINE_S);
     while(1) {
       PROCESS_WAIT_EVENT();
       ret = edhoc_client_callback(ev, data);
       if(ret > 0) { t1 = bench_time_now(); hs_ok = true; break; }
-      if(ret < 0) { t1 = bench_time_now(); hs_ok = false;
-                    LOG_ERR("EDHOC failure: %d\n", ret); break; }
+      if(ret < 0) { hs_ok = false; LOG_ERR("EDHOC failure: %d\n", ret); break; }
+      if(etimer_expired(&hs_deadline)) {
+        hs_ok = false; LOG_ERR("bench: handshake deadline (%d s)\n",
+                               BENCH_HS_DEADLINE_S); break;
+      }
     }
 
     /* Re-attempts (EDHOC restarts) this handshake took; read before close. */
@@ -312,8 +325,10 @@ PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
      * (incl. radio hops to the RPL root + re-attempts + debug indicator). */
     bench_stats_print(BENCH_LABEL, &stats, bench_rpl_hops(), BENCH_DBG);
 
-    /* Settle before the next iteration (server reset + RPL). */
-    etimer_set(&settle, CLOCK_SECOND * BENCH_SETTLE_S);
+    /* Settle before the next iteration; longer after a failure so RPL/ETX can
+     * heal before hammering the link again. */
+    etimer_set(&settle,
+               CLOCK_SECOND * (hs_ok ? BENCH_SETTLE_S : BENCH_FAIL_SETTLE_S));
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&settle));
   }
 

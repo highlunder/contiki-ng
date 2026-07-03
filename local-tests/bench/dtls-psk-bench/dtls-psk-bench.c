@@ -140,6 +140,12 @@ PROCESS_THREAD(dtls_psk_test, ev, data)
   bench_stats_init(&stats);
 
   for(iter = 0; iter < BENCH_ITERS; iter++) {
+    /* Recover: ensure the route is up before each iteration (RPL churn /
+     * a prior failure may have dropped it). */
+    while(!NETSTACK_ROUTING.node_is_reachable()) {
+      etimer_set(&et, CLOCK_SECOND * 2);
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+    }
     /* --- timed DTLS handshake: connect() -> is_connected --- */
     ok = false;
     t0 = bench_time_now();
@@ -149,7 +155,7 @@ PROCESS_THREAD(dtls_psk_test, ev, data)
       while(!coap_endpoint_is_connected(&server_ep)) {
         PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
         etimer_reset(&et);
-        if(++ticks >= HANDSHAKE_TIMEOUT_S) { break; }
+        if(++ticks >= BENCH_HS_DEADLINE_S) { break; }
       }
       if(coap_endpoint_is_connected(&server_ep)) {
         t1 = bench_time_now();
@@ -172,7 +178,8 @@ PROCESS_THREAD(dtls_psk_test, ev, data)
     coap_endpoint_disconnect(&server_ep);
     bench_stats_print(BENCH_LABEL, &stats, bench_rpl_hops(), BENCH_DBG);
 
-    etimer_set(&settle, CLOCK_SECOND * BENCH_SETTLE_S);
+    etimer_set(&settle,
+               CLOCK_SECOND * (ok ? BENCH_SETTLE_S : BENCH_FAIL_SETTLE_S));
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&settle));
   }
 

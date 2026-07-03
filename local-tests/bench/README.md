@@ -40,7 +40,23 @@ intact); the bench apps reuse the same client/EDHOC code with a loop wrapper.
 Build: `./build-bench-rungs.sh`. Iterations default to 30; override for the whole
 build with `BENCH_ITERS=100 ./build-bench-rungs.sh` (or per-app
 `-DBENCH_ITERS=`). It's a compile-time constant, so changing it means a rebuild.
-Inter-iteration settle is `BENCH_SETTLE_S=3`. EDHOC gets the sw/CC310 axis (its ECC
+
+## Failure recovery (long runs)
+Rapid back-to-back handshakes drive RPL ETX up and inflate the node's rank
+(`hops` climbs), which can degrade the route; a naive loop then hangs on a stuck
+handshake and never recovers. The loop guards against this:
+- **`BENCH_HS_DEADLINE_S`** (15) — hard per-iteration cap; a stuck handshake is
+  aborted and recorded as `fail` instead of hanging on the protocol's internal
+  retry budget (~40 s).
+- **re-wait for `node_is_reachable()`** at the top of each iteration — if the
+  route dropped, wait for it to come back before the next attempt.
+- **`BENCH_FAIL_SETTLE_S`** (15) — after a failure, settle longer (vs
+  `BENCH_SETTLE_S`=3 after a success) to let RPL/ETX heal before hammering again.
+
+So a long run records the occasional `fail` and keeps going rather than stalling.
+Watch `hops` and `fail` in the last line: rising `hops` means the link is
+degrading under the load — increase `BENCH_SETTLE_S` (slower but gentler) if the
+fail rate is high. EDHOC gets the sw/CC310 axis (its ECC
 routes through the switchable `os/services/ecc`); DTLS uses mbedtls' own crypto,
 so no CC310 axis. DTLS benches target the Python setest at `fd00::1` (which
 already loops per connection); EDHOC targets the bridged native responder.
