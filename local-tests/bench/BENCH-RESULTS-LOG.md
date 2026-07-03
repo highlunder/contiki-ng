@@ -12,6 +12,14 @@ BENCH_ITERS=100, BENCH_SETTLE_S=5, dbg=0 (quiet build) unless noted.
 |------|--------|---|------|--------|-----|------|----|-----|-----|------|-------|
 | 2026-07-03 | edhoc-c5t-cc310-csma | 100 | 0 | 327.7 | 404.3 | 332.5 | 43.6 | 228.4 | 444.5 | 1 | first clean run; settle=5 removed the slow tails |
 | 2026-07-03 | edhoc-c5t-**sw**-csma | 100 | 0 | 689.2 | 760.4 | 692.4 | 42.7 | 616.8 | 823.1 | 1 | software (uECC) baseline |
+| 2026-07-03 | edhoc-**c5c**-sw-csma | 100 | 0 | 822.8 | 923.9 | 832.3 | 52.6 | 721.5 | 947.8 | 1 | c5c = full cert inline (vs c5t cert-hash) |
+
+### c5t vs c5c (software, CSMA, real RF) — the C509 wire-size effect
+c5t (cert **hash** in MSG_2/3) median 689 ms vs c5c (full cert **inline**) median
+823 ms → **c5c is ~134 ms slower**. Crypto is identical (same P-256 ops), so the
+delta is pure RF/protocol: c5c's inline ~164 B cert enlarges MSG_2/MSG_3, adding
+6LoWPAN fragmentation + air time. This is the on-wire cost of inlining the cert
+vs referencing it by hash — a clean measured data point for the C509 story.
 
 ### CC310 vs software (c5t, CSMA, real RF)
 Whole-handshake **speedup = 689.2 / 327.7 ≈ 2.1×** (median). It is *not* the ~8×
@@ -33,6 +41,7 @@ RF/protocol floor dilutes it.
 ```
 [BENCH edhoc-c5t-cc310-csma FINAL] n=100 fail=0 mean=332.472 median=327.704 p95=404.304 sd=43.616 min=228.416 max=444.464 hops=1 retx_tot=0 dbg=0 (ms)
 [BENCH edhoc-c5t-sw-csma FINAL] n=100 fail=0 mean=692.445 median=689.216 p95=760.352 sd=42.660 min=616.768 max=823.056 hops=1 retx_tot=0 dbg=0 (ms)
+[BENCH edhoc-c5c-sw-csma FINAL] n=100 fail=0 mean=832.324 median=822.784 p95=923.936 sd=52.648 min=721.520 max=947.760 hops=1 retx_tot=0 dbg=0 (ms)
 ```
 
 ## Still to collect (same setup)
