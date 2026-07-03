@@ -9,6 +9,9 @@
 # Matrix: {sw uECC, CC310 hardware} x {CSMA, TSCH}. The label baked into each
 # stats line encodes the config, so a pasted "last line" is self-identifying.
 #
+# Iterations per run default to 30; override for the whole build, e.g.:
+#   BENCH_ITERS=100 ./build-bench-rungs.sh
+#
 #   CSMA variants run on the current Firefly gateway (CSMA border router).
 #   TSCH variants need the WHOLE path on TSCH: a TSCH Firefly border router
 #   (coordinator) + a TSCH-built responder. See README (TSCH bring-up).
@@ -38,6 +41,7 @@ build_one() {
   [ "$backend" = cc310 ] && extra="$extra ECC_HW_BACKEND=cc310"
   [ "$mac" = tsch ] && extra="$extra MAKE_MAC=MAKE_MAC_TSCH MAKE_WITH_ORCHESTRA=1"
   cfl="-DBENCH_LABEL='\"$label\"'"
+  [ -n "${BENCH_ITERS:-}" ] && cfl="$cfl -DBENCH_ITERS=$BENCH_ITERS"
   case "$app" in edhoc-*) cfl="$SERVER_EP $cfl" ;; esac
   echo "=== build $app -> bench-$label ==="
   make -C "$dir" TARGET=nrf52840 BOARD=dk clean >/dev/null 2>&1 || true

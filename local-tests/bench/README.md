@@ -37,8 +37,10 @@ intact); the bench apps reuse the same client/EDHOC code with a loop wrapper.
 | `bench-dtls-x509-{csma,tsch}.hex` | DTLS handshake + X.509 | mbedtls | CSMA / TSCH | setest `[fd00::1]:5684` |
 | `bench-dtls-c509-{csma,tsch}.hex` | DTLS handshake + C509 (Type-2) | mbedtls | CSMA / TSCH | setest `[fd00::1]:5687` |
 
-Build: `./build-bench-rungs.sh`. `BENCH_ITERS` defaults to 30 (`-DBENCH_ITERS=`);
-inter-iteration settle `BENCH_SETTLE_S=3`. EDHOC gets the sw/CC310 axis (its ECC
+Build: `./build-bench-rungs.sh`. Iterations default to 30; override for the whole
+build with `BENCH_ITERS=100 ./build-bench-rungs.sh` (or per-app
+`-DBENCH_ITERS=`). It's a compile-time constant, so changing it means a rebuild.
+Inter-iteration settle is `BENCH_SETTLE_S=3`. EDHOC gets the sw/CC310 axis (its ECC
 routes through the switchable `os/services/ecc`); DTLS uses mbedtls' own crypto,
 so no CC310 axis. DTLS benches target the Python setest at `fd00::1` (which
 already loops per connection); EDHOC targets the bridged native responder.
