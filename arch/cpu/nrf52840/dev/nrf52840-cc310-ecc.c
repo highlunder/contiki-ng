@@ -66,6 +66,14 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Contiki's os/sys/cc.h and Nordic's nordic_common.h both define MIN/MAX with
+ * slightly different spellings; drop Contiki's here so the SDK crypto headers
+ * (pulled in below) can define their own without a -Werror redefinition clash.
+ * Only this file mixes the two include worlds — the vendored SDK .c files never
+ * pull Contiki headers. */
+#undef MIN
+#undef MAX
+
 /* Nordic nRF5 SDK crypto abstraction (CC310 backend). */
 #include "nrf_crypto.h"
 #include "nrf_crypto_ecc.h"

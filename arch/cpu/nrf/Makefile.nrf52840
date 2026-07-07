@@ -9,6 +9,11 @@ endif
 
 CFLAGS += -DNRF52840_XXAA
 
+# CryptoCell-310 hardware ECC backend (opt-in via ECC_HW_BACKEND=cc310).
+ifeq ($(ECC_HW_BACKEND),cc310)
+  include $(CONTIKI_CPU)/Makefile.cc310-crypto
+endif
+
 NRFX_ASM_SRCS += $(NRFX_ROOT)/mdk/gcc_startup_nrf52840.s
 
 NRFX_C_SRCS += $(NRFX_ROOT)/mdk/system_nrf52840.c

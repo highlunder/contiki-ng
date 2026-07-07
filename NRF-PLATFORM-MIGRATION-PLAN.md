@@ -89,20 +89,45 @@ rxdiag `project-conf.h` `#if defined(CONTIKI_TARGET_ZOUL)||defined(CONTIKI_TARGE
 is unaffected (nRF falls to the `#else`, macro-name independent).
 
 ## Phased execution (each phase gated, warning-free)
-1. **Baseline & board bring-up.** Build hello-world + a netstack example on `TARGET=nrf
-   BOARD=nrf52840/dk LDFLAGS_WERROR=`; flash-run on HW (if available) and run in the emulator
-   (rename artifact). Confirms the stock shared platform is good in our tree end-to-end. *(hello
-   build already verified.)*
-2. **Emulator support.** Artifact-naming shim + `sim_board.c` if needed; run the **all-nRF rxdiag
-   TSCH baseline** on shared-platform leaf/root firmware — the acceptance test for SoC-model
-   fidelity. Fix `nrf52840_soc.c` only if it diverges.
+1. **Baseline & board bring-up. — DONE 2026-07-07.** hello-world AND the rxdiag TSCH leaf+root
+   build+link on `TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR=` (output `build/nrf/nrf52840/dk/
+   *.nrf`). Stock shared platform is good in our tree.
+2. **Emulator support. — SoC-fidelity PASS 2026-07-07 (big de-risk).** Copied the shared-platform
+   `.nrf` → `.nrf52840-dk` and ran the all-nRF rxdiag TSCH sweep in cooja-ng-ge: firmware **boots,
+   TSCH associates, RPL joins, 848 B delivered 12/12 on both `[SU]` and `[RAW]`, dl-miss 0 — TEST
+   PASSED**, identical to the old-platform baseline. **The emulator needs NO `nrf52840_soc.c`
+   changes for the nrfx netstack/sw-crypto path.** Remaining: bake the `.nrf`→`.nrf52840-dk`
+   rename into the build scripts (or add a `.nrf` row to `sim_board.c` defaulting to nrf52840-dk).
 3. **Low-risk arch ports.** dbg, watchdog, conf, platform.c, uart→uarte, heap linker override.
    Re-evaluate the Renode clock + radio-CCA fixes against the nrfx `clock-arch.c`/
    `nrf-ieee-driver-arch.c` — port only if still needed. Rebuild the DTLS/EDHOC (sw-crypto)
    apps; re-run native+emulator handshake tests.
-4. **CC310 spike (highest risk, isolate).** Prove nrf52-sdk↔nrfx coexistence (Option A) with a
-   minimal ecc-bench, then port the full backend + re-point the blob; re-run the on-HW CC310
-   ecc/ecdh/compress validation + the 3-way P-256 bench. Fall back to Option B if blocked.
+4. **CC310 spike (Option A) — BUILD+LINK PROVEN 2026-07-07.** The CC310 hw-crypto backend builds
+   and links cleanly on the shared nrfx platform (`ecc-bench` with `ECC_HW_BACKEND=cc310
+   TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR=`): `__start_/__stop_crypto_data` bracket the
+   `cc310_backend` registration entry, 75 CRYS/SaSi blob symbols linked, sw-crypto build still
+   works (hook inert). nrf52-sdk↔nrfx coexist. **Recipe (5 items):**
+   (a) new `arch/cpu/nrf/Makefile.cc310-crypto` (port of the old one) + a hook in
+       `arch/cpu/nrf/Makefile.nrf52840` gated on `ECC_HW_BACKEND=cc310`;
+   (b) **include isolation is the crux** — add ONLY the SDK crypto-glue paths (crypto backends,
+       util, experimental_section_vars, mem_manager, atomic, mutex, stack_info, strerror, delay,
+       log, `nrf_soc_nosd` for `nrf_error.h`). Do **NOT** add `integration/nrfx*` — its legacy nrfx
+       headers shadow the shared HAL and break the shared `watchdog-arch.c`. HAL/`nrf.h` resolve to
+       the shared nrfx;
+   (c) a guarded `#undef MIN`/`#undef MAX` in `nrf52840-cc310-ecc.c` before the SDK includes
+       (Contiki vs `nordic_common.h` clash) — moves with the file;
+   (d) re-home `nrf52840-cc310-ecc.c` into `arch/cpu/nrf/dev/` (do NOT put the whole old `dev/` on
+       the vpath — it drags in the old nrfx-version `gpio-hal-arch.c` etc.);
+   (e) the `crypto_data` linker section needs **no** ld patch — modern ld auto-generates the
+       `__start_/__stop_` symbols for the orphan section (the old custom `nrf_common.ld` is
+       unnecessary here).
+   **Spike shortcuts to finalise:** the nrf52-sdk submodule is reached via a symlink
+   `arch/cpu/nrf/lib/nrf52-sdk` → `../../nrf52840/lib/nrf52-sdk` (final: `git submodule` move to the
+   shared path); `sdk_config.h` is pulled from the old `arch/platform/nrf52840/config` via `-I`
+   (final: re-home into the shared platform); the old `arch/cpu/nrf52840/dev/nrf52840-cc310-ecc.c`
+   duplicate is removed once the old tree is retired.
+   **Still TODO:** on-HW runtime validation (CC310 is not emulated) — ecc/ecdh/compress + the 3-way
+   P-256 bench, on real DK.
 5. **Sweep the build scripts/configs** (~24) + docs to the new target/paths; keep a thin
    compatibility note. Optionally keep old target working during transition (dual-target) until
    parity is proven, then remove.
