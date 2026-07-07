@@ -134,9 +134,15 @@ is unaffected (nRF falls to the `#else`, macro-name independent).
    duplicate is removed once the old tree is retired.
    **Still TODO:** on-HW runtime validation (CC310 is not emulated) — ecc/ecdh/compress + the 3-way
    P-256 bench, on real DK.
-5. **Sweep the build scripts/configs** (~24) + docs to the new target/paths; keep a thin
-   compatibility note. Optionally keep old target working during transition (dual-target) until
-   parity is proven, then remove.
+5. **Sweep the build scripts/configs — DONE 2026-07-07.** All our nRF build scripts, emulator
+   configs, `.c` build-instruction comments, and live runbooks migrated:
+   `TARGET=nrf52840 BOARD=dk` → `TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR=`, and
+   `build/nrf52840/dk/X.nrf52840` → `build/nrf/nrf52840/dk/X.nrf`. cooja-ng-ge `sim_board.c` gained
+   a `.nrf`→nrf52840-dk mapping (commit ae6aee0). Validated end-to-end: `run-emul-baselines.sh`
+   builds on the shared platform and `emul-rxdiag-tsch.json` loads `build/nrf/nrf52840/dk/*.nrf`
+   as ARM/nRF52840-DK → 848 B 12/12, TEST PASSED. Contiki commit 0c8bd9f0a (24 files); the 3
+   `*-PR.md` historical records keep the old command deliberately; 4 gitignored local `build-dk.sh`
+   were edited in place (not tracked). Only 0 non-PR references to the old target remain.
 6. **Full regression** across categories (matrix below); update memory + CLAUDE.md build commands.
 
 ## Verification matrix
