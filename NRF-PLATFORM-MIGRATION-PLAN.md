@@ -127,13 +127,31 @@ is unaffected (nRF falls to the `#else`, macro-name independent).
    (e) the `crypto_data` linker section needs **no** ld patch — modern ld auto-generates the
        `__start_/__stop_` symbols for the orphan section (the old custom `nrf_common.ld` is
        unnecessary here).
-   **Spike shortcuts to finalise:** the nrf52-sdk submodule is reached via a symlink
-   `arch/cpu/nrf/lib/nrf52-sdk` → `../../nrf52840/lib/nrf52-sdk` (final: `git submodule` move to the
-   shared path); `sdk_config.h` is pulled from the old `arch/platform/nrf52840/config` via `-I`
-   (final: re-home into the shared platform); the old `arch/cpu/nrf52840/dev/nrf52840-cc310-ecc.c`
-   duplicate is removed once the old tree is retired.
+   **Finalisation — DONE 2026-07-07 (commits 9b0d2a086 + follow-up):** `sdk_config.h` re-homed into
+   the shared CPU tree (`arch/cpu/nrf/cc310-config/`, referenced via `-I $(CONTIKI_CPU)/cc310-config`)
+   so CC310 no longer depends on the old platform's config dir; the old duplicate
+   `arch/cpu/nrf52840/dev/nrf52840-cc310-ecc.c` removed. **One shortcut remains by design:**
+   `arch/cpu/nrf/lib/nrf52-sdk` is a symlink to the **upstream** nrf52-sdk submodule under the old
+   tree. It is upstream's submodule, so relocating it would diverge `.gitmodules` and conflict on
+   merge — when upstream removes the nrf52840 platform, add our own nrf52-sdk submodule (same URL) at
+   the shared path. Until then the symlink is correct and functional; the cc310 ecc-bench rebuilds
+   clean after finalisation.
    **Still TODO:** on-HW runtime validation (CC310 is not emulated) — ecc/ecdh/compress + the 3-way
-   P-256 bench, on real DK.
+   P-256 bench, on real DK (task #24).
+
+## Regression (2026-07-07): full ladder builds on the shared platform
+`build-all.sh` builds the whole DTLS/EDHOC ladder on `TARGET=nrf BOARD=nrf52840/dk` cleanly:
+1-net-join, 2-dtls-psk, 3-dtls-x509, 4-dtls-c509 (release + debug), and 5-edhoc-c5t / 6-edhoc-c5c
+in **both sw and cc310** variants — exit 0, no errors, all `.hex` produced. So the shared-platform
+CC310 backend works in full EDHOC firmware, not just the ecc-bench. The bench suite
+(`build-bench-rungs.sh`) also builds clean: **12 firmwares, 0 errors** — dtls-psk + dtls-x509
+(CSMA/TSCH) and edhoc-c5t + edhoc-c5c each in {sw, CC310} × {CSMA, TSCH}, i.e. all 4 CC310 EDHOC
+bench variants build on the shared platform.
+
+## Migration status: functionally COMPLETE on the shared platform
+All our nRF work (netstack, DTLS, EDHOC, sw + CC310 crypto, CSMA + TSCH; emulator + build scripts)
+builds and runs on `TARGET=nrf BOARD=nrf52840/dk`. Only open item: **CC310 on-hardware runtime
+validation** (task #24) — the emulator cannot exercise CC310.
 5. **Sweep the build scripts/configs — DONE 2026-07-07.** All our nRF build scripts, emulator
    configs, `.c` build-instruction comments, and live runbooks migrated:
    `TARGET=nrf52840 BOARD=dk` → `TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR=`, and
