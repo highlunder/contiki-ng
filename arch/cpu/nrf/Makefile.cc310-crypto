@@ -74,8 +74,11 @@ EXTERNALDIRS += $(addprefix $(NRF5_SDK_ROOT)/, $(NRF_CC310_INC_PATHS))
 
 # CRYS / SaSi headers from the full SDK.
 CFLAGS += -I$(NRF_CC310_SDK)/external/nrf_cc310/include
-# sdk_config.h from the OLD platform config dir (re-homed later).
-CFLAGS += -I$(CONTIKI)/arch/platform/nrf52840/config
+# sdk_config.h (CC310 module enables): re-homed into the shared CPU tree so the
+# CC310 build no longer depends on the deprecated nrf52840 platform's config dir.
+# Seen only by files that #include "sdk_config.h" (the SDK crypto sources); the
+# shared platform's own files never include it, so this is isolated to CC310.
+CFLAGS += -I$(CONTIKI_CPU)/cc310-config
 
 # --- enable CC310 backend + secp256r1 + RNG (see original for the rationale) ---
 CFLAGS += -DNRF_CRYPTO_ENABLED=1
