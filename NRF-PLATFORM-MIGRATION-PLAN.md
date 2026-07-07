@@ -98,10 +98,16 @@ is unaffected (nRF falls to the `#else`, macro-name independent).
    PASSED**, identical to the old-platform baseline. **The emulator needs NO `nrf52840_soc.c`
    changes for the nrfx netstack/sw-crypto path.** Remaining: bake the `.nrf`→`.nrf52840-dk`
    rename into the build scripts (or add a `.nrf` row to `sim_board.c` defaulting to nrf52840-dk).
-3. **Low-risk arch ports.** dbg, watchdog, conf, platform.c, uart→uarte, heap linker override.
-   Re-evaluate the Renode clock + radio-CCA fixes against the nrfx `clock-arch.c`/
-   `nrf-ieee-driver-arch.c` — port only if still needed. Rebuild the DTLS/EDHOC (sw-crypto)
-   apps; re-run native+emulator handshake tests.
+3. **Low-risk arch ports — LARGELY UNNECESSARY (assessed 2026-07-07).** The stock shared platform
+   already covers our sw-crypto + netstack + DTLS path: Phase 1/2 ran the rxdiag TSCH sweep to a
+   clean pass, and the DTLS PSK bench builds+links+fits on `TARGET=nrf BOARD=nrf52840/dk`
+   (102 KB text / 56 KB bss) with **no** custom clock/uart/watchdog/dbg/platform/heap-linker
+   changes. mbedTLS uses Contiki HEAPMEM (a static arena), not the newlib linker heap, so the
+   custom `nrf_common.ld` is not the gate — dropped. The old Renode clock + radio-CCA fixes were
+   for Renode, which we no longer use (cooja-ng-ge is the emulator and passed on stock), so they
+   are **not** ported unless a specific need reappears. Net: of the 11 customised files, only the
+   **CC310 backend + its build glue** actually need to move (done in Phase 4); the rest are
+   superseded by the stock nrfx implementations.
 4. **CC310 spike (Option A) — BUILD+LINK PROVEN 2026-07-07.** The CC310 hw-crypto backend builds
    and links cleanly on the shared nrfx platform (`ecc-bench` with `ECC_HW_BACKEND=cc310
    TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR=`): `__start_/__stop_crypto_data` bracket the
