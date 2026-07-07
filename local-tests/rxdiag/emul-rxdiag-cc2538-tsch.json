@@ -1,0 +1,16 @@
+{
+    "title": "rxdiag all-CC2538 TSCH regression: cc2538 root + cc2538 leaf (validates the SYS_CTRL OSC-switch fix)",
+    "timeout_ms": 200000,
+    "seed": 1,
+    "startup_delay_ms": 1000,
+    "nodes": [
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/rxdiag/build/cc2538dk/rxdiag-root.cc2538dk", "id": 1, "x":  0.0, "y": 0.0 },
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/rxdiag/build/cc2538dk/rxdiag-leaf.cc2538dk", "id": 2, "x": 30.0, "y": 0.0 }
+    ],
+    "test": {
+        "description": "Two cc2538 nodes over TSCH: node 1 = rxdiag-root (RPL root + TSCH coordinator), node 2 = rxdiag-leaf. Validates that the cc2538 clock-source-switch (SYS_CTRL_CLOCK_CTRL.OSC bit-16) fix lets a cc2538 TSCH node's etimers/EB/RPL run so the leaf joins the DAG. Regression guard for cc2538 TSCH (the shipped tsch-node.cc2538dk firmware is a stub).",
+        "validators": [
+            { "pattern": "[LEAF] reachable", "node": 2, "min_count": 1 }
+        ]
+    }
+}

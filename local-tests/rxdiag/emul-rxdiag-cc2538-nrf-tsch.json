@@ -1,0 +1,18 @@
+{
+    "title": "rxdiag EMULATED HW topology: CC2538 root + nRF52840 leaf, sync-vs-raw-async RX over TSCH",
+    "timeout_ms": 460000,
+    "seed": 1,
+    "startup_delay_ms": 1000,
+    "nodes": [
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/rxdiag/build/cc2538dk/rxdiag-root.cc2538dk", "id": 1, "x":  0.0, "y": 0.0 },
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/rxdiag/build/nrf52840/dk/rxdiag-leaf.nrf52840", "id": 2, "x": 30.0, "y": 0.0 }
+    ],
+    "test": {
+        "description": "Emulates the hardware pairing with cc2538dk as the well-supported cooja-ng CC2538 stand-in for the Firefly (identical CC2538 SoC + cc2538_rf 2.4GHz): node 1 = CC2538 rxdiag-root (RPL root + TSCH coordinator, sender); node 2 = nRF52840 rxdiag-leaf running BOTH a simple_udp sync listener ([SU]) and a raw udp_conn tcpip_event listener ([RAW], coap-uip-like). On the leaf's trigger the root sweeps sizes {700..1000} to both leaf ports. This is the emulator BASELINE the hardware runs are compared against.",
+        "validators": [
+            { "pattern": "[LEAF] DONE", "node": 2, "min_count": 1 },
+            { "pattern": "[SU]  recv len=848", "node": 2, "min_count": 1 },
+            { "pattern": "[RAW] recv len=848", "node": 2, "min_count": 1 }
+        ]
+    }
+}

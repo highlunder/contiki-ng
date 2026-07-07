@@ -1,0 +1,18 @@
+{
+    "title": "rxdiag emulator CSMA control: nRF root + nRF leaf, sync-vs-raw-async RX (R4 baseline)",
+    "timeout_ms": 400000,
+    "seed": 1,
+    "startup_delay_ms": 1000,
+    "nodes": [
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/rxdiag/build/nrf52840/dk/rxdiag-root.nrf52840", "id": 1, "x":  0.0, "y": 0.0 },
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/rxdiag/build/nrf52840/dk/rxdiag-leaf.nrf52840", "id": 2, "x": 30.0, "y": 0.0 }
+    ],
+    "test": {
+        "description": "CSMA control (rung R4) in the emulator: nRF root + nRF leaf. The leaf runs BOTH [SU] sync and [RAW] async listeners; the root sweeps sizes {700..1000} to both. Expected (like TSCH): both paths receive every size. Establishes the CSMA emulator baseline the HW CSMA control is compared against.",
+        "validators": [
+            { "pattern": "[LEAF] DONE", "node": 2, "min_count": 1 },
+            { "pattern": "[SU]  recv len=848", "node": 2, "min_count": 1 },
+            { "pattern": "[RAW] recv len=848", "node": 2, "min_count": 1 }
+        ]
+    }
+}

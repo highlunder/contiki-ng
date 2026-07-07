@@ -1,0 +1,18 @@
+{
+    "title": "rxdiag EMULATED HW topology: Firefly(cc2538) root + nRF52840 leaf, sync-vs-raw-async RX over TSCH",
+    "timeout_ms": 420000,
+    "seed": 1,
+    "startup_delay_ms": 1000,
+    "nodes": [
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/rxdiag/build/zoul/firefly/rxdiag-root.zoul-firefly", "id": 1, "x":  0.0, "y": 0.0 },
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/rxdiag/build/nrf52840/dk/rxdiag-leaf.nrf52840", "id": 2, "x": 30.0, "y": 0.0 }
+    ],
+    "test": {
+        "description": "Emulates the exact hardware pairing: node 1 = Firefly (cc2538) rxdiag-root (RPL root + TSCH coordinator, sender); node 2 = nRF52840 rxdiag-leaf (node under test) running BOTH a simple_udp sync listener ([SU]) and a raw udp_conn tcpip_event listener ([RAW], coap-uip-like). On the leaf's trigger the root sweeps sizes {700..1000} to both leaf ports. This is the emulator BASELINE the hardware runs are compared against.",
+        "validators": [
+            { "pattern": "[LEAF] DONE", "node": 2, "min_count": 1 },
+            { "pattern": "[SU]  recv len=848", "node": 2, "min_count": 1 },
+            { "pattern": "[RAW] recv len=848", "node": 2, "min_count": 1 }
+        ]
+    }
+}
