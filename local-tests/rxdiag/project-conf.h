@@ -29,16 +29,28 @@
 /* The RECEIVER-side reassembly hardening is what the bisection must hold constant;
  * that node is the nRF-DK leaf. The Firefly (cc2538) only runs the ROOT/sender and
  * has a tiny SRAM (FRSRAM), so the fat nRF-sized pools overflow it -- trim there.
- * The sender doesn't reassemble the big flights, so trimming its pools does not
- * affect the experiment (the leaf keeps the hardened config). */
+ * The sender does not REASSEMBLE the big flights (that pool can stay small), but it
+ * MUST FRAGMENT them on output: 6LoWPAN output allocates one queuebuf per fragment
+ * up front and DROPS the whole datagram if queuebuf_numfree() < frags ("not enough
+ * free bufs"). The 700..1000 B sweep needs 9..12 queuebufs, so QUEUEBUF_CONF_NUM=6
+ * silently dropped every large datagram on the cc2538 sender and nothing >96 B ever
+ * reached the air (the mixed cc2538->nRF 848 B delivery failure). TSCH must also be
+ * able to hold the outgoing fragment burst to one neighbor. Size the sender's OUTPUT
+ * pools (queuebuf + per-neighbor TSCH queue) for the 12-fragment worst case; keep the
+ * reassembly pool small since the root never reassembles. */
 #if defined(CONTIKI_TARGET_ZOUL) || defined(CONTIKI_TARGET_CC2538DK)
-/* CC2538 root/sender (Firefly HW, or cc2538dk = the cooja-ng CC2538 stand-in):
- * minimal pools that fit the cc2538 32KB SRAM. */
-#define QUEUEBUF_CONF_NUM 6
+/* CC2538 root/sender (Firefly HW, or cc2538dk = the cooja-ng CC2538 stand-in). */
+#define QUEUEBUF_CONF_NUM 16                 /* >= worst-case frags (1000 B => 12) + headroom.
+                                              * NB: raising this further (tested at 24) does
+                                              * NOT make the mixed cc2538->nRF 848 B sweep pass:
+                                              * TSCH unicast to the leaf drains slower than the
+                                              * sweep queues fragments, so a backlog holds most
+                                              * queuebufs and free plateaus at ~needed-1. That
+                                              * residual is a throughput limit, not a pool size. */
 #if MAC_CONF_WITH_TSCH
-#define TSCH_QUEUE_CONF_NUM_PER_NEIGHBOR 4
+#define TSCH_QUEUE_CONF_NUM_PER_NEIGHBOR 16  /* hold the full outgoing fragment burst */
 #define TSCH_CONF_MAX_INCOMING_PACKETS   4
-#define SICSLOWPAN_CONF_FRAGMENT_BUFFERS 8
+#define SICSLOWPAN_CONF_FRAGMENT_BUFFERS 8   /* sender does not reassemble */
 #define SICSLOWPAN_CONF_MAXAGE 160
 #endif /* MAC_CONF_WITH_TSCH */
 #else

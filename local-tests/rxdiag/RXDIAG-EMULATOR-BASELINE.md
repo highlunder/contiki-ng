@@ -47,27 +47,46 @@ or reproducible at 848 B specifically.
 Because the emulator shows **no** such divergence (as expected — the bug is real-RF/TSCH-timing
 specific), the emulator cannot localize the fault; it only fixes the "known-good" reference.
 
-## Emulator limitation found: mixed CC2538 ↔ nRF TSCH does NOT converge
-The literal HW pairing is a **Firefly (CC2538) root + nRF52840 leaf**. Attempting that in the
-emulator **fails**, both with the `zoul-firefly` board and with the well-supported `cc2538dk`
-CC2538 stand-in:
-- The two nodes **associate** at TSCH (leaf hears one EB, sends data, gets a few ACKs), but the
-  CC2538 root then emits **only 1 enhanced beacon and no RPL DIOs**, goes quiet ~36 s in, and
-  the leaf **never becomes RPL-reachable** → no trigger, no sweep. The root does not crash
-  (cycles keep accumulating); its TSCH schedule desyncs.
-- Root freq 16 MHz (CC2538) vs leaf 64 MHz (nRF): cooja-ng's per-platform radio/slot timing
-  models don't sustain a **mixed** cc2538↔nRF TSCH network. All shipped cooja-ng TSCH configs
-  are single-platform (`test-tsch-cc2538dk.json`, `test-tsch-nrf52840-dk.json`), consistent
-  with mixed TSCH being unsupported.
-- Configs kept for the record: `emul-rxdiag-firefly-nrf-tsch.json`,
-  `emul-rxdiag-cc2538-nrf-tsch.json` (both do not converge — do not use as a baseline).
+## Mixed CC2538 ↔ nRF TSCH — now converges (2026-07-07); residual is sender throughput
+**Superseded earlier claim.** This section previously stated mixed cc2538↔nRF TSCH "does not
+converge" and blamed cooja-ng's per-platform slot-timing / the 16-vs-64 MHz difference. That was
+wrong on both counts. Three cc2538 **clock-emulation bugs** in
+`cooja-ng-ge/src/arm/cc2538_sys_ctrl.c` were the real cause (CLOCK_CTRL.OSC bit position; OSC32K
+stabilization; the RCOSC CPU-frequency downshift — see
+`cooja-ng-ge/CC2538-TSCH-CLOCK-FINDING.md`). With them fixed:
+- **all-cc2538 TSCH passes** (`emul-rxdiag-cc2538-tsch.json`: both nodes steady 16 MHz, 0 dl-miss,
+  `[LEAF] reachable`).
+- **mixed cc2538-root + nRF-leaf now associates, forms the DAG, and reaches `[LEAF] DONE` with 0
+  dl-miss** — the pairing converges. The "16 MHz cc2538 vs 64 MHz nRF" difference is real and fine;
+  it never was the problem.
 
-**Why this does not weaken the baseline:** the node under test is the **nRF leaf** — identical
-firmware and identical receive path in HW and emulator. The root platform only shapes fragment
-inter-arrival timing on the wire; it does not change the leaf's sync-vs-async pickup, which is
-the entire measured quantity. So the **all-nRF** emulator run is the faithful reference for the
-leaf, and the real Firefly is used only on hardware (where mixed cc2538↔nRF works over real RF —
-see `project_firefly_gateway`).
+**Remaining gap: the 848 B sweep is not delivered over the mixed link — a cc2538 SENDER issue.**
+The cc2538 root emits **no frame larger than 96 B**; the leaf receives nothing at the app layer.
+Root-caused to two sender-side effects (both on the cc2538 root; the nRF leaf receive path is not
+implicated — it accepts the same sizes fine from an nRF sender):
+1. **Output-fragmentation buffer starvation (fixed).** `rxdiag`'s `project-conf.h` trimmed the
+   cc2538 pools to fit 32 KB SRAM with `QUEUEBUF_CONF_NUM 6`, on the (wrong) assumption that "the
+   sender doesn't reassemble, so trimming is harmless." But 6LoWPAN **output** allocates one
+   queuebuf per fragment up front and **drops the whole datagram** if `queuebuf_numfree() < frags`
+   (`[WARN: 6LoWPAN] output: dropping packet, not enough free bufs`). The 700..1000 B sweep needs
+   9..12 queuebufs, so with 6 free, every large datagram was silently dropped before any fragment
+   hit the air. Fixed by sizing the sender's output pools for the worst case
+   (`QUEUEBUF_CONF_NUM 16`, `TSCH_QUEUE_CONF_NUM_PER_NEIGHBOR 16`); the leaf then receives 700 B.
+2. **TSCH unicast throughput bottleneck (residual, not a pool-size issue).** Even so, 848 B still
+   fails: cc2538→nRF TSCH unicast drains fragments slower than the sweep queues them (a new 9..12
+   fragment datagram every ~1.5 s), so a backlog holds most queuebufs and the free count plateaus
+   at ~`needed-1`. Raising `QUEUEBUF_CONF_NUM` to 24 did **not** help (free plateaus higher but
+   still one short; 700 B delivers, 848 B does not) — proving the blocker is drain rate, not buffer
+   count. Closing it needs a slower sweep cadence or a denser TSCH unicast schedule
+   (more Tx slots to the leaf) — deferred as rxdiag-harness tuning.
+
+**Why none of this weakens the baseline:** the node under test is the **nRF leaf** — identical
+firmware and identical receive path in HW and emulator, and it is *not* the bottleneck here (the
+gap is entirely on the cc2538 sender). The all-nRF run remains the faithful reference for the
+leaf's sync-vs-async pickup. Real Firefly is used on hardware, where mixed cc2538↔nRF delivers
+over real RF (see `project_firefly_gateway`).
+- Configs: `emul-rxdiag-cc2538-nrf-tsch.json` (converges; 848 B blocked on sender throughput),
+  `emul-rxdiag-firefly-nrf-tsch.json` (zoul-firefly variant).
 
 ## Configs / firmwares
 - Baselines (use these): `emul-rxdiag-tsch.json` (nRF-nRF TSCH), `emul-rxdiag-nrf-csma.json`
