@@ -28,8 +28,8 @@ build_one() {   # $1 = rung dir, $2 = "" (release) | "1" (debug), $3 = hex suffi
   local rung="$1" dbg="$2" suffix="$3"
   local dir="$HERE/$rung"
   echo "=== build $rung ${suffix:+($suffix)} ==="
-  make -C "$dir" TARGET=nrf52840 BOARD=dk clean >/dev/null 2>&1 || true
-  make -C "$dir" TARGET=nrf52840 BOARD=dk LOCAL_TEST_DEBUG="$dbg" $TOOLS
+  make -C "$dir" TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= clean >/dev/null 2>&1 || true
+  make -C "$dir" TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= LOCAL_TEST_DEBUG="$dbg" $TOOLS
   "$OBJCOPY" -O ihex \
     "$dir/build/nrf52840/dk/$rung.nrf52840" \
     "$HERE/$rung$suffix.hex"

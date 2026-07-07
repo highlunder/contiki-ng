@@ -1,0 +1,16 @@
+{
+    "title": "coap-secure (port 5684) large-datagram receive-path probe over TSCH on EMULATED nRF52840-DK",
+    "timeout_ms": 220000,
+    "seed": 1,
+    "startup_delay_ms": 1000,
+    "nodes": [
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/tests/21-security-protocols/x509-native-dtls-server/build/nrf/nrf52840/dk/x509-native-dtls-server.nrf", "id": 1, "x":  0.0, "y": 0.0 },
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/coap-rx-probe/build/nrf/nrf52840/dk/coap-rx-sender.nrf", "id": 2, "x": 30.0, "y": 0.0 }
+    ],
+    "test": {
+        "description": "Node 1 is the coap-secure server (root/coordinator) built with COAP_UIP_RX_DEBUG. Node 2 blasts raw UDP datagrams of increasing size (700..1000 B) at node 1's port 5684, straight onto the coap-uip dispatch path. The size at which node 1's '[COAP-UIP] newdata ... len=' lines stop appearing (while 6LoWPAN still reassembles) is where the coap async receive path drops the large datagram.",
+        "validators": [
+            { "pattern": "[CRXP] DONE", "node": 2, "min_count": 1 }
+        ]
+    }
+}

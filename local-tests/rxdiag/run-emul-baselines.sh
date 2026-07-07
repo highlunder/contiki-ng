@@ -14,8 +14,8 @@ SIZE=$ARM/arm-none-eabi-size"
 build_nrf() {   # $1 = tsch|csma
   local extra=""
   [ "$1" = tsch ] && extra="MAKE_MAC=MAKE_MAC_TSCH MAKE_WITH_ORCHESTRA=1"
-  rm -rf "$HERE/build/nrf52840"
-  make -C "$HERE" TARGET=nrf52840 BOARD=dk $extra $TOOLS >/dev/null
+  rm -rf "$HERE/build/nrf"
+  make -C "$HERE" TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= $extra $TOOLS >/dev/null
 }
 
 echo "=== nRF-nRF TSCH baseline ==="

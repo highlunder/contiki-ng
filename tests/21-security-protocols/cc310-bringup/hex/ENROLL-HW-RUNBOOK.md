@@ -18,8 +18,8 @@ C509 Type-3 CSR on-device (uECC/SHA-256, no mbedTLS), submits it
 ## Staged firmware (this folder)
 | Hex | Role | Build |
 |---|---|---|
-| `enroll-client-dk.hex` | DUT — enrolling device | `edhoc-oscore-crts-client`, `TARGET=nrf52840 BOARD=dk` |
-| `enroll-server-dk.hex` | CA + RPL DAG root | `edhoc-oscore-crts-server`, `TARGET=nrf52840 BOARD=dk` |
+| `enroll-client-dk.hex` | DUT — enrolling device | `edhoc-oscore-crts-client`, `TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR=` |
+| `enroll-server-dk.hex` | CA + RPL DAG root | `edhoc-oscore-crts-server`, `TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR=` |
 
 Both build warning-free. Crypto is software P-256 (uECC) + SHA-256; CC310 is
 **not** required for enrollment (it can be enabled separately via the ECC
@@ -78,7 +78,7 @@ for the exact parameters that made EDHOC pass on real silicon.
 
 ## Rebuild
 ```
-make -C tests/21-security-protocols/edhoc-oscore-crts-client TARGET=nrf52840 BOARD=dk
-make -C tests/21-security-protocols/edhoc-oscore-crts-server TARGET=nrf52840 BOARD=dk
+make -C tests/21-security-protocols/edhoc-oscore-crts-client TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR=
+make -C tests/21-security-protocols/edhoc-oscore-crts-server TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR=
 # then arm-none-eabi-objcopy -O ihex build/nrf52840/dk/<app>.nrf52840 <name>.hex
 ```

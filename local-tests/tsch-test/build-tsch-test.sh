@@ -32,10 +32,10 @@ make -C "$CONTIKI/examples/rpl-border-router" TARGET=zoul BOARD=firefly $TSCH $T
 echo "  -> $HERE/border-router-tsch.bin"
 
 echo "=== nRF52840-DK TSCH node (1-net-join) ==="
-make -C "$CONTIKI/local-tests/1-net-join" TARGET=nrf52840 BOARD=dk clean >/dev/null 2>&1 || true
-make -C "$CONTIKI/local-tests/1-net-join" TARGET=nrf52840 BOARD=dk $TSCH $TOOLS
+make -C "$CONTIKI/local-tests/1-net-join" TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= clean >/dev/null 2>&1 || true
+make -C "$CONTIKI/local-tests/1-net-join" TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= $TSCH $TOOLS
 "$OBJCOPY" -O ihex \
-  "$CONTIKI/local-tests/1-net-join/build/nrf52840/dk/1-net-join.nrf52840" \
+  "$CONTIKI/local-tests/1-net-join/build/nrf/nrf52840/dk/1-net-join.nrf" \
   "$HERE/1-net-join-tsch.hex"
 echo "  -> $HERE/1-net-join-tsch.hex"
 

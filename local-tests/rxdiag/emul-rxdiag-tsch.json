@@ -4,8 +4,8 @@
     "seed": 1,
     "startup_delay_ms": 1000,
     "nodes": [
-        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/rxdiag/build/nrf52840/dk/rxdiag-root.nrf52840", "id": 1, "x":  0.0, "y": 0.0 },
-        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/rxdiag/build/nrf52840/dk/rxdiag-leaf.nrf52840", "id": 2, "x": 30.0, "y": 0.0 }
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/rxdiag/build/nrf/nrf52840/dk/rxdiag-root.nrf", "id": 1, "x":  0.0, "y": 0.0 },
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/rxdiag/build/nrf/nrf52840/dk/rxdiag-leaf.nrf", "id": 2, "x": 30.0, "y": 0.0 }
     ],
     "test": {
         "description": "Node 1 = rxdiag-root (RPL root + TSCH coordinator, sender). Node 2 = rxdiag-leaf (node under test), running BOTH a simple_udp sync listener (logs [SU]) and a raw udp_conn tcpip_event listener (logs [RAW]) that replicates coap-uip's dispatch. On the leaf's trigger, the root sweeps sizes {700..1000} to both leaf ports. This validates the harness logic in the deterministic emulator (expected: both [SU] and [RAW] receive every size, matching the earlier coap-rx-probe result) before running the same leaf firmware on real hardware against the Firefly root.",

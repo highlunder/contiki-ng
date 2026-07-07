@@ -71,10 +71,10 @@ benches.
 between backends so the stamp + backend objects refresh):
 ```
 # CC310 (draft-20: FW_ID bumped to 20260630):
-make TARGET=nrf52840 BOARD=dk ECC_HW_BACKEND=cc310 \
+make TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= ECC_HW_BACKEND=cc310 \
      NRF_CC310_SDK=/path/to/nRF5_SDK_17.1.0_ddde560 EDHOC_PROFILE=1 FW_ID=20260630
 # software:
-make TARGET=nrf52840 BOARD=dk EDHOC_PROFILE=1 FW_ID=20260630
+make TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= EDHOC_PROFILE=1 FW_ID=20260630
 ```
 then `arm-none-eabi-objcopy -O ihex build/nrf52840/dk/edhoc-oscore-c5t-client.nrf52840 <name>.hex`.
 (CC310 build needs the `nrf52840-cc310-ecc-backend` integration, present on the
@@ -118,9 +118,9 @@ Note: there is no `ecc-bench-bp256-cc310.hex` on purpose — the CC310 backend's
 ### How each was built (from `cc310-bringup/ecc-bench/`)
 
 ```
-make TARGET=nrf52840 BOARD=dk ECC_HW_BACKEND=cc310   # -> secp256r1-cc310
-make TARGET=nrf52840 BOARD=dk                         # -> secp256r1-sw
-make TARGET=nrf52840 BOARD=dk BP256=1                 # -> bp256-sw
+make TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= ECC_HW_BACKEND=cc310   # -> secp256r1-cc310
+make TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR=                         # -> secp256r1-sw
+make TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= BP256=1                 # -> bp256-sw
 ```
 
 then `arm-none-eabi-objcopy -O ihex build/nrf52840/dk/ecc-bench.nrf52840 <name>.hex`.
@@ -145,14 +145,14 @@ pending the board's return.**
 Build:
 ```
 # Tier A (from ec25519-bench/) — CC310 X25519 + Ed25519:
-make TARGET=nrf52840 BOARD=dk            # ECC_HW_BACKEND=cc310 + CC310_ECC_25519=1 are set in the Makefile
+make TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR=            # ECC_HW_BACKEND=cc310 + CC310_ECC_25519=1 are set in the Makefile
 # Tier A software counterpart (from ec25519-bench-sw/) — Monocypher X25519 + Ed25519:
-make TARGET=nrf52840 BOARD=dk            # -> ec25519-bench-sw.hex
+make TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR=            # -> ec25519-bench-sw.hex
 
 # Tier D (from mlkem-bench/) — software ML-KEM, level via MLKEM=512|768|1024:
-make TARGET=nrf52840 BOARD=dk MLKEM=512
-make TARGET=nrf52840 BOARD=dk MLKEM=768
-make TARGET=nrf52840 BOARD=dk MLKEM=1024  # clean between levels
+make TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= MLKEM=512
+make TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= MLKEM=768
+make TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= MLKEM=1024  # clean between levels
 ```
 
 Notes:

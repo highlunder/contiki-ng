@@ -9,16 +9,16 @@ TOOLS="CC=$ARM/arm-none-eabi-gcc AS=$ARM/arm-none-eabi-gcc LD=$ARM/arm-none-eabi
 AR=$ARM/arm-none-eabi-ar OBJCOPY=$ARM/arm-none-eabi-objcopy NM=$ARM/arm-none-eabi-nm \
 SIZE=$ARM/arm-none-eabi-size"
 OBJCOPY="$ARM/arm-none-eabi-objcopy"
-B="$HERE/build/nrf52840/dk"
+B="$HERE/build/nrf/nrf52840/dk"
 
 build_one() {
   local mac="$1" extra=""
   [ "$mac" = tsch ] && extra="MAKE_MAC=MAKE_MAC_TSCH MAKE_WITH_ORCHESTRA=1"
   echo "=== build rxdiag root+leaf ($mac) ==="
   rm -rf "$HERE/build"
-  make -C "$HERE" TARGET=nrf52840 BOARD=dk $extra $TOOLS
-  "$OBJCOPY" -O ihex "$B/rxdiag-root.nrf52840" "$HERE/rxdiag-root-$mac.hex"
-  "$OBJCOPY" -O ihex "$B/rxdiag-leaf.nrf52840" "$HERE/rxdiag-leaf-$mac.hex"
+  make -C "$HERE" TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= $extra $TOOLS
+  "$OBJCOPY" -O ihex "$B/rxdiag-root.nrf" "$HERE/rxdiag-root-$mac.hex"
+  "$OBJCOPY" -O ihex "$B/rxdiag-leaf.nrf" "$HERE/rxdiag-leaf-$mac.hex"
   echo "  -> rxdiag-root-$mac.hex  rxdiag-leaf-$mac.hex"
 }
 

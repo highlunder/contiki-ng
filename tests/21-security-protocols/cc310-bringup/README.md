@@ -35,7 +35,7 @@ assembler, so `AS=` is required):
 
 ```
 TC=/home/joel/toolchains/arm-gcc/bin/arm-none-eabi
-make -C <appdir> TARGET=nrf52840 BOARD=dk [ECC_HW_BACKEND=cc310] \
+make -C <appdir> TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= [ECC_HW_BACKEND=cc310] \
   CC=$TC-gcc AS=$TC-gcc LD=$TC-gcc AR=$TC-ar OBJCOPY=$TC-objcopy NM=$TC-nm
 ```
 
@@ -78,7 +78,7 @@ Rung 1 below; if the build produces a HEX and `nrfjprog` reports
 ## Rung 1 — hello-world (boot + console)
 
 ```
-make -C ../../../examples/hello-world TARGET=nrf52840 BOARD=dk <tool overrides>
+make -C ../../../examples/hello-world TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= <tool overrides>
 objcopy -O ihex .../hello-world.nrf52840 .../hello-world.hex   # then flash
 ```
 
@@ -93,7 +93,7 @@ Pass = that line appears. Fail here ⇒ flash/console/baud problem (not your cod
 ## Rung 2 — board-check (clock + GPIO)
 
 ```
-make -C board-check TARGET=nrf52840 BOARD=dk <tool overrides>
+make -C board-check TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= <tool overrides>
 ```
 
 **Expect:** a banner, then one line per second, and the LEDs visibly toggling:
@@ -116,12 +116,12 @@ Same app, two backends. Build and flash the **software** build first, then the
 
 **Software (uECC) — rungs 3 & 4:**
 ```
-make -C ecc-bench TARGET=nrf52840 BOARD=dk <tool overrides>
+make -C ecc-bench TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= <tool overrides>
 ```
 
 **CC310 hardware — rung 5:**
 ```
-make -C ecc-bench TARGET=nrf52840 BOARD=dk ECC_HW_BACKEND=cc310 <tool overrides>
+make -C ecc-bench TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= ECC_HW_BACKEND=cc310 <tool overrides>
 ```
 
 **Expect** (per backend):
@@ -163,7 +163,7 @@ The end goal, and the only rung that needs a **peer + network** (border router /
 second node, or Cooja). Build the existing client/server with profiling on:
 
 ```
-make -C ../edhoc-oscore-c5t-client TARGET=nrf52840 BOARD=dk \
+make -C ../edhoc-oscore-c5t-client TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= \
      ECC_HW_BACKEND=cc310 EDHOC_PROFILE=1 <tool overrides>
 make -C ../edhoc-oscore-c5t-server ...
 ```

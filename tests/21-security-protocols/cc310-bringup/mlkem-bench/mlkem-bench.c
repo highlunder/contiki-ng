@@ -19,7 +19,7 @@
  * "sizes:" line.
  *
  * Build (security level via MLKEM=512|768|1024, default 768):
- *   make TARGET=nrf52840 BOARD=dk MLKEM=768
+ *   make TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= MLKEM=768
  *
  * A green LED + "RESULT: PASS" means every op returned 0 and the encapsulated
  * shared secret equals the decapsulated one for all iterations.

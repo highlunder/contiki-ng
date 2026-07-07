@@ -19,7 +19,7 @@
  *
  * Build (no software counterpart: uECC has no 25519; that path would be a
  * separate mbedTLS/ed25519_verify bench):
- *   make TARGET=nrf52840 BOARD=dk ECC_HW_BACKEND=cc310 CC310_ECC_25519=1
+ *   make TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= ECC_HW_BACKEND=cc310 CC310_ECC_25519=1
  *
  * A green LED + "RESULT: PASS" means every op returned success, ECDH(a,B) ==
  * ECDH(b,A), and each Ed25519 signature verified.

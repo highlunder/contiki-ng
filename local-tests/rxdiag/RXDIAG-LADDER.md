@@ -106,7 +106,7 @@ drop large datagrams under TSCH while the **sync** path doesn't?
 any clobber source.
 **Run:** rebuild the leaf with IPv6/6LoWPAN debug and reflash:
 ```
-make -C . TARGET=nrf52840 BOARD=dk MAKE_MAC=MAKE_MAC_TSCH MAKE_WITH_ORCHESTRA=1 \
+make -C . TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= MAKE_MAC=MAKE_MAC_TSCH MAKE_WITH_ORCHESTRA=1 \
   DEFINES=LOG_CONF_LEVEL_IPV6=LOG_LEVEL_DBG,LOG_CONF_LEVEL_6LOWPAN=LOG_LEVEL_DBG \
   CC=/home/joel/toolchains/arm-gcc/bin/arm-none-eabi-gcc AS=... LD=... AR=...ar \
   OBJCOPY=...objcopy NM=...nm SIZE=...size

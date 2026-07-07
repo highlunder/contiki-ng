@@ -13,7 +13,7 @@
  * ec25519-bench, so the rows line up directly.
  *
  * Build:
- *   make TARGET=nrf52840 BOARD=dk
+ *   make TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR=
  *
  * A green LED + "RESULT: PASS" means every op succeeded, ECDH(a,B)==ECDH(b,A),
  * and each Ed25519 signature verified.

@@ -44,8 +44,8 @@ build_one() {
   [ -n "${BENCH_ITERS:-}" ] && cfl="$cfl -DBENCH_ITERS=$BENCH_ITERS"
   case "$app" in edhoc-*) cfl="$SERVER_EP $cfl" ;; esac
   echo "=== build $app -> bench-$label ==="
-  make -C "$dir" TARGET=nrf52840 BOARD=dk clean >/dev/null 2>&1 || true
-  env CFLAGS="$cfl" make -C "$dir" TARGET=nrf52840 BOARD=dk $extra $TOOLS
+  make -C "$dir" TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= clean >/dev/null 2>&1 || true
+  env CFLAGS="$cfl" make -C "$dir" TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= $extra $TOOLS
   "$OBJCOPY" -O ihex "$dir/build/nrf52840/dk/$app.nrf52840" "$HERE/bench-$label.hex"
   echo "  -> $HERE/bench-$label.hex"
 }
@@ -57,10 +57,18 @@ for be in sw cc310; do for m in csma tsch; do
 done; done
 
 # DTLS handshakes: {CSMA, TSCH} only (mbedtls crypto), -> setest fd00::1.
+# NOTE: dtls-c509 is intentionally NOT built. The bench uses a CA-issued Type-2
+# (natively CBOR-signed) C509 credential, which no python-mbedtls setest server
+# can verify in the client-auth direction (Type-2 DTLS gap, task #16 /
+# PLAN-c509-type2-dtls.md), so it cannot complete a handshake against setest. And
+# DTLS reconstructs C509 to the identical 364 B X.509 DER before the TLS record,
+# so on the wire dtls-c509 == dtls-x509 (a storage win, not a wire win). The
+# dtls-c509-bench sources are kept (RPL/GET/TSCH configs in sync with x509) so it
+# is ready IF Type-2 DTLS Phase 1 lands -- uncomment then.
 for m in csma tsch; do
   build_one dtls-psk-bench  dtls-psk  none "$m"
   build_one dtls-x509-bench dtls-x509 none "$m"
-  build_one dtls-c509-bench dtls-c509 none "$m"
+  # build_one dtls-c509-bench dtls-c509 none "$m"   # blocked: see note above
 done
 
 echo ""

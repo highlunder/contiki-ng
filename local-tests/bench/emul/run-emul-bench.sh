@@ -31,15 +31,15 @@ SETTLE="${BENCH_SETTLE_S:-1}"  # UDGM lossless -> no RPL healing needed, short s
 
 echo "=== build EDHOC c5t responder (nRF52840) ==="
 make -C "$CONTIKI/tests/21-security-protocols/edhoc-oscore-c5t-server" \
-  TARGET=nrf52840 BOARD=dk $TOOLS >/dev/null
-cp "$CONTIKI/tests/21-security-protocols/edhoc-oscore-c5t-server/build/nrf52840/dk/edhoc-oscore-c5t-server.nrf52840" \
+  TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= $TOOLS >/dev/null
+cp "$CONTIKI/tests/21-security-protocols/edhoc-oscore-c5t-server/build/nrf/nrf52840/dk/edhoc-oscore-c5t-server.nrf" \
    "$HERE/edhoc-c5t-server.nrf52840"
 
 echo "=== build c5t sw bench client (nRF52840, server=$SRV_ADDR, iters=$ITERS) ==="
-make -C "$CONTIKI/local-tests/bench/edhoc-c5t-bench" TARGET=nrf52840 BOARD=dk clean >/dev/null 2>&1 || true
+make -C "$CONTIKI/local-tests/bench/edhoc-c5t-bench" TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= clean >/dev/null 2>&1 || true
 env CFLAGS="-DEDHOC_CONF_SERVER_EP='\"coap://[$SRV_ADDR]\"' -DBENCH_LABEL='\"edhoc-c5t-sw-emul\"' -DBENCH_ITERS=$ITERS -DBENCH_SETTLE_S=$SETTLE" \
-  make -C "$CONTIKI/local-tests/bench/edhoc-c5t-bench" TARGET=nrf52840 BOARD=dk $TOOLS >/dev/null
-cp "$CONTIKI/local-tests/bench/edhoc-c5t-bench/build/nrf52840/dk/edhoc-c5t-bench.nrf52840" \
+  make -C "$CONTIKI/local-tests/bench/edhoc-c5t-bench" TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= $TOOLS >/dev/null
+cp "$CONTIKI/local-tests/bench/edhoc-c5t-bench/build/nrf/nrf52840/dk/edhoc-c5t-bench.nrf" \
    "$HERE/edhoc-c5t-bench-emul.nrf52840"
 
 echo "=== run in cooja-ng ==="
