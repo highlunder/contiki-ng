@@ -111,7 +111,7 @@ make -C . TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= MAKE_MAC=MAKE_MAC_TSCH MA
   CC=/home/joel/toolchains/arm-gcc/bin/arm-none-eabi-gcc AS=... LD=... AR=...ar \
   OBJCOPY=...objcopy NM=...nm SIZE=...size
 ```
-(then `objcopy -O ihex build/nrf52840/dk/rxdiag-leaf.nrf52840 rxdiag-leaf-tsch-dbg.hex`).
+(then `objcopy -O ihex build/nrf/nrf52840/dk/rxdiag-leaf.nrf rxdiag-leaf-tsch-dbg.hex`).
 **Read:** for a size the app never logs on `[RAW]`, does the IPv6 layer still print
 *"received IPv6 packet with len N"*?
 **Decide:**

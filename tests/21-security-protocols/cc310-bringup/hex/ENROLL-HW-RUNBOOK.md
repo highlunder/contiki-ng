@@ -80,5 +80,5 @@ for the exact parameters that made EDHOC pass on real silicon.
 ```
 make -C tests/21-security-protocols/edhoc-oscore-crts-client TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR=
 make -C tests/21-security-protocols/edhoc-oscore-crts-server TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR=
-# then arm-none-eabi-objcopy -O ihex build/nrf52840/dk/<app>.nrf52840 <name>.hex
+# then arm-none-eabi-objcopy -O ihex build/nrf/nrf52840/dk/<app>.nrf <name>.hex
 ```

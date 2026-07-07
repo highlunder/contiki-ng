@@ -46,7 +46,7 @@ build_one() {
   echo "=== build $app -> bench-$label ==="
   make -C "$dir" TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= clean >/dev/null 2>&1 || true
   env CFLAGS="$cfl" make -C "$dir" TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= $extra $TOOLS
-  "$OBJCOPY" -O ihex "$dir/build/nrf52840/dk/$app.nrf52840" "$HERE/bench-$label.hex"
+  "$OBJCOPY" -O ihex "$dir/build/nrf/nrf52840/dk/$app.nrf" "$HERE/bench-$label.hex"
   echo "  -> $HERE/bench-$label.hex"
 }
 

@@ -49,8 +49,8 @@ HEX straight from the ELF with objcopy instead:
 
 ```
 /home/joel/toolchains/arm-gcc/bin/arm-none-eabi-objcopy -O ihex \
-  <appdir>/build/nrf52840/dk/<app>.nrf52840 \
-  <appdir>/build/nrf52840/dk/<app>.hex
+  <appdir>/build/nrf/nrf52840/dk/<app>.nrf \
+  <appdir>/build/nrf/nrf52840/dk/<app>.hex
 ```
 
 ### Flash (Windows PowerShell)

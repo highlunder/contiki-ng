@@ -31,7 +31,7 @@ build_one() {   # $1 = rung dir, $2 = "" (release) | "1" (debug), $3 = hex suffi
   make -C "$dir" TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= clean >/dev/null 2>&1 || true
   make -C "$dir" TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= LOCAL_TEST_DEBUG="$dbg" $TOOLS
   "$OBJCOPY" -O ihex \
-    "$dir/build/nrf52840/dk/$rung.nrf52840" \
+    "$dir/build/nrf/nrf52840/dk/$rung.nrf" \
     "$HERE/$rung$suffix.hex"
   echo "  -> $HERE/$rung$suffix.hex"
 }

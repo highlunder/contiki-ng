@@ -76,7 +76,7 @@ make TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= ECC_HW_BACKEND=cc310 \
 # software:
 make TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= EDHOC_PROFILE=1 FW_ID=20260630
 ```
-then `arm-none-eabi-objcopy -O ihex build/nrf52840/dk/edhoc-oscore-c5t-client.nrf52840 <name>.hex`.
+then `arm-none-eabi-objcopy -O ihex build/nrf/nrf52840/dk/edhoc-oscore-c5t-client.nrf <name>.hex`.
 (CC310 build needs the `nrf52840-cc310-ecc-backend` integration, present on the
 `c509-eval-phase5` branch.)
 
@@ -123,7 +123,7 @@ make TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR=                         # -> s
 make TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= BP256=1                 # -> bp256-sw
 ```
 
-then `arm-none-eabi-objcopy -O ihex build/nrf52840/dk/ecc-bench.nrf52840 <name>.hex`.
+then `arm-none-eabi-objcopy -O ihex build/nrf/nrf52840/dk/ecc-bench.nrf <name>.hex`.
 Do a clean build between curve/backend switches (`make ... clean`) so the
 right `ecc.c` / CC310 backend objects are linked.
 

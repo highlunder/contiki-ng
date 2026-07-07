@@ -49,7 +49,7 @@ build_one() {   # $1 = client app dir, $2 = output hex basename, $3 = sw|cc310
   make -C "$dir" TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= clean >/dev/null 2>&1 || true
   env CFLAGS="$SERVER_EP_CFLAG" \
     make -C "$dir" TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR= $extra $TOOLS
-  "$OBJCOPY" -O ihex "$dir/build/nrf52840/dk/$app.nrf52840" "$HERE/$out$suffix.hex"
+  "$OBJCOPY" -O ihex "$dir/build/nrf/nrf52840/dk/$app.nrf" "$HERE/$out$suffix.hex"
   echo "  -> $HERE/$out$suffix.hex"
 }
 

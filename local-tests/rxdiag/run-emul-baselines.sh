@@ -1,6 +1,6 @@
 #!/bin/bash
 # Reproduce the rxdiag emulator baselines (the reference the HW ladder is compared
-# against). Each emul JSON needs its matching MAC build first: build/nrf52840/dk is
+# against). Each emul JSON needs its matching MAC build first: build/nrf/nrf52840/dk is
 # MAC-specific, so we rebuild the nRF pair per MAC before running its config.
 # SECURITY NOTICE: Test credentials only. Never use in production.
 set -eu
