@@ -98,6 +98,15 @@ gap, since a lost fragment waits a whole slotframe — see the GE burst-loss not
 
 ---
 
+## Merge-stability (upstream develop 04a3f0a00, 2026-07-08)
+After merging upstream `contiki-ng/develop` (166 commits: resolv/lwm2m/uip6 bounds
+fixes, nat64, link-stats RSSI→ETX fix, CC_ARRAY_LENGTH sweep, nrf-vpr/nrf5340/nrf54l15
+ports), all 10 apps rebuild cleanly and all 5 configs re-PASS with **bit-identical
+timestamps** (EDHOC finished: x5c 27.621 / c5c 26.991 / c5t 26.781 s; DTLS complete:
+x509 34.351 / c509 34.304 s). The merge does not touch the C509/EDHOC/DTLS, TSCH,
+Orchestra, 6LoWPAN or nrf52840 paths, so the results are unaffected. Re-check driver:
+`bench/emul/postmerge-recheck.sh`.
+
 ## Bottom line
 - **DTLS**: C509 is a *storage* compression only (Mbed TLS sends DER) → ~11 % smaller cert
   flight, **no** TSCH-latency win.
