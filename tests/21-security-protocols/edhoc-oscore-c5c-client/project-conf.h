@@ -1,6 +1,11 @@
 #ifndef PROJECT_CONF_H_
 #define PROJECT_CONF_H_
 
+/* cooja-ng-ge derives node IPv6 from the emulated FICR (not the node id), so the
+ * hard-coded EDHOC_CONF_SERVER_EP host never matches. Resolve the responder =
+ * RPL DAG root dynamically instead (harmless on real RF: root == responder). */
+#define EDHOC_CONF_SERVER_FROM_ROOT 1
+
 /* Server address: node 2 in Cooja by default; override at build time
  * (-DEDHOC_CONF_SERVER_EP='"coap://[fd01::1]"') to target the native EDHOC
  * responder behind the Firefly gateway for real-RF OTA (see local-tests/). */

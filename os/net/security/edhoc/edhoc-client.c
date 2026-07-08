@@ -38,6 +38,7 @@
  */
 
 #include "contiki.h"
+#include "net/routing/routing.h"
 #include "coap-callback-api.h"
 #include "coap-timer.h"
 #include "edhoc-client.h"
@@ -228,7 +229,14 @@ client_block2_handler(coap_message_t *response, uint8_t *target,
   int pay_len = coap_get_payload(response, &payload);
 
   if(response->block2_offset + pay_len > max_len) {
-    LOG_ERR("EDHOC message size (%d) exceeds max buffer (%d)\n", (int)pay_len, EDHOC_MAX_BUFFER);
+    /* Print the ACTUAL operands: total assembled size vs the target buffer that
+     * overflowed (max_len), not the unrelated EDHOC_MAX_BUFFER constant -- a
+     * MSG_2 larger than the target usually means a credential/scenario mismatch
+     * (e.g. an x509 x5chain server answering a c5t cert-hash client). */
+    LOG_ERR("EDHOC MSG size (%d = block2_offset %d + pay_len %d) exceeds target buffer (%d); "
+            "credential/scenario mismatch?\n",
+            (int)(response->block2_offset + pay_len), (int)response->block2_offset,
+            (int)pay_len, (int)max_len);
     coap_status_code = REQUEST_ENTITY_TOO_LARGE_4_13;
     coap_error_message = "Message too big";
     return -1;
@@ -544,6 +552,20 @@ edhoc_client_init(void)
     return;
   }
   coap_endpoint_parse(SERVER_EP, strlen(SERVER_EP), &client->server_ep);
+#ifdef EDHOC_CONF_SERVER_FROM_ROOT
+  /* Opt-in convenience (off by default): the EDHOC responder is the RPL DAG
+   * root, so override SERVER_EP's host with the resolved root address while
+   * keeping its port/scheme. Robust to platform-specific link-layer/IPv6
+   * addressing -- e.g. cooja-ng-ge derives node IPv6 from the emulated FICR,
+   * not the node id, so a hard-coded SERVER_EP host would never match. Mirrors
+   * how the DTLS test client resolves the server (get_root_ipaddr). */
+  {
+    uip_ipaddr_t edhoc_root_ipaddr;
+    if(NETSTACK_ROUTING.get_root_ipaddr(&edhoc_root_ipaddr)) {
+      uip_ipaddr_copy(&client->server_ep.ipaddr, &edhoc_root_ipaddr);
+    }
+  }
+#endif /* EDHOC_CONF_SERVER_FROM_ROOT */
   state.state.request = client->request;
   state.state.response = client->response;
   state.state.remote_endpoint = &client->server_ep;

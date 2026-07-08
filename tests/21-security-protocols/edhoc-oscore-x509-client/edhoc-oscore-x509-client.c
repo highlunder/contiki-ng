@@ -24,6 +24,7 @@
 #include <string.h>
 #include "contiki.h"
 #include "contiki-net.h"
+#include "net/routing/routing.h"    /* NETSTACK_ROUTING.get_root_ipaddr (EDHOC_CONF_SERVER_FROM_ROOT) */
 #include "net/ipv6/simple-udp.h"
 #include "coap-engine.h"
 #include "edhoc-client.h"
@@ -223,6 +224,16 @@ PROCESS_THREAD(edhoc_oscore_x509_client, ev, data)
 
       static coap_endpoint_t server_ep;
       coap_endpoint_parse(SERVER_EP, strlen(SERVER_EP), &server_ep);
+#ifdef EDHOC_CONF_SERVER_FROM_ROOT
+      /* OSCORE GET target = RPL root (the responder); resolve dynamically to
+       * match the EDHOC handshake fix (platform-derived node addressing). */
+      {
+        uip_ipaddr_t oscore_root_ipaddr;
+        if(NETSTACK_ROUTING.get_root_ipaddr(&oscore_root_ipaddr)) {
+          uip_ipaddr_copy(&server_ep.ipaddr, &oscore_root_ipaddr);
+        }
+      }
+#endif /* EDHOC_CONF_SERVER_FROM_ROOT */
 
       etimer_set(&timer, CLOCK_SECOND / 2);
       PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));

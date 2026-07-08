@@ -27,6 +27,9 @@
 #include "contiki.h"
 #include "contiki-net.h"
 #include "net/routing/routing.h"
+#if MAC_CONF_WITH_TSCH
+#include "net/mac/tsch/tsch.h"     /* the root must also be the TSCH coordinator */
+#endif
 #include "coap-engine.h"
 #include "coap-keystore.h"
 #include "mbedtls-support/mbedtls-support.h"
@@ -97,6 +100,14 @@ PROCESS_THREAD(c509_native_dtls_server, ev, data)
 
   memcpy(s_ca_pub_xy,      s_ca_pub_x, 32);
   memcpy(s_ca_pub_xy + 32, s_ca_pub_y, 32);
+
+#if MAC_CONF_WITH_TSCH
+  /* The DTLS server is the RPL root (IS_NETWORK_ROUTING_ROOT); on TSCH it must
+   * also start the network as coordinator, else no node can associate. */
+  if(IS_NETWORK_ROUTING_ROOT) {
+    tsch_set_coordinator(1);
+  }
+#endif
 
   if(IS_NETWORK_ROUTING_ROOT) {
     NETSTACK_ROUTING.root_start();
