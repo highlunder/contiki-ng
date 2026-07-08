@@ -57,6 +57,20 @@ For flashing the nRF52840 Dongle, the nRF5 SDK tools are also needed:
 
     nrfutil install nrf5sdk-tools
 
+Programming a **devkit** (nRF52840-DK / nRF5340-DK) with `nrfutil device` drives
+the board's on-board SEGGER J-Link, which requires SEGGER's **J-Link runtime**
+(`libjlinkarm`) to be installed separately. Without it, `nrfutil device list`
+prints `WARNING: JLinkARM DLL not found` and the devkit is not usable for
+programming (the Dongle's DFU path does not need it). Install the J-Link Software
+Pack from <https://www.segger.com/downloads/jlink/>. The Dongle's DFU path does
+not need J-Link.
+
+Under **WSL**, forward the probe with `usbipd` (the J-Link enumerates as SEGGER
+USB VID `1366`; the Dongle bootloader as Nordic VID `1915`). WSL does not always
+apply udev rules, so if `nrfutil` reports a `LIBUSB_ERROR_ACCESS` on the J-Link,
+add a rule analogous to the dongle one below (`ATTRS{idVendor}=="1366"`), or run
+the command with `sudo`.
+
 * jq
 
 The `.upload` targets use [jq](https://jqlang.org/) to select the attached
