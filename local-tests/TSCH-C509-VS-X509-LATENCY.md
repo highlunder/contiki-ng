@@ -20,11 +20,13 @@ Configs: `bench/emul/emul-dtls-{x509,c509}-tsch.json`.
 
 | Metric | X.509 | C509 (native Type-2) | Δ |
 |---|---|---|---|
-| Client connect (sim time) | 30.252 s | 30.250 s | — |
-| DTLS handshake-1 complete | 34.351 s | 34.304 s | — |
-| **Pure handshake latency** | **4.099 s** | **4.054 s** | **−45 ms (≈1 %)** |
+| Client connect (sim time) | 30.253 s | 30.250 s | — |
+| DTLS handshake-1 complete | 34.344 s | 34.297 s | — |
+| **Pure handshake latency** | **4.091 s** | **4.047 s** | **−44 ms (≈1 %)** |
 | Server Certificate flight | **756 B** | **675 B** | **−81 B (≈11 %)** |
 | Reconstructed own-cert DER | (native DER) | 281 B | — |
+
+_(nrfx v3.12.1; the nrfx 2.10.0 pass gave 4.099 / 4.054 s — DTLS is stable to <10 ms.)_
 
 **Finding (important, and a little counter-intuitive):** for **DTLS**, C509 does **not**
 meaningfully reduce handshake latency under TSCH. Reason: the Contiki C509 DTLS path is a
@@ -60,22 +62,38 @@ change the number of P-256 ops). So the *only* thing that varies is the size of 
 credential-bearing messages MSG_2 (responder cred) and MSG_3 (initiator cred) — and hence
 their fragment count and TSCH airtime.
 
-| Variant | ID_CRED form | MSG_1 | MSG_2 | MSG_3 | MSG_2+3 | **Handshake latency**¹ | vs x5c | End-to-end PASS² |
+| Variant | ID_CRED form | MSG_1 | MSG_2 | MSG_3 | MSG_2+3 | **Handshake latency**¹ (nrfx 3.12.1) | (nrfx 2.10.0) | vs x5c |
 |---|---|---|---|---|---|---|---|---|
-| **c5t** | C509 cert **hash** (by ref) | 38 B | **114 B** | **90 B** | 204 B | **1.086 s** | **−44 %** | 27.410 s |
-| **c5c** | C509 cert (by value, ~160 B) | 38 B | **267 B** | **242 B** | 509 B | **1.295 s** | **−33 %** | 27.620 s |
-| **x5c** | X.509 cert (by value) | 38 B | **492 B** | **468 B** | 960 B | **1.925 s** | — | 28.251 s |
+| **c5t** | C509 cert **hash** (by ref) | 38 B | **114 B** | **90 B** | 204 B | **1.37 s** | 1.09 s | −34 % |
+| **c5c** | C509 cert (by value, ~160 B) | 38 B | **267 B** | **242 B** | 509 B | **1.30 s** | 1.30 s | −37 % |
+| **x5c** | X.509 cert (by value) | 38 B | **492 B** | **468 B** | 960 B | **2.07 s** | 1.93 s | — |
 
-¹ MSG_1 generation → "EDHOC finished" (client). ² end-to-end incl. OSCORE GET round trip.
+¹ MSG_1 generation → "EDHOC finished" (client). Two nrfx columns: see the alignment note.
 
-**Finding.** Handshake latency is **monotonic in credential size**: c5t (1.09 s) « c5c
-(1.30 s) « x5c (1.93 s). Switching X.509 → C509-by-value (c5c) cuts the two cred-bearing
-messages nearly in half (960 → 509 B) and the handshake latency by **33 %** (0.63 s);
-switching to C509-hash-by-reference (c5t) cuts them to 204 B and the latency by **44 %**
-(0.84 s). This is the compression → fragment-count → latency chain that a slotted MAC
-makes visible and that the sub-second CSMA runs hide. On CSMA the same size deltas cost
-only a few ms of extra airtime; under Orchestra each extra fragment waits for its unicast
-slot in the next slotframe, so bytes turn into seconds.
+**Finding (robust part).** The **X.509-by-value handshake (x5c, 960 B of credential) is
+markedly slower than either C509 variant** — ~2.0 s vs ~1.3 s, a **~35 % reduction** — and
+this holds across both nrfx driver versions we measured. x5c's MSG_2 is ~6 6LoWPAN
+fragments vs ~2 for c5t, and under Orchestra each extra fragment waits for its unicast
+slot in the next slotframe, so the ~4–8 extra fragments turn into ~0.7 s. This is the
+compression → fragment-count → latency chain that a slotted MAC makes visible and the
+sub-second CSMA runs hide.
+
+**Finding (resolution caveat — important).** The **c5t-vs-c5c difference is NOT robustly
+resolvable** at this slotframe scale. Their credential-message gap (204 vs 509 B ≈ 1–2
+extra fragments ≈ a couple of ~70–140 ms Orchestra slotframes) is comparable to the
+slot-*alignment* jitter, and the ordering actually **flipped** between the two nrfx driver
+versions (2.10.0: c5t 1.09 « c5c 1.30; 3.12.1: c5c 1.30 < c5t 1.37) with byte-identical
+messages. So the honest statement is: **c5t ≈ c5c ≈ 1.3 s** (both « x5c), and resolving
+c5t below c5c would need either a longer slotframe (bigger per-fragment step) or a
+multi-seed mean±spread. The earlier "monotonic c5t « c5c « x5c, −44 %/−33 %" was
+single-seed/single-nrfx and over-stated the c5t/c5c separation; the size *ordering*
+(204 « 509 « 960 B) is of course exact, but only the C509-vs-X.509 step exceeds the
+measurement resolution.
+
+**Why two nrfx columns.** The absolute latency depends on the nrfx radio/timer driver
+version (it perturbs slot phase). The tree is now canonically **nrfx v3.12.1** (pulled in
+by the upstream merge); v2.10.0 is what the first pass used. DTLS (Part A) is unaffected
+by this to <10 ms; only the fine sub-slotframe EDHOC differences move.
 
 **Caveat.** c5t assumes the peer certificate is **pre-provisioned** at the verifier (only
 the hash travels); c5c/x5c are self-contained (cert travels in-band). So c5t's extra win
@@ -140,9 +158,12 @@ Orchestra, 6LoWPAN or nrf52840 paths, so the results are unaffected. Re-check dr
 
 ## Bottom line
 - **DTLS**: C509 is a *storage* compression only (Mbed TLS sends DER) → ~11 % smaller cert
-  flight, **no** TSCH-latency win.
-- **EDHOC**: C509 is an *on-wire* compression → **33 % (c5c) / 44 % (c5t)** lower handshake
-  latency than X.509 under TSCH. This is the number for the paper's duty-cycled-MAC story.
+  flight, **no** TSCH-latency win (A ≈ B ≈ 4.05–4.09 s).
+- **EDHOC**: C509 is an *on-wire* compression → the X.509-by-value handshake (x5c) is
+  **~35 % slower** (~2.0 s) than either C509 variant (c5t/c5c ~1.3 s) under TSCH — the
+  robust duty-cycled-MAC latency result. The c5t-vs-c5c sub-difference is below the
+  slotframe-alignment resolution (they flip between nrfx versions); treat c5t ≈ c5c.
+- **Radio idle listening** (Part C): CSMA ~100 % vs TSCH 4.6 % duty (~22×).
 
 ## Repro
 ```sh
