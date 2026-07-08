@@ -178,8 +178,18 @@ stdin_handle_fd(fd_set *rset, fd_set *wset)
 {
   char c;
   if(FD_ISSET(STDIN_FILENO, rset)) {
-    if(read(STDIN_FILENO, &c, 1) > 0) {
+    ssize_t n = read(STDIN_FILENO, &c, 1);
+    if(n > 0) {
       input_handler(c);
+    } else if(n == 0) {
+      /* EOF: stop monitoring stdin so the main loop does not busy-spin
+         on a perpetually-ready fd. */
+      LOG_INFO("stdin closed (EOF); no longer monitoring stdin\n");
+      select_set_callback(STDIN_FILENO, NULL);
+    } else if(errno != EINTR && errno != EAGAIN) {
+      LOG_ERR("read(stdin): %s; no longer monitoring stdin\n",
+              strerror(errno));
+      select_set_callback(STDIN_FILENO, NULL);
     }
   }
 }
@@ -206,6 +216,14 @@ set_lladdr(void)
 }
 /*---------------------------------------------------------------------------*/
 #if NETSTACK_CONF_WITH_IPV6
+/* The native node assumes a border router at PREFIX::1 and adds a default route
+ * to it. A node that reaches off-link networks some other way (for example the
+ * standalone NAT64 translator in os/services/nat64/native/standalone) sets this
+ * to 0 via its module-macros.h, suppressing a route that would be unreachable
+ * and would shadow the alternative path. */
+#ifndef NATIVE_WITH_IPV6_DEFAULT_ROUTE
+#define NATIVE_WITH_IPV6_DEFAULT_ROUTE 1
+#endif
 static void
 set_global_address(void)
 {
@@ -224,10 +242,12 @@ set_global_address(void)
   LOG_INFO_6ADDR(&ipaddr);
   LOG_INFO_("\n");
 
+#if NATIVE_WITH_IPV6_DEFAULT_ROUTE
   /* set the PREFIX::1 address to the IF */
   uip_ip6addr_copy(&ipaddr, default_prefix);
   ipaddr.u8[15] = 1;
   uip_ds6_defrt_add(&ipaddr, 0);
+#endif
 }
 #endif
 /*---------------------------------------------------------------------------*/
@@ -312,7 +332,7 @@ platform_main_loop()
     retval = select(maxfd + 1, &fdr, &fdw, NULL, &tv);
     if(retval < 0) {
       if(errno != EINTR) {
-        perror("select");
+        LOG_ERR("select: %s\n", strerror(errno));
       }
     } else if(retval > 0) {
       /* timeout => retval == 0 */

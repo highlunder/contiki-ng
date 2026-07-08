@@ -13,6 +13,10 @@ CONTIKI_CPU_SOURCEFILES += dbg-arch.c
 CONTIKI_CPU_SOURCEFILES += gpio-hal-arch.c
 CONTIKI_CPU_SOURCEFILES += int-master-arch.c
 CONTIKI_CPU_SOURCEFILES += nrf-ieee-driver-arch.c
+ifneq ($(TRUSTZONE_SECURE_BUILD),0)
+  CONTIKI_CPU_SOURCEFILES += nrf-ipc.c
+  CONTIKI_CPU_SOURCEFILES += nrf-ipc-radio.c
+endif
 CONTIKI_CPU_SOURCEFILES += uarte-arch.c
 CONTIKI_CPU_SOURCEFILES += temp-arch.c
 CONTIKI_CPU_SOURCEFILES += linkaddr-arch.c
@@ -66,12 +70,16 @@ NRFX_C_SRCS += $(NRFX_ROOT)/drivers/src/nrfx_ipc.c
 NRFX_C_SRCS += $(NRFX_ROOT)/soc/nrfx_atomic.c
 
 NRFX_C_SRCS += $(NRFX_ROOT)/helpers/nrfx_flag32_allocator.c
+NRFX_C_SRCS += $(NRFX_ROOT)/helpers/nrfx_gppi_ppi.c
+NRFX_C_SRCS += $(NRFX_ROOT)/helpers/nrfx_gppi_dppi.c
 
 #assembly files common to all targets
 NRFX_ASM_SRCS += 
 
 CONTIKI_SOURCEFILES += $(notdir $(NRFX_C_SRCS))
 CONTIKI_SOURCEFILES += $(notdir $(NRFX_ASM_SRCS))
+
+$(OBJECTDIR)/nrfx_uarte.o: CFLAGS += -Wno-error=unused-variable
 
 #includes common to all targets
 NRFX_INC_PATHS += .
@@ -98,6 +106,7 @@ ifeq ($(NRF_NATIVE_USB),1)
   TINYUSB_C_SRCS += $(TINYUSB_ROOT)/src/device/usbd.c
   TINYUSB_C_SRCS += $(TINYUSB_ROOT)/src/device/usbd_control.c
   TINYUSB_C_SRCS += $(TINYUSB_ROOT)/src/class/cdc/cdc_device.c
+  TINYUSB_C_SRCS += $(TINYUSB_ROOT)/src/class/dfu/dfu_rt_device.c
 
   #assembly files
   TINYUSB_ASM_SRCS += 
@@ -110,6 +119,7 @@ ifeq ($(NRF_NATIVE_USB),1)
   TINYUSB_INC_PATHS += src/common/
   TINYUSB_INC_PATHS += src/device/
   TINYUSB_INC_PATHS += src/class/cdc/
+  TINYUSB_INC_PATHS += src/class/dfu/
 
   EXTERNALDIRS += $(addprefix $(TINYUSB_ROOT)/, $(TINYUSB_INC_PATHS))
 
