@@ -141,8 +141,11 @@ because the real Orchestra schedule has the leaf listening on more than the mini
 guard×n\_rx slots (EB, shared, and its unicast-Rx slots). Translating with the
 datasheet RX current (~4.6 mA), TSCH cuts idle-listening power ~22× versus always-on
 CSMA -- the missing term in the byte-proxy energy budget, now measured rather than only
-modelled. **HW expectation:** a real-DK firmware-side energest (or a Power-Profiler-Kit)
-gives the same duty cycle; absolute idle power scales with the slotframe length
+modelled. **CONFIRMED ON HARDWARE 2026-07-08** (see `TSCH-HW-RESULTS.md`): a real
+nRF52840 dongle leaf, associated to a real DK coordinator, measures a **4.58 %** Radio-Rx
+duty (vs this emulator's 4.59 %, a 0.01 pp match; raw tick counts agree to ~0.3 %), with
+the pre-association scan sitting at **99.999 %** as the always-on reference. The DK
+coordinator idles at 4.87 %. Absolute idle power scales with the slotframe length
 (a longer slotframe → proportionally lower duty, as in the analytic L=101 row).
 
 ---
