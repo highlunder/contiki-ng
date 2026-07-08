@@ -98,6 +98,37 @@ gap, since a lost fragment waits a whole slotframe — see the GE burst-loss not
 
 ---
 
+## Part C — Radio duty cycle (idle listening): CSMA always-on vs TSCH
+
+The latency parts above are only half the duty-cycled-MAC story; the other half is
+the *idle-listening* energy the paper's byte-proxy model omits. Measured firmware-side
+(the emulator's energest plugin models the CC2420 only, so it can't report the nRF radio
+duty cycle) with the `simple-energest` service on a minimal 2-node network (root +
+idling leaf), reading the **leaf's** Radio-Rx dwell over 20 s periods. App:
+`local-tests/energest/energest-node.c` (built `ROOT=1` vs leaf, TSCH vs CSMA); configs
+`emul-energest-{tsch,csma}.json`.
+
+| MAC | Leaf Radio-Rx duty cycle | vs CSMA |
+|---|---|---|
+| **CSMA (always-on)** | **99.99 %** (1,249,999 / 1,250,000 ticks per 20 s) | 1× |
+| **TSCH (Orchestra, default slotframe)** | **4.59 %** (57,349 / 1,250,000; stable 4.59/4.59/4.58 % across 3 periods) | **21.8× lower** |
+
+**Notes.** The nRF `simple-energest` `Total time` counter does not advance (only the
+per-mode LISTEN/TRANSMIT counters are wired on this platform), so the printed `permil`
+field is bogus; the duty cycle is computed from the raw Radio-Rx ticks over the known
+period (20 s × 62500 Hz ENERGEST_SECOND = 1,250,000 ticks), *self-calibrated* by the
+CSMA case reading 99.99 %. The measured TSCH idle duty (**4.59 %**) is the same order as
+the paper's datasheet-analytic `table:tsch-idle` (3.1 % at L=7); it is slightly higher
+because the real Orchestra schedule has the leaf listening on more than the minimal
+guard×n\_rx slots (EB, shared, and its unicast-Rx slots). Translating with the
+datasheet RX current (~4.6 mA), TSCH cuts idle-listening power ~22× versus always-on
+CSMA -- the missing term in the byte-proxy energy budget, now measured rather than only
+modelled. **HW expectation:** a real-DK firmware-side energest (or a Power-Profiler-Kit)
+gives the same duty cycle; absolute idle power scales with the slotframe length
+(a longer slotframe → proportionally lower duty, as in the analytic L=101 row).
+
+---
+
 ## Merge-stability (upstream develop 04a3f0a00, 2026-07-08)
 After merging upstream `contiki-ng/develop` (166 commits: resolv/lwm2m/uip6 bounds
 fixes, nat64, link-stats RSSI→ETX fix, CC_ARRAY_LENGTH sweep, nrf-vpr/nrf5340/nrf54l15

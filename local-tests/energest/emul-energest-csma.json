@@ -1,0 +1,23 @@
+{
+    "title": "Leaf radio duty cycle under CSMA always-on (firmware-side energest) on EMULATED nRF52840-DK",
+    "timeout_ms": 150000,
+    "seed": 1,
+    "startup_delay_ms": 1000,
+    "radiomedium": {
+        "type": "udgm",
+        "tx_range": 55.0,
+        "interference_range": 110.0,
+        "success_ratio_tx": 1.0,
+        "success_ratio_rx": 1.0
+    },
+    "nodes": [
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/energest/fw/energest-root-csma.nrf52840", "id": 1, "x":  0.0, "y": 0.0 },
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/energest/fw/energest-leaf-csma.nrf52840", "id": 2, "x": 30.0, "y": 0.0 }
+    ],
+    "test": {
+        "description": "CSMA baseline: node 1 = RPL root; node 2 = leaf. The default Contiki-NG CSMA keeps the radio in RX whenever not transmitting, so the LEAF's Radio Rx (idle-listening) duty cycle should be ~100% -- the always-on reference against which the TSCH duty cycle is compared. Passes once the leaf has printed >=2 period summaries.",
+        "validators": [
+            { "pattern": "Period summary", "node": 2, "min_count": 2 }
+        ]
+    }
+}

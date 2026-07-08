@@ -1,0 +1,23 @@
+{
+    "title": "Leaf radio duty cycle under TSCH (firmware-side energest) on EMULATED nRF52840-DK",
+    "timeout_ms": 150000,
+    "seed": 1,
+    "startup_delay_ms": 1000,
+    "radiomedium": {
+        "type": "udgm",
+        "tx_range": 55.0,
+        "interference_range": 110.0,
+        "success_ratio_tx": 1.0,
+        "success_ratio_rx": 1.0
+    },
+    "nodes": [
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/energest/fw/energest-root-tsch.nrf52840", "id": 1, "x":  0.0, "y": 0.0 },
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/energest/fw/energest-leaf-tsch.nrf52840", "id": 2, "x": 30.0, "y": 0.0 }
+    ],
+    "test": {
+        "description": "Node 1 = RPL root + TSCH coordinator; node 2 = leaf. Both report firmware-side energest every 20 s. The number of interest is the LEAF's Radio Rx (idle-listening) duty cycle in permil -- expected to be a few percent under duty-cycled TSCH. Passes once the leaf has printed >=2 period summaries.",
+        "validators": [
+            { "pattern": "Period summary", "node": 2, "min_count": 2 }
+        ]
+    }
+}
