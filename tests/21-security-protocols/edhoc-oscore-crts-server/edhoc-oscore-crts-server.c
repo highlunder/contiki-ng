@@ -34,6 +34,9 @@
 #include <string.h>
 #include "contiki.h"
 #include "contiki-net.h"
+#if MAC_CONF_WITH_TSCH
+#include "net/mac/tsch/tsch.h"     /* the root must also be the TSCH coordinator */
+#endif
 #include "net/ipv6/simple-udp.h"
 #include "edhoc-server.h"
 #include "edhoc-error.h"
@@ -264,6 +267,13 @@ AUTOSTART_PROCESSES(&edhoc_oscore_crts_server);
 PROCESS_THREAD(edhoc_oscore_crts_server, ev, data)
 {
   PROCESS_BEGIN();
+
+#if MAC_CONF_WITH_TSCH
+  /* On TSCH the RPL root must also be the coordinator, else nodes can't associate. */
+  if(IS_NETWORK_ROUTING_ROOT) {
+    tsch_set_coordinator(1);
+  }
+#endif
 
   if(IS_NETWORK_ROUTING_ROOT) {
     NETSTACK_ROUTING.root_start();

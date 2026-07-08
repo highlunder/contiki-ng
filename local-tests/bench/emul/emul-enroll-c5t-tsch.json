@@ -1,0 +1,23 @@
+{
+    "title": "Full C509 CSR-based enrollment (EDHOC + /crts + /sen) over TSCH on EMULATED nRF52840-DK",
+    "timeout_ms": 400000,
+    "seed": 1,
+    "startup_delay_ms": 1000,
+    "radiomedium": {
+        "type": "udgm",
+        "tx_range": 55.0,
+        "interference_range": 110.0,
+        "success_ratio_tx": 1.0,
+        "success_ratio_rx": 1.0
+    },
+    "nodes": [
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/tests/21-security-protocols/edhoc-oscore-crts-client/build/nrf/nrf52840/dk/edhoc-oscore-crts-client.nrf", "id": 1, "x": 30.0, "y": 0.0 },
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/tests/21-security-protocols/edhoc-oscore-crts-server/build/nrf/nrf52840/dk/edhoc-oscore-crts-server.nrf", "id": 2, "x":  0.0, "y": 0.0 }
+    ],
+    "test": {
+        "description": "Tier-2 enroll over TSCH. Server (node 2) = RPL root + TSCH coordinator + CA/EDHOC responder; client (node 1) associates, runs EDHOC (Method 0, c5t), then enrolls: OSCORE GET /crts (CA chain), builds+signs a C509 Type-3 CSR, OSCORE POST /sen (CSR), verifies the issued C509 Type-2 cert against the CA key. UDGM lossless. PASSES on the client's enroll end-to-end PASSED line. Read the EDHOC-finished, /crts, and /sen timestamps for the per-leg TSCH latency.",
+        "validators": [
+            { "pattern": "EDHOC OSCORE enroll end-to-end test: TEST PASSED", "node": 1, "min_count": 1 }
+        ]
+    }
+}

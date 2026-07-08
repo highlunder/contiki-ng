@@ -3,6 +3,11 @@
 
 #define EDHOC_CONF_SERVER_EP "coap://[fd00::202:2:2:2]"
 
+/* cooja-ng-ge derives node IPv6 from the emulated FICR (not the node id), so the
+ * hard-coded EDHOC_CONF_SERVER_EP host never matches. Resolve the CA/responder =
+ * RPL DAG root dynamically instead (harmless on real RF: root == responder). */
+#define EDHOC_CONF_SERVER_FROM_ROOT 1
+
 /* EDHOC Method 0, C509 c5t (cert-hash-by-reference), initiator role. */
 #define EDHOC_CONF_ROLE         EDHOC_INITIATOR
 #define EDHOC_CONF_AUTHENT_TYPE EDHOC_CRED_C509_C5T
