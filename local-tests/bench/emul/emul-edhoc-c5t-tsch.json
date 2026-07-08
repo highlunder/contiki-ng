@@ -1,0 +1,23 @@
+{
+    "title": "EDHOC+OSCORE c5t (C509 cert hash by reference) handshake over TSCH on EMULATED nRF52840-DK",
+    "timeout_ms": 300000,
+    "seed": 1,
+    "startup_delay_ms": 1000,
+    "radiomedium": {
+        "type": "udgm",
+        "tx_range": 55.0,
+        "interference_range": 110.0,
+        "success_ratio_tx": 1.0,
+        "success_ratio_rx": 1.0
+    },
+    "nodes": [
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/tests/21-security-protocols/edhoc-oscore-c5t-client/build/nrf/nrf52840/dk/edhoc-oscore-c5t-client.nrf", "id": 1, "x": 30.0, "y": 0.0 },
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/tests/21-security-protocols/edhoc-oscore-c5t-server/build/nrf/nrf52840/dk/edhoc-oscore-c5t-server.nrf", "id": 2, "x":  0.0, "y": 0.0 }
+    ],
+    "test": {
+        "description": "EDHOC Method 0 with C509 cert-hash-by-reference (c5t) credentials over TSCH. Server (node 2) = RPL root + TSCH coordinator; client (node 1). Only an ~8 B cert hash is carried in-band -> smallest MSG_2/MSG_3 -> fewest fragments -> lowest latency of the three variants. UDGM lossless. PASSES on the client's end-to-end PASSED line; read 'EDHOC finished' for handshake latency.",
+        "validators": [
+            { "pattern": "EDHOC+OSCORE c5t end-to-end test PASSED", "node": 1, "min_count": 1 }
+        ]
+    }
+}

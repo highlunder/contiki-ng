@@ -12,9 +12,12 @@ when doing the HW runs — the emulator column is the "known-good" baseline to c
 - all-nRF rxdiag TSCH (848 B RX, sync + raw-async): **PASS 12/12** — the faithful HW reference
 - all-cc2538 rxdiag TSCH: **PASS** (needs our OSC/RCOSC clock fixes; first-ever in-emul)
 - mixed cc2538→nRF rxdiag TSCH: **PARTIAL** — associates/DAG, 848 B blocked on cc2538 sender throughput
-- cert-DTLS-x509 handshake over TSCH: **PASS**, ~4.2 s handshake latency (headline TSCH-latency number)
-- TSCH energy/latency complement (task #22): **UNBLOCKED** — latency measurable in-emul; radio
-  duty-cycle needs firmware-side energest (the plugin models CC2420 only)
+- cert-DTLS-x509 handshake over TSCH: **PASS**, ~4.1 s handshake latency
+- **C509-vs-X509 latency over TSCH: DONE** — DTLS: no latency win (C509→DER on wire); **EDHOC:
+  c5t 1.09 s « c5c 1.30 s « x5c 1.93 s** (−44 %/−33 % vs X.509) — the headline result.
+  Full write-up: `TSCH-C509-VS-X509-LATENCY.md`
+- TSCH energy/latency complement (task #22): **latency DONE** (above); radio duty-cycle still
+  needs firmware-side energest (the plugin models CC2420 only)
 
 **Emulator build under test:** cooja-ng-ge branch `feat/gilbert-elliott-medium` with upstream
 `main` (release 0.1.1 hardening wave, `443c1f6`) merged 2026-07-08 — includes the honest-RX-CRC
@@ -59,7 +62,7 @@ nrf5sdk-tools` (dongle) + `jq`. Attach the probe/dongle to WSL with `usbipd atta
 | 3 | all-cc2538 rxdiag TSCH | `rxdiag/emul-rxdiag-cc2538-tsch.json` | **PASS** — `[LEAF] reachable` (needs our OSC/RCOSC clock fixes) | 2× Firefly (or cc2538dk) | Two cc2538 nodes associate + form the DAG; leaf becomes RPL-reachable. (First-ever working cc2538↔cc2538 TSCH in-emul; on real Firefly this "just works" — cc2538 never had the emulator's RCOSC issue.) |
 | 4 | mixed cc2538→nRF rxdiag TSCH | `rxdiag/emul-rxdiag-cc2538-nrf-tsch.json` | **PARTIAL** — assoc + DAG + `[LEAF] DONE`, dl-miss 0, but **848 B NOT delivered** (`[SU]`/`[RAW]` 0/12) | Firefly root + nRF-DK leaf (the rxdiag ladder, task #23) | In-emul the cc2538 **sender** can't drain 9–12 fragments fast enough over one Orchestra unicast slot (throughput-bound, not a receiver bug — see RXDIAG-MIXED-THROUGHPUT-ANALYSIS.md). On **real RF** the Firefly→nRF link has more/denser opportunities and delivered 848 B in prior HW runs; if it does NOT, suspect the same schedule-throughput limit, not the leaf. Compare leaf `[SU]` vs `[RAW]` to isolate the coap-async question. |
 | 5 | DTLS-x509 handshake over TSCH | `bench/emul/emul-dtls-x509-tsch.json` | **PASS** — full handshake @34.4 s, resumed @37.7 s; **pure handshake latency ≈4.2 s** (client connects 30.25 → full PASS 34.45) | host DTLS server + nRF-DK client | Cert-DTLS completes over TSCH. The ~4.2 s x509 (36-frag) handshake latency (vs sub-second on CSMA) is the TSCH-latency headline — C509 (c5t 8-frag / c5c 17-frag) should be markedly faster. On HW the 848 B server flight is the stress point (what the rxdiag ladder isolates). |
-| 6 | EDHOC c5t/c5c over TSCH | bench fw `bench-edhoc-{c5t,c5c}-{sw,cc310}-tsch.hex` | build-verified (12 benches, 0 err) | nRF-DK ↔ native/Firefly | EDHOC+OSCORE handshake completes; timing per bench (sw vs CC310). CC310 path needs on-HW run (task #24). |
+| 6 | EDHOC c5t/c5c/x5c over TSCH | `bench/emul/emul-edhoc-{c5t,c5c,x509}-tsch.json` | **PASS all 3** — handshake latency **c5t 1.086 s « c5c 1.295 s « x5c 1.925 s** (sw uECC); see TSCH-C509-VS-X509-LATENCY.md | nRF-DK ↔ nRF-DK (2 boards) | Same monotonic ordering on HW (Orchestra schedule is firmware-defined, identical); absolute latency tracks slotframe length + real link quality. CC310 crypto path would lower the compute term but not the airtime term (task #24). |
 
 ---
 
@@ -101,10 +104,15 @@ the duty-cycled complement to the (CSMA-only, byte-proxy) paper energy story can
 | **DK / dongle as extra TSCH nodes** | more real radios than the single-DK emulator proxy | Now flashable from WSL (§0). A dongle (`BOARD=nrf52840/dongle`) or 2nd DK can be a real leaf/hop to grow the network. |
 
 ## 9. Recommended next measurements (in-emul, to strengthen the paper)
-1. **C509-vs-X509 latency over TSCH** — build c5t (8-frag) + c5c (17-frag) DTLS/EDHOC handshake
-   apps for `BOARD=nrf52840/dk MAKE_MAC_TSCH`, run the 2-node handshake like row 5, and record
-   handshake latency. Anchor already measured: **x509 (36-frag) = ~4.2 s**. Expectation: c5t « c5c
-   « x509, roughly tracking fragment count × slot period — the novel C509 latency result.
+1. **C509-vs-X509 latency over TSCH — DONE 2026-07-08** (see TSCH-C509-VS-X509-LATENCY.md).
+   Two parts: **(A) DTLS** — x509 4.099 s vs native-C509 4.054 s: essentially equal, because
+   Mbed TLS reconstructs C509→DER and sends **DER on the wire** (C509 is storage-only here;
+   flight 756→675 B, −11 %, no latency win). **(B) EDHOC+OSCORE** — the credential is carried
+   in-band, so C509 shrinks it on the wire: **c5t 1.086 s « c5c 1.295 s « x5c 1.925 s** (−44 % /
+   −33 % vs X.509), monotonic in the MSG_2+MSG_3 size (204 / 509 / 960 B). **EDHOC is where the
+   TSCH-latency win lives.** Needed two fixes (both local): `tsch_set_coordinator(1)` in the
+   c509/EDHOC servers, and a new opt-in `EDHOC_CONF_SERVER_FROM_ROOT` so the EDHOC client
+   resolves the root address dynamically (FICR-derived node IPv6 in cooja-ng-ge).
 2. **Firmware-side energest duty cycle** — add ENERGEST print to a TSCH node, run in-emul (and on
    HW), record LISTEN duty cycle: TSCH few-% vs CSMA ~100 %.
 3. **GE burst-loss under TSCH** — the GE medium (PR pushed) works on nRF (verified); a TSCH run

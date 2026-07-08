@@ -1,0 +1,23 @@
+{
+    "title": "EDHOC+OSCORE x5c (X.509 cert by value) handshake over TSCH on EMULATED nRF52840-DK",
+    "timeout_ms": 300000,
+    "seed": 1,
+    "startup_delay_ms": 1000,
+    "radiomedium": {
+        "type": "udgm",
+        "tx_range": 55.0,
+        "interference_range": 110.0,
+        "success_ratio_tx": 1.0,
+        "success_ratio_rx": 1.0
+    },
+    "nodes": [
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/tests/21-security-protocols/edhoc-oscore-x509-client/build/nrf/nrf52840/dk/edhoc-oscore-x509-client.nrf", "id": 1, "x": 30.0, "y": 0.0 },
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/tests/21-security-protocols/edhoc-oscore-x509-server/build/nrf/nrf52840/dk/edhoc-oscore-x509-server.nrf", "id": 2, "x":  0.0, "y": 0.0 }
+    ],
+    "test": {
+        "description": "EDHOC Method 0 with X.509 cert-by-value (x5c) credentials over TSCH. Server (node 2) = RPL root + TSCH coordinator; client (node 1) associates and runs EDHOC then an OSCORE GET. X.509 cert carried in-band -> largest MSG_2/MSG_3 -> most 6LoWPAN fragments -> highest handshake latency of the three variants. UDGM lossless. PASSES on the client's end-to-end PASSED line; read 'EDHOC finished' timestamp for handshake latency.",
+        "validators": [
+            { "pattern": "EDHOC+OSCORE x509 end-to-end test PASSED", "node": 1, "min_count": 1 }
+        ]
+    }
+}

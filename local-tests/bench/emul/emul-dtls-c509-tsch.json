@@ -1,0 +1,23 @@
+{
+    "title": "C509 (native Type-2) DTLS handshake over TSCH on EMULATED nRF52840-DK (latency vs x509 anchor)",
+    "timeout_ms": 250000,
+    "seed": 1,
+    "startup_delay_ms": 1000,
+    "radiomedium": {
+        "type": "udgm",
+        "tx_range": 55.0,
+        "interference_range": 110.0,
+        "success_ratio_tx": 1.0,
+        "success_ratio_rx": 1.0
+    },
+    "nodes": [
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/tests/21-security-protocols/c509-native-dtls-server/build/nrf/nrf52840/dk/c509-native-dtls-server.nrf", "id": 1, "x":  0.0, "y": 0.0 },
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/tests/21-security-protocols/c509-native-dtls-client/build/nrf/nrf52840/dk/c509-native-dtls-client.nrf", "id": 2, "x": 30.0, "y": 0.0 }
+    ],
+    "test": {
+        "description": "Direct C509 analogue of emul-dtls-x509-tsch.json (row 5). Server (node 1) = RPL root + TSCH coordinator; client (node 2) associates and does a native C509 Type-2 DTLS handshake over TSCH. UDGM LOSSLESS. Same DTLS cert-mode handshake as the x509 test, differing ONLY in certificate encoding (compact C509 vs X.509 DER) -> fewer 6LoWPAN fragments in the server Certificate flight -> lower handshake latency under the duty-cycled Orchestra schedule. Compare the client's 'connects' -> 'PASSED' timestamps against the x509 ~4.2 s anchor. PASSES if the client prints its handshake-1 PASSED line.",
+        "validators": [
+            { "pattern": "Native C509 Type-2 DTLS test (handshake 1, full) PASSED", "node": 2, "min_count": 1 }
+        ]
+    }
+}
