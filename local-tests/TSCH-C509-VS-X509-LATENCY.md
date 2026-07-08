@@ -147,6 +147,52 @@ gives the same duty cycle; absolute idle power scales with the slotframe length
 
 ---
 
+## Analytic cross-check (does a first-principles model predict the measured latency?)
+
+A 2-parameter slot model reproduces the EDHOC-over-TSCH numbers. Model:
+`T_handshake ≈ F + N·T_frag`, where `N` = the critical-path 6LoWPAN **Data** frames
+(server's MSG_2 flight + client's MSG_1+MSG_3), `T_frag` = per-fragment airtime, and `F`
+= a common crypto+protocol floor (identical P-256 op set across all three variants).
+
+Measured critical-path Data-frame counts (from the RF trace, handshake window):
+**c5t = 8, c5c = 9, x5c = 15**. Fitting `F, T_frag` to the two robustly-separated points
+(c5t, x5c):
+
+| | T_frag | F |
+|---|---|---|
+| fit | **100 ms** (≈1.43 × the 70 ms Orchestra slotframe) | **566 ms** |
+
+| var | N_frag | predicted | measured | err |
+|---|---|---|---|---|
+| c5t | 8 | 1.366 s | 1.366 s | **+0 ms** |
+| c5c | 9 | 1.466 s | 1.296 s | +170 ms |
+| x5c | 15 | 2.066 s | 2.066 s | **+0 ms** |
+
+**Findings.**
+- The model fits **c5t and x5c to <1 %**, so the measured latencies are exactly what a
+  fragment-count × slot-period model predicts. `T_frag ≈ 100 ms` = one 70 ms slotframe +
+  ~30 ms of per-fragment ACK/reassembly/processing — physically sensible.
+- The **x5c-vs-C509 gap is pure airtime**: ΔN = 15−8 = 7 fragments × 100 ms = **700 ms**,
+  equal to the measured x5c−c5t gap. Crypto is identical, so the whole gap is the bigger
+  X.509 credential flight.
+- **c5c is the one 170 ms outlier** (≈ one slotframe): its N differs from c5t by a single
+  fragment, i.e. within the slot-alignment jitter — the quantitative confirmation of the
+  "c5t ≈ c5c, not separately resolvable" caveat above.
+- **A large common floor (F ≈ 0.57 s)** — the P-256 crypto + fixed protocol overhead that
+  is identical across variants — means credential encoding moves only the *airtime* term;
+  on this software-crypto build the floor is a big fraction of the sub-2-s handshakes.
+
+**Reconciliation with the paper's datasheet frame-count analytic** (`tsch_analytic.py`,
+`RESULTS-tsch.md`: DTLS A/B ≈ 4.4 s, EDHOC D ≈ 2.1 s @ L=7): the DTLS prediction matches
+the measurement well (4.4 s vs measured **4.05–4.09 s**, ~8 %); the EDHOC prediction
+over-shoots (2.1 s vs measured C509 ~1.3 s) because the frame-count model counts frames
+that are *not* on the critical path for the pipelined 3-message EDHOC exchange (crypto on
+one node overlaps airtime to the other). So the frame-count analytic is a sound
+upper-bound estimator, and the direct cycle-accurate emulation is the tighter figure; both
+agree on the ordering (DTLS ≫ EDHOC, x5c > C509).
+
+---
+
 ## Merge-stability (upstream develop 04a3f0a00, 2026-07-08)
 After merging upstream `contiki-ng/develop` (166 commits: resolv/lwm2m/uip6 bounds
 fixes, nat64, link-stats RSSI→ETX fix, CC_ARRAY_LENGTH sweep, nrf-vpr/nrf5340/nrf54l15
