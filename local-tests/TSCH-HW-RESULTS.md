@@ -67,21 +67,41 @@ EDHOC-Trace (several KB/handshake) blocked ~0.5 s of serial time mid-handshake a
 baud. The numbers below are with the **silent server**; the verbose-server figures are
 shown for contrast.
 
-| Backend | n (ok/fail) | median | mean ± sd | p95 | (verbose server) |
-|---|---|---|---|---|---|
-| **software (uECC)** | 20 / 0 | **1297.7 ms** | 1279.0 ± 31.2 ms | 1300.2 ms | 1788.5 ms |
-| **CC310 hardware** | 20 / 0 | **531.6 ms** | 546.4 ± 40.3 ms | 631.2 ms | 1091.8 ms |
+**Full 2×2 on real silicon** (c5t median handshake, 20/20 each, 1 hop, silent server):
 
-**CC310 gives a 2.44× whole-handshake speedup** over real-RF TSCH (1297.7 → 531.6 ms, a
-766 ms saving). Decomposition: CC310 EC ops measured standalone at ~20 ms each
-(keygen 18.6 / sign 20.5 / verify 21.5 / ecdh 18.8 ms — `ecc-bench`), so the ~8-op crypto
-floor is ~160 ms; the remaining ~370 ms of the CC310 handshake is **airtime** (the real-RF
-fragment×slot floor). The software handshake's ~930 ms of crypto (≈116 ms/op uECC @ 64 MHz)
-is what CC310 collapses — a **~5.8× per-op** speedup that dilutes to 2.44× on the whole
-handshake because airtime is a fixed, MAC-governed floor crypto cannot touch. This is the
-hardware-crypto analogue of the paper's "signature/crypto cost dominates, wire format is
-secondary" finding: here crypto *implementation* (hw vs sw) governs handshake latency, with
-airtime as the residual.
+| Backend | **CSMA** | **TSCH** | TSCH penalty |
+|---|---|---|---|
+| **software (uECC)** | 1122.2 ms (mean 1137, max 1223) | 1297.7 ms (mean 1279 ± 31) | +175 ms |
+| **CC310 hardware** | 423.6 ms (mean 424 ± 40, min 350) | 531.6 ms (mean 546 ± 40) | +108 ms |
+| **CC310 speedup** | **2.65×** | **2.44×** | |
+
+(TSCH figures were also measured with a verbose server: sw 1788.5 / CC310 1091.8 ms — the
+~0.5 s inflation is the responder's EDHOC-Trace serial output, removed for the table above.)
+
+**Clean term decomposition** (the 2×2 isolates each term; CC310 EC ops measured standalone
+at ~20 ms — keygen 18.6 / sign 20.5 / verify 21.5 / ecdh 18.8 ms, `ecc-bench`):
+- **Crypto**: sw ≈ **858 ms** (8 ops ≈ 107 ms each) vs CC310 ≈ **160 ms** (8 ops ≈ 20 ms).
+  The sw−CC310 delta (~700 ms CSMA / ~766 ms TSCH) is the whole hardware-crypto win.
+- **Base (protocol + minimal airtime), present under BOTH MACs**: CSMA_CC310 − crypto
+  = 424 − 160 ≈ **264 ms** — the ~1.5 CoAP round trips + EDHOC message assembly/parse/TH
+  hashing, radio-always-on so airtime is negligible.
+- **TSCH-specific slotframe penalty**: only **~108 ms** (CC310) / **~175 ms** (sw) — the
+  cost of duty cycling, the flip side of the ~22× idle-energy saving. **NOT ~370 ms** — an
+  earlier estimate wrongly lumped the ~264 ms protocol base into "TSCH airtime"; the CSMA
+  column shows most of the non-crypto time is present without TSCH.
+
+So on hardware, **crypto *implementation* is the dominant handshake-latency factor**
+(sw→CC310 is 2.4–2.65×, ~700 ms), the protocol/CoAP base is next (~264 ms), and the
+TSCH slotframe penalty is a modest third (~108–175 ms). CC310's speedup is slightly larger
+under CSMA (2.65×) than TSCH (2.44×) because the smaller TSCH airtime floor dilutes it less.
+
+**Emulator reconciliation:** the emulator c5t was CSMA 0.859 s / TSCH 1.366 s (a 507 ms
+TSCH penalty) vs HW's CSMA 1.122 s / TSCH 1.298 s (175 ms). The emulator's TSCH *absolute*
+is close to HW (1.37 vs 1.30 s), but its **CSMA is ~260 ms optimistic** because its
+idealized M4 cycle model under-counts the software P-256 crypto (no flash wait-states) —
+which inflates the apparent TSCH-vs-CSMA gap in simulation. On real silicon, with real
+(slower) sw crypto raising the CSMA floor, the TSCH-specific penalty is the smaller
+~175 ms. (CC310 is not emulated, so there is no emulator CC310 point.)
 
 **Methodology note (important):** the silent server also tightened the distribution
 (sw sd 93→31 ms), because the removed term was serial-I/O blocking, not crypto or radio.
@@ -116,18 +136,18 @@ ops were fine and isolating the failure to the EDHOC+TSCH path.
 | Axis | CSMA | TSCH | Emulator | Real HW |
 |---|---|---|---|---|
 | **Idle duty cycle** | ~100 % | 4.6 % | ✓ (99.99 / 4.59 %) | ✓ (99.999 / 4.58 %) |
-| **c5t handshake latency** | 0.859 s | 1.366 s (+1.59×) | ✓ matched | **TSCH only** (sw 1.30 / CC310 0.53 s; no CSMA HW run) |
+| **c5t handshake latency** | 0.859 s | 1.366 s (+1.59×) | ✓ matched | ✓ matched — sw 1.12/1.30 s, CC310 0.42/0.53 s (CSMA/TSCH) |
 
-So the **energy/duty** comparison is clean on both emulator and hardware; the
-**handshake-latency** comparison is clean in the emulator (CSMA 0.859 s vs TSCH 1.366 s)
-but on hardware only the TSCH side is measured. The one missing pair-half is a **CSMA
-handshake on real hardware**.
+Both comparisons are now clean on **both** emulator and hardware: the energy/duty pair
+(Part C) and the handshake-latency pair (emulator CSMA 0.859 / TSCH 1.366 s; hardware
+full 2×2 above). See the emulator-reconciliation note above for why the emulator's
+TSCH-vs-CSMA *latency* gap (507 ms) is larger than hardware's (175 ms) — idealized sw
+crypto makes the emulator's CSMA optimistic.
 
 ## Remaining hardware experiments (TODO, priority order)
 
-1. **CSMA handshake on HW** (sw + CC310) — completes the TSCH-vs-CSMA latency pair on
-   silicon. Flash the c5t apps built for CSMA (drop `MAKE_MAC_TSCH`) to DK+dongle, run
-   the same 20× bench. Cheap; closes the one gap above.
+1. ~~**CSMA handshake on HW** (sw + CC310)~~ — **DONE 2026-07-09** (the full 2×2 above:
+   sw CSMA 1122 / TSCH 1298; CC310 CSMA 424 / TSCH 532 ms). Closed the pair on silicon.
 2. **C509-vs-X.509 handshake on HW** (x5c / c5c / c5t over real-RF TSCH) — validate the
    headline emulator result (x5c ≈2.0 s ≫ C509 ≈1.3 s) on silicon. Build the
    `edhoc-oscore-{x509,c5c}` apps for the dongle+DK like c5t. High value.
