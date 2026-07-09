@@ -270,9 +270,20 @@ PROCESS_THREAD(ecc_bench_process, ev, data)
 
   PROCESS_BEGIN();
 
-  /* Let the console settle before the (blocking) benchmark. */
-  etimer_set(&et, CLOCK_SECOND * 2);
-  PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+  /* Startup countdown: gives time to re-attach the USB-CDC after DFU reprogramming
+   * (the dongle re-enumerates, dropping the serial) so no crypto output is lost.
+   * Override with -DBOOT_DELAY_S=<n>. */
+#ifndef BOOT_DELAY_S
+#define BOOT_DELAY_S 10
+#endif
+  {
+    static int _cd;
+    for(_cd = BOOT_DELAY_S; _cd > 0; _cd--) {
+      printf("[boot] starting ECC bench in %d s...\n", _cd);
+      etimer_set(&et, CLOCK_SECOND);
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+    }
+  }
 
   printf("\n=== nRF52840 ECC benchmark (%s) ===\n", ECC_BENCH_CURVE_NAME);
   printf("backend: %s\n", ECC_BENCH_BACKEND);
