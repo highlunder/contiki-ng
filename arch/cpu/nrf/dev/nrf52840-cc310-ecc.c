@@ -320,6 +320,10 @@ PT_THREAD(ecc_generate_key_pair(uint8_t *public_key,
   nrf_crypto_ecc_public_key_t  pub;
   ret_code_t ret = nrf_crypto_ecc_key_pair_generate(NULL, map_curve(curve),
                                                     &priv, &pub);
+#ifdef CC310_DIAG
+  printf("[CC310-DIAG] key_pair_generate()=0x%lx curve=%p\n",
+         (unsigned long)ret, (void *)map_curve(curve));
+#endif
   if(ret != NRF_SUCCESS) {
     *result = (int)ret;
     PT_EXIT(&main_protothread);
@@ -417,6 +421,16 @@ ecc_session_begin(void)
    */
   cc310_backend_enable();                 /* NRF_CRYPTOCELL->ENABLE = 1 */
 
+#ifdef CC310_DIAG
+  /* Diagnostic (capturable post-join): re-run nrf_crypto_init() idempotently and
+   * report its result + the BASEPRI mask, so a boot-time init failure that scrolled
+   * past before serial re-attach is still visible. */
+  ret_code_t initret = nrf_crypto_init();
+  printf("[CC310-DIAG] nrf_crypto_init()=0x%lx PRIO_BITS=%d basepri_mask=0x%lx\n",
+         (unsigned long)initret, (int)__NVIC_PRIO_BITS,
+         (unsigned long)(1u << (8u - __NVIC_PRIO_BITS)));
+#endif
+
   NVIC_SetPriority(CRYPTOCELL_IRQn, 0);   /* highest priority: never BASEPRI-masked */
   NVIC_EnableIRQ(CRYPTOCELL_IRQn);
   uint32_t old_basepri = __get_BASEPRI();
@@ -428,6 +442,9 @@ ecc_session_begin(void)
 
   __set_BASEPRI(old_basepri);
 
+#ifdef CC310_DIAG
+  printf("[CC310-DIAG] nrf_crypto_rng_init()=0x%lx\n", (unsigned long)ret);
+#endif
   if(ret != NRF_SUCCESS) {
     LOG_ERR("ecc_session_begin: nrf_crypto_rng_init failed (0x%lx)\n",
             (unsigned long)ret);

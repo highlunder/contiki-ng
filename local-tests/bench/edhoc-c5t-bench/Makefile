@@ -14,6 +14,13 @@ CFLAGS += -I$(CONTIKI)/local-tests/bench
 CFLAGS += -DuECC_OPTIMIZATION_LEVEL=4
 CFLAGS += -DuECC_SQUARE_FUNC=1
 
+# CC310_DIAG=1 -> capturable printf of each CC310 init/rng/keygen return code
+# (post-join, so a boot-time failure that scrolled past serial re-attach is still
+# visible). Diagnostic only; no effect on the software backend.
+ifeq ($(CC310_DIAG),1)
+  CFLAGS += -DCC310_DIAG
+endif
+
 # Opt-in DWT cycle + wall-clock profiling of the EDHOC crypto path
 # (per-op ecc_* cycles in ecdh.c + whole-handshake wall-clock here).
 # Build with EDHOC_PROFILE=1 to enable; off by default (zero cost).
