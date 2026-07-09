@@ -8,6 +8,17 @@
 #define EDHOC_CONF_SERVER_EP "coap://[fd00::202:2:2:2]"
 #endif
 
+/* Real-RF / cooja-ng-ge derive node IPv6 from the FICR (not the node id), so the
+ * hard-coded SERVER_EP host never matches. Resolve the responder = RPL DAG root
+ * dynamically instead (harmless when the root really is the responder). */
+#define EDHOC_CONF_SERVER_FROM_ROOT 1
+
+/* Repetitions for the looping handshake benchmark (override with -DBENCH_ITERS=).
+ * 20 keeps a real-RF run ~3 min after the ~60-70 s TSCH join. */
+#ifndef BENCH_ITERS
+#define BENCH_ITERS 20
+#endif
+
 /* EDHOC Method 0, C509 c5t (cert-hash-by-reference), initiator role. */
 #define EDHOC_CONF_ROLE         EDHOC_INITIATOR
 #define EDHOC_CONF_AUTHENT_TYPE EDHOC_CRED_C509_C5T

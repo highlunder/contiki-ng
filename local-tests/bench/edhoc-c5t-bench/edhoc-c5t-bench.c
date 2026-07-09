@@ -23,6 +23,7 @@
 #include <string.h>
 #include "contiki.h"
 #include "contiki-net.h"
+#include "net/routing/routing.h"    /* NETSTACK_ROUTING.get_root_ipaddr (EDHOC_CONF_SERVER_FROM_ROOT) */
 #include "net/ipv6/simple-udp.h"
 #include "coap-engine.h"
 #include "edhoc-client.h"
@@ -209,14 +210,13 @@ PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
   static bench_stats_t stats;
   static uint32_t bench_samples[BENCH_ITERS];  /* successful durations (us) for median/p95 */
   static int iter;
-  static rtimer_clock_t t0, t1;
-  static bool hs_ok;
+  static rtimer_clock_t t0, t1, rep0;
+  static bool hs_ok, was_down;
   static int8_t ret;
 
   PROCESS_BEGIN();
 
-  printf("fw-build: %s  (compiled %s %s)  ecc-backend: %s\n",
-         FW_BUILD_ID, __DATE__, __TIME__, ECC_BACKEND_NAME);
+  bench_print_fw_build(ECC_BACKEND_NAME);
   printf("[BENCH] label=%s iters=%d (timing = EDHOC handshake run->finished)\n",
          BENCH_LABEL, BENCH_ITERS);
 
@@ -239,10 +239,18 @@ PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
 
   for(iter = 0; iter < BENCH_ITERS; iter++) {
     /* Recover before each iteration: RPL churn or a prior failure may have
-     * dropped the route -- wait until the root is reachable again. */
+     * dropped the route -- wait until the root is reachable again. Time any
+     * DODAG repair we wait through, so a slow repair is recorded (rpl_rep_ms). */
+    bench_stats_repair_reset_last(&stats);
+    rep0 = bench_time_now();
+    was_down = false;
     while(!NETSTACK_ROUTING.node_is_reachable()) {
+      was_down = true;
       etimer_set(&timer, CLOCK_SECOND * 2);
       PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
+    }
+    if(was_down) {
+      bench_stats_add_repair(&stats, bench_elapsed_us(rep0, bench_time_now()));
     }
     /* (Re)build the credential key list each iteration -- edhoc_create_key_list
      * re-initialises it, so this is a clean per-iteration setup. */
@@ -297,6 +305,16 @@ PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
         oscore_ready = true;
         static coap_endpoint_t server_ep;
         coap_endpoint_parse(SERVER_EP, strlen(SERVER_EP), &server_ep);
+#ifdef EDHOC_CONF_SERVER_FROM_ROOT
+        /* OSCORE GET target = RPL root (responder); resolve dynamically to match
+         * the EDHOC handshake fix (platform/FICR-derived node addressing). */
+        {
+          uip_ipaddr_t bench_root_ipaddr;
+          if(NETSTACK_ROUTING.get_root_ipaddr(&bench_root_ipaddr)) {
+            uip_ipaddr_copy(&server_ep.ipaddr, &bench_root_ipaddr);
+          }
+        }
+#endif /* EDHOC_CONF_SERVER_FROM_ROOT */
         etimer_set(&timer, CLOCK_SECOND / 2);
         PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
         get_attempt = 0;
@@ -338,6 +356,8 @@ PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
   printf("=== BENCH %s DONE: %lu ok / %lu fail of %d ===\n",
          BENCH_LABEL, (unsigned long)stats.n, (unsigned long)stats.fail,
          BENCH_ITERS);
+  /* Repeat the build stamp with the result so a pasted block is self-identifying. */
+  bench_print_fw_build(ECC_BACKEND_NAME);
   /* Robust final summary (median + p95) -- copy this line as the result. */
   bench_stats_print_final(BENCH_LABEL, &stats, bench_samples,
                           bench_rpl_hops(), BENCH_DBG);
