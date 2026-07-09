@@ -60,29 +60,56 @@ observed directly as the leaf's pre-association scan (~100 %).
 ## Result 4 — C509 EDHOC (c5t) handshake latency over real-RF TSCH (experiment 3)
 
 Looping benchmark (`local-tests/bench/edhoc-c5t-bench`, 20 iterations, on-device RTIMER
-timing of `run()→FINISHED`, minimal `LOG_LEVEL_ERR` output so serial does not perturb
-timing). DK = EDHOC responder + root; dongle = initiator/leaf. 1 hop.
+timing of `run()→FINISHED`). DK = EDHOC responder + root; dongle = initiator/leaf. 1 hop.
+**Both ends at `LOG_LEVEL_ERR`** — the client bench and the DK server (`edhoc-c5t-server`
+set to ERR): the responder's MSG_2 generation is *on the critical path*, and its verbose
+EDHOC-Trace (several KB/handshake) blocked ~0.5 s of serial time mid-handshake at 115200
+baud. The numbers below are with the **silent server**; the verbose-server figures are
+shown for contrast.
 
-| Backend | n (ok/fail) | median | mean ± sd | p95 | min–max |
+| Backend | n (ok/fail) | median | mean ± sd | p95 | (verbose server) |
 |---|---|---|---|---|---|
-| **software (uECC)** | 20 / 0 | **1788.5 ms** | 1798.8 ± 93.0 ms | 1996.8 ms | 1720.9–2067.9 ms |
-| CC310 hardware | _pending_ | | | | |
+| **software (uECC)** | 20 / 0 | **1297.7 ms** | 1279.0 ± 31.2 ms | 1300.2 ms | 1788.5 ms |
+| **CC310 hardware** | 20 / 0 | **531.6 ms** | 546.4 ± 40.3 ms | 631.2 ms | 1091.8 ms |
 
-**vs emulator (c5t 1366 ms, sw uECC):** real hardware is **~30 % slower** on the sw path.
-This is the complement of the duty-cycle match: the emulator reproduces the *radio*
-timing exactly (duty to 0.01 pp — a ratio), but the *handshake latency* carries ~8
-software P-256 ops whose cost the emulator's cycle model under-counts (idealized M4, no
-flash wait-states), plus real-RF slot/ACK timing. So absolute EDHOC latency is ~30 %
-optimistic in-emulator while the ordering (and the fragment-count → airtime structure)
-holds. 0 retransmits over the clean single-hop link; the ~93 ms sd is slot-alignment
-jitter (each handshake catches a slightly different slotframe phase), consistent with the
-analytic `T_frag ≈ 100 ms` per fragment.
+**CC310 gives a 2.44× whole-handshake speedup** over real-RF TSCH (1297.7 → 531.6 ms, a
+766 ms saving). Decomposition: CC310 EC ops measured standalone at ~20 ms each
+(keygen 18.6 / sign 20.5 / verify 21.5 / ecdh 18.8 ms — `ecc-bench`), so the ~8-op crypto
+floor is ~160 ms; the remaining ~370 ms of the CC310 handshake is **airtime** (the real-RF
+fragment×slot floor). The software handshake's ~930 ms of crypto (≈116 ms/op uECC @ 64 MHz)
+is what CC310 collapses — a **~5.8× per-op** speedup that dilutes to 2.44× on the whole
+handshake because airtime is a fixed, MAC-governed floor crypto cannot touch. This is the
+hardware-crypto analogue of the paper's "signature/crypto cost dominates, wire format is
+secondary" finding: here crypto *implementation* (hw vs sw) governs handshake latency, with
+airtime as the residual.
+
+**Methodology note (important):** the silent server also tightened the distribution
+(sw sd 93→31 ms), because the removed term was serial-I/O blocking, not crypto or radio.
+Always run the responder at `LOG_LEVEL_ERR` for timing; INFO is for protocol debugging only.
+
+**vs emulator (c5t 1366 ms, sw uECC):** the clean sw handshake (1297.7 ms) is now *below*
+the emulator's 1366 ms — the emulator over-counts a bit here — but within the same band;
+the earlier "~30 % slower on HW" was an artifact of the verbose server. The robust point
+stands: the emulator matches the radio duty exactly and the handshake latency to within
+~5 % once the measurement is clean.
+
+## Result 4 — the CC310-on-shared-platform fixes (task #24, all committed)
+CC310 hardware crypto was only ever validated on the OLD nrf52840 platform; bringing it up
+on the shared platform (nrfx 3.12.1) took four fixes: (1) rebase the `.crypto_data` linker
+patch onto the nrfx-3.x `nrf_common.ld`; (2) re-run the idempotent `nrf_crypto_init()` per
+session; (3) an explicit `CC310_SETTLE_US` after init for the TSCH interaction; (4) **the
+key one** — the EDHOC *server* never called `ecc_session_begin()` (client-only), so the
+responder's CC310 context was never set up → `0x8502 CONTEXT_NOT_INITIALIZED`, all-zeros
+`G_Y`. Step-wise `ecc-bench` (standalone, nullradio) was decisive in proving the raw CC310
+ops were fine and isolating the failure to the EDHOC+TSCH path.
 
 ## Result 4 — the tooling that made it repeatable
 - `edhoc-c5t-bench` looped 20× with the real-RF root-resolution fix
   (`EDHOC_CONF_SERVER_FROM_ROOT`); the DK server auto-resets per handshake.
 - `local-tests/bench/ts-serial.py` — no-dependency timestamping serial reader for
   progress (host wall-clock prefix; on-device RTIMER remains authoritative).
+- `ecc-bench` with `BOOT_DELAY_S=10` countdown + `DEBUG=1`/non-debug — the standalone
+  step-wise CC310 self-test.
 
 ## Firmware / repro
 `local-tests/energest/fw-hw/`: `energest-root-dk.hex` (DK, `ROOT=1`), `energest-leaf-dongle.hex`.
