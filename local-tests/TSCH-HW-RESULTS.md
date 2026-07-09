@@ -111,6 +111,46 @@ ops were fine and isolating the failure to the EDHOC+TSCH path.
 - `ecc-bench` with `BOOT_DELAY_S=10` countdown + `DEBUG=1`/non-debug — the standalone
   step-wise CC310 self-test.
 
+## TSCH-vs-CSMA: what is matched vs. what's a gap (as of 2026-07-09)
+
+| Axis | CSMA | TSCH | Emulator | Real HW |
+|---|---|---|---|---|
+| **Idle duty cycle** | ~100 % | 4.6 % | ✓ (99.99 / 4.59 %) | ✓ (99.999 / 4.58 %) |
+| **c5t handshake latency** | 0.859 s | 1.366 s (+1.59×) | ✓ matched | **TSCH only** (sw 1.30 / CC310 0.53 s; no CSMA HW run) |
+
+So the **energy/duty** comparison is clean on both emulator and hardware; the
+**handshake-latency** comparison is clean in the emulator (CSMA 0.859 s vs TSCH 1.366 s)
+but on hardware only the TSCH side is measured. The one missing pair-half is a **CSMA
+handshake on real hardware**.
+
+## Remaining hardware experiments (TODO, priority order)
+
+1. **CSMA handshake on HW** (sw + CC310) — completes the TSCH-vs-CSMA latency pair on
+   silicon. Flash the c5t apps built for CSMA (drop `MAKE_MAC_TSCH`) to DK+dongle, run
+   the same 20× bench. Cheap; closes the one gap above.
+2. **C509-vs-X.509 handshake on HW** (x5c / c5c / c5t over real-RF TSCH) — validate the
+   headline emulator result (x5c ≈2.0 s ≫ C509 ≈1.3 s) on silicon. Build the
+   `edhoc-oscore-{x509,c5c}` apps for the dongle+DK like c5t. High value.
+3. **DTLS x509/c509 over real-RF TSCH** (scenarios A/B) — the 848 B server cert flight is
+   the stress point; ties into the rxdiag RX ladder (#4).
+4. **rxdiag RX bisection ladder on HW** (task #23) — Firefly root + nRF-DK leaf, the
+   848 B coap-DTLS-over-TSCH RX drop hunt; firmware built, never run on real RF.
+5. **CC310 for scenarios A–C on HW** — the TODO-hw residual (only c5t / scenario D done);
+   x5c, c5c, and the DTLS `_ALT` path.
+6. **Absolute energy (Power-Profiler-Kit)** — the duty cycle here is a *ratio*; a PPK gives
+   absolute mJ/handshake + idle mW, converting `table:tsch-idle`'s modelled power to
+   measured. The paper flags this as future work.
+7. **Energest during an active handshake/enrollment** — energy *per handshake* (not just
+   idle duty); firmware-side ENERGEST across the handshake window on HW.
+8. **Full enrollment (/crts + /sen) over real-RF TSCH** — Tier-2 enroll is emulator-only
+   (2.9 s); run on the DK+dongle. + CC310-accelerated enroll.
+9. **Multi-hop / larger network** — add the 2nd dongle or a Firefly as an extra hop
+   (current results are single-hop); latency/duty vs hop count.
+10. **Lossy-link robustness on real RF** — distance/interference (or the GE medium's
+    real-RF analogue) handshake completion; the emulator GE study's hardware counterpart.
+11. **CC310 in-handshake per-op DWT profiling on HW** — per-op cycles *during* a real
+    handshake (vs the standalone `ecc-bench`), to see cache/contention effects.
+
 ## Firmware / repro
 `local-tests/energest/fw-hw/`: `energest-root-dk.hex` (DK, `ROOT=1`), `energest-leaf-dongle.hex`.
 Build: `local-tests/energest/build-energest.sh` (retarget to `TARGET=nrf BOARD=nrf52840/{dk,dongle}`).
