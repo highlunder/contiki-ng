@@ -57,6 +57,33 @@ exactly. This puts the paper's duty-cycled-MAC energy claim (TSCH ~4.6 % idle vs
 ~100 %, the term the byte-proxy model omits) **on silicon**. The always-on reference is
 observed directly as the leaf's pre-association scan (~100 %).
 
+## Result 4 — C509 EDHOC (c5t) handshake latency over real-RF TSCH (experiment 3)
+
+Looping benchmark (`local-tests/bench/edhoc-c5t-bench`, 20 iterations, on-device RTIMER
+timing of `run()→FINISHED`, minimal `LOG_LEVEL_ERR` output so serial does not perturb
+timing). DK = EDHOC responder + root; dongle = initiator/leaf. 1 hop.
+
+| Backend | n (ok/fail) | median | mean ± sd | p95 | min–max |
+|---|---|---|---|---|---|
+| **software (uECC)** | 20 / 0 | **1788.5 ms** | 1798.8 ± 93.0 ms | 1996.8 ms | 1720.9–2067.9 ms |
+| CC310 hardware | _pending_ | | | | |
+
+**vs emulator (c5t 1366 ms, sw uECC):** real hardware is **~30 % slower** on the sw path.
+This is the complement of the duty-cycle match: the emulator reproduces the *radio*
+timing exactly (duty to 0.01 pp — a ratio), but the *handshake latency* carries ~8
+software P-256 ops whose cost the emulator's cycle model under-counts (idealized M4, no
+flash wait-states), plus real-RF slot/ACK timing. So absolute EDHOC latency is ~30 %
+optimistic in-emulator while the ordering (and the fragment-count → airtime structure)
+holds. 0 retransmits over the clean single-hop link; the ~93 ms sd is slot-alignment
+jitter (each handshake catches a slightly different slotframe phase), consistent with the
+analytic `T_frag ≈ 100 ms` per fragment.
+
+## Result 4 — the tooling that made it repeatable
+- `edhoc-c5t-bench` looped 20× with the real-RF root-resolution fix
+  (`EDHOC_CONF_SERVER_FROM_ROOT`); the DK server auto-resets per handshake.
+- `local-tests/bench/ts-serial.py` — no-dependency timestamping serial reader for
+  progress (host wall-clock prefix; on-device RTIMER remains authoritative).
+
 ## Firmware / repro
 `local-tests/energest/fw-hw/`: `energest-root-dk.hex` (DK, `ROOT=1`), `energest-leaf-dongle.hex`.
 Build: `local-tests/energest/build-energest.sh` (retarget to `TARGET=nrf BOARD=nrf52840/{dk,dongle}`).
