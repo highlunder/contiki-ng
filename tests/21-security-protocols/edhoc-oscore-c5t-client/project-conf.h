@@ -72,8 +72,17 @@
  * Reduce to ~30 s if tighter failure detection is needed on production HW. */
 #undef  EDHOC_CONF_ATTEMPTS
 #define EDHOC_CONF_ATTEMPTS 4      /* E0 recovery hardening */
+/* Multi-hop: the CoAP-CON forwarding of MSG_1/MSG_2 over several TSCH hops can take
+ * >10 s (measured ~12 s at 2 hops), so a 10 s EDHOC watchdog makes the client
+ * restart before the round trip completes. Give it per-hop headroom when built
+ * multi-hop (MULTIHOP_CONNECT_DELAY_S>0); single-hop keeps the tight 10 s. */
+#if defined(MULTIHOP_CONNECT_DELAY_S) && (MULTIHOP_CONNECT_DELAY_S > 0)
+#define EDHOC_CONF_TIMEOUT 60000
+#else
 #define EDHOC_CONF_TIMEOUT 10000  /* E0: was 100000 */
+#endif
 
 #define LOG_CONF_LEVEL_EDHOC LOG_LEVEL_INFO
+
 
 #endif /* PROJECT_CONF_H_ */

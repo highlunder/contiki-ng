@@ -86,6 +86,45 @@ linear in hops. Confirming that linear growth (and that CSMA shows almost no hop
 M2) is the result. HW expectation (M3): same ordering; CC310 shifts the crypto constant
 down so the airtime/hop term dominates sooner.
 
+## Progress (2026-07-09, third pass) — 2-HOP c5t HANDSHAKE PASSES over TSCH
+
+**`emul-c5t-2hop-tsch.json` PASSES** (`Validator [PASS]: "EDHOC finished"`, node3, over TSCH).
+The multi-hop handshake experiment is runnable at 2 hops. It took four fixes:
+1. **Relay EB floor** — `tsch_set_eb_period(4 s)` re-asserted every 5 s once associated
+   (`relay/relay.c`) → the relay beacons enough for the client to associate.
+2. **Client connect-delay** — `MULTIHOP_CONNECT_DELAY_S` (build-time; 90 s) → wait for the
+   path to settle before EDHOC.
+3. **EDHOC timeout 60 s** — `edhoc-oscore-c5t-client` project-conf: when built multi-hop,
+   `EDHOC_CONF_TIMEOUT` 10→60 s. **This was the key one:** MSG_1 forwarding over the hops
+   takes >10 s (measured ~12 s at 2 hops via slow CoAP-CON forwarding — vs 0.5 s for a
+   RPL DAO), so the 10 s watchdog made the client restart before the round trip finished,
+   and the server never completed MSG_2 for the abandoned session.
+4. **Validator = `EDHOC finished`** — M1 measures *handshake* latency; the post-handshake
+   OSCORE GET is best-effort raw UDP and is unreliable over multi-hop (it retransmits and
+   times out), so validate the handshake, not the GET.
+
+Diagnosis chain that got here (all via RPL+EDHOC INFO logging): RPL routing is fine
+(DAOs + DAO-ACKs round-trip over 2 hops, root has a route to the client) → MSG_1 *does*
+reach the server, just ~12 s late → the client's 10 s watchdog was the culprit.
+
+### 3-hop: still blocked on the deepest-relay EB rate
+`emul-c5t-3hop-tsch.json` FAILS: node4 never associates. node2 (relay, has child node3)
+beacons **192×**, but node3 (deepest relay, no child) beacons only **7×** despite the EB
+floor — so node4 can't catch an EB. The floor helps a relay that *has* a child but not the
+childless deepest one; `tsch_set_eb_period()` sets the period but likely does **not
+reschedule an already-scheduled EB timer**, so a relay whose RPL callback pushed the EB
+timer far out stays quiet until it next fires. **TODO for 3-hop:** a stronger EB assert
+(reschedule the EB timer, or a shorter re-assert interval, or an EB rule that beacons on a
+fixed independent timer) — then 3-hop should follow the 2-hop recipe.
+
+### Next for DATA (M1)
+1-hop and 2-hop both work now → **M1 is collectable at 1+2 hops already** (the compounding
+trend from 1→2 hops): apply the same three client fixes to the **x5c** client, build the
+x5c multi-hop client, run `emul-{c5t,x5c}-{1,2}hop-tsch.json`, and compare the x5c−c5t
+handshake-latency gap at 1 vs 2 hops (expect it to grow). 3-hop adds a third point once the
+deepest-relay EB is fixed. Note: for a *clean* single-attempt latency, lengthen the connect
+delay so the first MSG_1 succeeds (the 2-hop PASS completed after a couple of retries).
+
 ## Progress (2026-07-09, second pass) — TSCH multi-hop JOIN fixed; delivery is a routing issue
 
 - **TSCH EB bootstrapping — FIXED.** The relay now re-asserts a fixed EB floor

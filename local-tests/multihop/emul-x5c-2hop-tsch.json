@@ -31,10 +31,10 @@
     }
   ],
   "test": {
-    "description": "Line topology, 50 m spacing (tx_range 55 -> 2 hops). node1 = x5c server + RPL root + TSCH coordinator; nodes 2..2 = relays; node3 = x5c client (resolves root via EDHOC_CONF_SERVER_FROM_ROOT). Read the client's 'EDHOC finished' timestamp for handshake latency vs hop count.",
+    "description": "Line topology, 50 m spacing (tx_range 55 -> 2 hops). node1 = x5c server + RPL root + TSCH coordinator; nodes 2..2 = relays; node3 = x5c client (resolves root via EDHOC_CONF_SERVER_FROM_ROOT). Read the client's 'EDHOC finished' timestamp for handshake latency vs hop count. (M1 metric = handshake latency: validate on 'EDHOC finished'; the post-handshake OSCORE GET is best-effort UDP and unreliable over multi-hop.)",
     "validators": [
       {
-        "pattern": "EDHOC+OSCORE x509 end-to-end test PASSED",
+        "pattern": "EDHOC finished",
         "node": 3,
         "min_count": 1
       }
