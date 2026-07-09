@@ -462,6 +462,22 @@ ecc_session_begin(void)
     LOG_ERR("ecc_session_begin: nrf_crypto_rng_init failed (0x%lx)\n",
             (unsigned long)ret);
   }
+
+  /*
+   * Settle the CC310 block after (re-)init before the caller issues the first EC
+   * op. Standalone (nullradio) the ops run fine back-to-back, but with the TSCH
+   * netstack running the first post-init keygen returned 0x8502
+   * (CONTEXT_NOT_INITIALIZED) -- the incidental delay of a debug printf here
+   * masked it. This is the robust equivalent: a busy-wait with interrupts enabled
+   * (BASEPRI already restored) so TSCH can still service its slots meanwhile.
+   * Tunable via -DCC310_SETTLE_US (0 disables). See task #24.
+   */
+#ifndef CC310_SETTLE_US
+#define CC310_SETTLE_US 3000
+#endif
+#if CC310_SETTLE_US > 0
+  clock_delay_usec(CC310_SETTLE_US);
+#endif
 }
 /*---------------------------------------------------------------------------*/
 void
