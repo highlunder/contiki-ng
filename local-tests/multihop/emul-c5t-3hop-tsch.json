@@ -30,7 +30,7 @@
       "y": 0.0
     },
     {
-      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/fw/edhoc-oscore-c5t-client.nrf",
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/fw/edhoc-oscore-c5t-client-mh.nrf",
       "id": 4,
       "x": 150.0,
       "y": 0.0

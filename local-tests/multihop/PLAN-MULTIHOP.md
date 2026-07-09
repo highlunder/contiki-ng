@@ -86,6 +86,30 @@ linear in hops. Confirming that linear growth (and that CSMA shows almost no hop
 M2) is the result. HW expectation (M3): same ordering; CC310 shifts the crypto constant
 down so the airtime/hop term dominates sooner.
 
+## Progress (2026-07-09, second pass) — TSCH multi-hop JOIN fixed; delivery is a routing issue
+
+- **TSCH EB bootstrapping — FIXED.** The relay now re-asserts a fixed EB floor
+  (`tsch_set_eb_period(RELAY_EB_PERIOD=4 s)` every 5 s once associated, `relay/relay.c`),
+  overriding the RPL EB-backoff. With it, a client **associates over 2 hops** (node3
+  `Network ready` @40 s; was: never). This is the key multi-hop-TSCH enabler.
+- **Client connect-delay — added** (`MULTIHOP_CONNECT_DELAY_S`, build-time, default 0;
+  `edhoc-oscore-c5t-client` + its Makefile). Waits for routes/slots after `node_is_reachable`
+  before EDHOC. Built `fw/edhoc-oscore-c5t-client-mh.nrf` (90 s); the 2/3-hop configs point
+  to it.
+- **Remaining blocker — multi-hop RPL route establishment (delivery).** Even with the
+  90 s delay, the 2-hop c5t handshake fails: the client sends MSG_1 and times out (4 retries),
+  the relay **does forward** (node2: 35 data TX frames) but no response reaches the client.
+  The client (node3) sends **0 DAOs** in the trace, so the root likely has **no downward
+  route** to deliver MSG_2 — the classic RPL-non-storing multi-hop issue. Both endpoints run
+  at `LOG_LEVEL_ERR` (server quieted for timing), so the server side (MSG_1 receipt, MSG_2
+  gen) and RPL DAO/route logs are invisible.
+- **Next (task #30):** build the endpoints + relay with **RPL + EDHOC INFO logging** to
+  localize (does MSG_1 reach the root? is a DAO sent/received? does the root have a route to
+  the client?); then fix the downward route — likely a DAO-frequency / non-storing-source-route
+  tuning, or a longer settle for DAO propagation. Mirrors the prior 3-hop-DTLS bring-up
+  ([[project_3hop_dtls_test]]) which needed `CONNECT_DELAY=150 s` + CSMA retries 7. Once a
+  handshake completes at 2 hops, extend to 3 and run M1/M2.
+
 ## Validation status (2026-07-09) — design proven, multi-hop delivery needs tuning
 
 Built the relay (`relay/`, minimal RPL+TSCH forwarder + buffer headroom) and the M1

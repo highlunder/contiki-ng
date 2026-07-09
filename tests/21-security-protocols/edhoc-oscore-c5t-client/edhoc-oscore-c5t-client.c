@@ -208,6 +208,21 @@ PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
     etimer_reset(&timer);
   }
 
+  /* Multi-hop settle (build-time; default 0 = no delay for the single-hop configs).
+   * Over several hops, node_is_reachable() goes true as soon as an UPWARD default
+   * route exists, but the RPL DOWNWARD route (for MSG_2) and the per-hop Orchestra
+   * unicast TX/RX slots are not yet established -- so a MSG_1 sent immediately is
+   * forwarded into a black hole. Wait for the path to settle first. Mirrors the
+   * 3-hop DTLS CONNECT_DELAY. */
+#ifndef MULTIHOP_CONNECT_DELAY_S
+#define MULTIHOP_CONNECT_DELAY_S 0
+#endif
+#if MULTIHOP_CONNECT_DELAY_S > 0
+  LOG_INFO("Multi-hop connect delay %d s...\n", MULTIHOP_CONNECT_DELAY_S);
+  etimer_set(&timer, CLOCK_SECOND * MULTIHOP_CONNECT_DELAY_S);
+  PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
+#endif
+
   /* Set up C509 c5t credentials.
    * Own key (initiator): attach cert so the hash can be sent as c5t.
    * Peer key (responder): also attach cert so the received hash can be

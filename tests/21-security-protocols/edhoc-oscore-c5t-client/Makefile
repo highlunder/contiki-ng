@@ -41,4 +41,10 @@ endif
 CFLAGS += -DCOAP_RESPONSE_TIMEOUT=3
 CFLAGS += -DCOAP_MAX_RETRANSMIT=2
 
+# Multi-hop: wait for RPL routes + TSCH slots to settle before EDHOC.
+# e.g. `make ... MULTIHOP_CONNECT_DELAY_S=90`. Default off (single-hop unaffected).
+ifdef MULTIHOP_CONNECT_DELAY_S
+  CFLAGS += -DMULTIHOP_CONNECT_DELAY_S=$(MULTIHOP_CONNECT_DELAY_S)
+endif
+
 include $(CONTIKI)/Makefile.include
