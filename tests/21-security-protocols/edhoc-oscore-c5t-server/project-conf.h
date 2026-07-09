@@ -38,6 +38,13 @@
  * here — the server is native with no 802.15.4 radio or RPL stack. */
 #define EDHOC_CONF_TIMEOUT 100000
 
-#define LOG_CONF_LEVEL_EDHOC LOG_LEVEL_INFO
+/* ERR (not INFO): the responder's MSG_2 generation is ON THE CRITICAL PATH of the
+ * latency the client benchmark measures (client times run()->FINISHED, which spans
+ * the server's MSG_2). At INFO the server dumps several KB of EDHOC-Trace per
+ * handshake (session summary, G_Y, TH_2/3/4, the 160 B CRED_R hex, plaintexts);
+ * at 115200 baud that blocking serial time inflates the measured handshake by
+ * hundreds of ms. ERR keeps the timing clean. Raise to INFO only for protocol
+ * debugging, not for timing runs. */
+#define LOG_CONF_LEVEL_EDHOC LOG_LEVEL_ERR
 
 #endif /* PROJECT_CONF_H_ */
