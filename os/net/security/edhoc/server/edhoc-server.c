@@ -40,6 +40,7 @@
 #include "edhoc-msg-generators.h"
 #include "edhoc-msg-handlers.h"
 #include "edhoc-trace.h"
+#include "lib/ecc.h"           /* ecc_session_begin(): CC310 backend needs it (see below) */
 
 #include "sys/log.h"
 #define LOG_MODULE "EDHOC"
@@ -327,6 +328,18 @@ edhoc_server_start(void)
     return 0;
   }
   serv = &server;
+  /*
+   * Open a crypto session and hold it for the server's lifetime. The client did
+   * this in edhoc_client_run(); the responder never did, relying on the boot-time
+   * ecc_init() alone. That is fine for the software backend but NOT for the CC310
+   * hardware backend on the shared nrf platform: without ecc_session_begin()
+   * (SaSi_LibInit + TRNG-seeded DRBG instantiation + per-session re-init/settle),
+   * the responder's first EC op returned 0x8502 (CONTEXT_NOT_INITIALIZED) and all
+   * MSG_2 crypto (keygen/ECDH/sign) failed -- G_Y came out all-zeros. Held open
+   * (no matching ecc_session_end) so every handshake this long-lived server
+   * processes is covered. No-op for the software backend. See task #24.
+   */
+  ecc_session_begin();
   return edhoc_server_reset_handshake();
 }
 /*---------------------------------------------------------------------------*/
