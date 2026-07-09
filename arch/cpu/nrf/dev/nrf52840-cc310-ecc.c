@@ -421,14 +421,27 @@ ecc_session_begin(void)
    */
   cc310_backend_enable();                 /* NRF_CRYPTOCELL->ENABLE = 1 */
 
-#ifdef CC310_DIAG
-  /* Diagnostic (capturable post-join): re-run nrf_crypto_init() idempotently and
-   * report its result + the BASEPRI mask, so a boot-time init failure that scrolled
-   * past before serial re-attach is still visible. */
+  /*
+   * Re-initialise the nrf_crypto backend for THIS CC310 power-up. The boot-time
+   * ecc_init() -> nrf_crypto_init() (os/contiki-main.c) is NOT sufficient on the
+   * shared nrf platform (nrfx 3.x): the first post-boot handshake's keygen
+   * returned 0x8502 (NRF_ERROR_CRYPTO_CONTEXT_NOT_INITIALIZED) until this call
+   * was added -- the CC310 enable/disable cycling around each session
+   * (cc310_backend_enable/disable + SaSi_LibInit clearing ENABLE) leaves the
+   * backend context needing a fresh init. nrf_crypto_init() is idempotent, so
+   * this is cheap and safe; it must run BEFORE SaSi_LibInit()/rng_init() below.
+   * (On the old nrf52840 platform the boot init alone worked -- task #24.)
+   */
   ret_code_t initret = nrf_crypto_init();
+#ifdef CC310_DIAG
   printf("[CC310-DIAG] nrf_crypto_init()=0x%lx PRIO_BITS=%d basepri_mask=0x%lx\n",
          (unsigned long)initret, (int)__NVIC_PRIO_BITS,
          (unsigned long)(1u << (8u - __NVIC_PRIO_BITS)));
+#else
+  if(initret != NRF_SUCCESS) {
+    LOG_ERR("ecc_session_begin: nrf_crypto_init failed (0x%lx)\n",
+            (unsigned long)initret);
+  }
 #endif
 
   NVIC_SetPriority(CRYPTOCELL_IRQn, 0);   /* highest priority: never BASEPRI-masked */
