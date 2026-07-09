@@ -205,6 +205,24 @@ x509 34.351 / c509 34.304 s). The merge does not touch the C509/EDHOC/DTLS, TSCH
 Orchestra, 6LoWPAN or nrf52840 paths, so the results are unaffected. Re-check driver:
 `bench/emul/postmerge-recheck.sh`.
 
+## CSMA baseline (matched, the TSCH-vs-CSMA latency pair)
+
+Same c5t apps built for default **CSMA** (drop `MAKE_MAC=MAKE_MAC_TSCH`), same 2-node
+emulator layout, nrfx 3.12.1. Config `/tmp/emul-edhoc-c5t-csma.json` (client
+`edhoc-oscore-c5t-client.nrf` CSMA + server).
+
+| MAC | c5t handshake latency (MSG_1 → finished) |
+|---|---|
+| **CSMA (always-on)** | **0.859 s** |
+| **TSCH (Orchestra)** | **1.366 s** (+507 ms = 1.59×) |
+
+So CSMA is sub-second (crypto floor + negligible airtime, radio always on); TSCH adds
+~0.5 s of slotframe serialization for the same handshake — the latency cost of duty
+cycling, the flip side of the ~22× idle-energy saving (Part C). This is the matched
+**TSCH-vs-CSMA latency pair** for c5t (emulator). The energy/duty pair is already matched
+on both emulator and hardware (Part C); the CSMA *handshake-latency* pair exists only in
+the emulator so far (no CSMA handshake run on hardware yet).
+
 ## Bottom line
 - **DTLS**: C509 is a *storage* compression only (Mbed TLS sends DER) → ~11 % smaller cert
   flight, **no** TSCH-latency win (A ≈ B ≈ 4.05–4.09 s).
