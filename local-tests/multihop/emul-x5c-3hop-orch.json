@@ -1,0 +1,49 @@
+{
+  "title": "EDHOC x5c handshake over 3-hop TSCH (server=root node1, client=node4)",
+  "timeout_ms": 750000,
+  "seed": 1,
+  "startup_delay_ms": 1000,
+  "radiomedium": {
+    "type": "udgm",
+    "tx_range": 55.0,
+    "interference_range": 110.0,
+    "success_ratio_tx": 1.0,
+    "success_ratio_rx": 1.0
+  },
+  "nodes": [
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/fw/orch-x509-server.nrf",
+      "id": 1,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/fw/relay-orch.nrf",
+      "id": 2,
+      "x": 50.0,
+      "y": 0.0
+    },
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/fw/relay-orch.nrf",
+      "id": 3,
+      "x": 100.0,
+      "y": 0.0
+    },
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/fw/orch-x509-client-mh.nrf",
+      "id": 4,
+      "x": 150.0,
+      "y": 0.0
+    }
+  ],
+  "test": {
+    "description": "Line topology, 50 m spacing (tx_range 55 -> 3 hops). node1 = x5c server + RPL root + TSCH coordinator; nodes 2..3 = relays; node4 = x5c client (resolves root via EDHOC_CONF_SERVER_FROM_ROOT). Read the client's 'EDHOC finished' timestamp for handshake latency vs hop count. (M1 metric = handshake latency: validate on 'EDHOC finished'; the post-handshake OSCORE GET is best-effort UDP and unreliable over multi-hop.)",
+    "validators": [
+      {
+        "pattern": "EDHOC finished",
+        "node": 4,
+        "min_count": 1
+      }
+    ]
+  }
+}

@@ -59,9 +59,10 @@ Same firmware/topology but MAC = CSMA (always-on, carrier-sense + backoff) inste
    **6TiSCH minimal-schedule artifact**: its single shared slot self-collides at the relay and
    drops fragments, and a larger flight (more fragments) is more likely to lose one. CSMA's
    always-on carrier-sense + link-layer retransmission delivers the fragmented flight without
-   that per-slot contention. (A dedicated-slot TSCH schedule such as Orchestra would likely
-   behave more like CSMA on reliability — untested here; Orchestra as-configured had its own
-   issues, see PLAN-MULTIHOP.md.)
+   that per-slot contention. (A dedicated-slot TSCH schedule such as Orchestra might be
+   expected to behave more like CSMA on reliability, but when actually tried it did not — see
+   §D: Orchestra as-configured has its own multi-hop delivery failure in this emulator, so
+   CSMA is the clean schedule-independence evidence.)
 2. **The robust, MAC-independent credential effect is LATENCY, and it scales with size and
    hops.** At 2 hops: c5t 1.5 s < x5chain 3.7 s < DTLS 7.1 s — the compact C509 credential is
    ~2.5× faster than X.509 EDHOC and ~5× faster than DTLS, and the gap widens with hop count
@@ -104,6 +105,40 @@ Not a "simple handshake": the client runs the EDHOC handshake, then an OSCORE GE
    self-collision floor (§B) — the recovery is partly compensating for that schedule
    artifact; on CSMA the enrollment would complete faster and with less recovery.
 
+## D. Orchestra (dedicated-slot TSCH) — attempted, NEGATIVE
+
+To test whether the §B reliability failures are specifically the 6TiSCH *minimal*
+schedule (a dedicated-slot TSCH schedule ought to behave like CSMA), we rebuilt the c5t
+and x5c EDHOC firmware + relay with Orchestra (`ORCHESTRA=1` build gate →
+`MODULES += os/services/orchestra`; default rules eb_per_time_source /
+unicast_per_neighbor_rpl_ns / default_common) and the ASN-drift relax. Configs
+`emul-{c5t,x5c}-{2,3}hop-orch.json`.
+
+**Result: Orchestra does not complete the multi-hop handshake for *either* credential.**
+The ASN-drift fix works (0 network-leaves, node stays associated), but at 2 hops **c5t
+fails too** — MSG_1 is regenerated/restarted (75/195/375 s) and never completes; x5c
+likewise (150 s no-progress deadline, restart). So Orchestra as-configured has its **own**
+multi-hop delivery problem in cooja-ng-ge (even the small c5t flight does not traverse),
+independent of credential size. It is therefore **not** a clean dedicated-slot
+demonstration and does not confirm (or refute) the "minimal-schedule artifact" hypothesis.
+
+**What this means:** the clean schedule/MAC-independence evidence stays the **CSMA** result
+(§B) — a non-slotted MAC completes every case, so the credential effect is not fundamental.
+Whether a *correctly-tuned* dedicated-slot TSCH schedule would match CSMA remains open
+(Orchestra multi-hop in this emulator needs its own debugging, out of scope here). The
+Orchestra build gates are kept (opt-in, default-off) for that future work.
+
+**Not run, with reasons:**
+- *Lossy CSMA vs TSCH under Gilbert-Elliott*: the GE plugin is per-link, per-frame (not
+  per-channel — see `gilbert_elliott_medium.c`), so it does not model TSCH's channel-hopping
+  de-correlation. A lossy-CSMA-vs-TSCH run therefore could not test the "hopping wins under
+  burst" claim (which stays the paper's analytic argument, citing RFC 7554). Skipped to
+  avoid a misleading data point.
+- *X.509 enrollment arm*: no PKCS#10/X.509 enrollment app exists (only the C509
+  `edhoc-oscore-crts-*`); building one is a large effort, and the c5t-vs-X.509 enroll
+  contrast is predictable from the x5c handshake result. Future work.
+
 ---
 _Data: `scratchpad/{dtls,csma,enroll}/`. Configs: `emul-dtls{x509,c509}-{1,2,3}hop-tsch.json`,
-`emul-{c5t,x5c,dtlsx509}-{1,2}hop-csma.json`, `emul-enroll-{1,2}hop-tsch.json`._
+`emul-{c5t,x5c,dtlsx509}-{1,2}hop-csma.json`, `emul-enroll-{1,2}hop-tsch.json`,
+`emul-{c5t,x5c}-{2,3}hop-orch.json`._

@@ -60,4 +60,9 @@ endif
 CFLAGS += -DCOAP_RESPONSE_TIMEOUT=$(COAP_RESPONSE_TIMEOUT)
 CFLAGS += -DCOAP_MAX_RETRANSMIT=2
 
+# Opt-in dedicated-slot TSCH schedule (build ORCHESTRA=1); see local-tests/multihop/relay/Makefile.
+ifdef ORCHESTRA
+  MODULES += os/services/orchestra
+endif
+
 include $(CONTIKI)/Makefile.include
