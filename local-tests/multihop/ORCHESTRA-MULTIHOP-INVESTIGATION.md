@@ -25,35 +25,48 @@ and **stays associated** — this is a TX-only death, RX alive.
   shared-slot-0 channel would mismatch too) — so the drift detection is spurious and the real
   ASN is aligned; Orchestra's per-packet channel would also align. Not the cause.
 
-## Narrowed suspect
-The failure is in the **shared unicast TX slot firing**. Orchestra's ns rule installs the
-unicast TX link with `address = tsch_broadcast_address (ffff)` and `LINK_OPTION_SHARED`
-(`orchestra-rule-unicast-per-neighbor-rpl-ns.c:82`), relying on `select_packet` + the queued
-packet's `PACKETBUF_ATTR_TSCH_{SLOTFRAME,TIMESLOT}` attributes (`TSCH_WITH_LINK_SELECTOR`) to
-route the packet to the right cell. At node3's ts2 slot, the slot operation must pick MSG_1
-(queued to node2) via `tsch_queue_get_unicast_packet_for_any()` under the link-selector match.
-That selection/transmission is what does not happen. Candidate causes to trace next:
-1. The link-selector match (`tsch_queue_get_packet_for_nbr` slotframe/timeslot check) rejecting
-   the packet (attr mismatch — e.g. select_packet not tagging, or a slotframe-handle mismatch).
-2. A stuck shared-link backoff on the unicast neighbour (the same class as the minimal-schedule
-   n_eb backoff, but for the unicast queue — the backoff decrement keys on `link->addr=ffff`).
-3. A cooja-ng-ge issue handling the Orchestra unicast cell (address ffff + link-selector +
-   per-packet channel offset) for the 2nd-tier node — the parallel to the ASN-drift, which was
-   an emulator rx_asn-timestamp artifact, makes the emulator side worth checking first.
+## Pinpointed (slot-level trace, 2026-07-10)
+Instrumenting `tsch_queue_get_unicast_packet_for_any` (was MSG_1 selectable?) and the slot
+operation (`current_link` selection for unicast-slotframe TX links) on node3 gives the exact
+failure:
 
-## Anomaly noticed
-node3 has **two identical** `Tx|Sh ts2 cho0` unicast links: `new_time_source` adds a TX link to
-the time source (`add_uc_link(new_addr)`) *and* `neighbor_updated` adds a TX link to node2 as a
-routing neighbour — both to the same cell. Harmless (redundant), but it confirms both install
-paths fire, and is worth noting for anyone auditing the rule.
+1. **MSG_1 is correctly queued to node2** — TSCH logs `send packet to <node2> … queue 2/8 … 8/8`
+   (108 B). So it is *not* a routing/forwarding problem; the packet reaches the TSCH queue and
+   the queue then fills to 8/8 because it never drains.
+2. **node3's ts2 unicast-TX slot fires 88× during join (28.5–43.6 s) then STOPS at 43.648 s** and
+   never fires again. 43.648 s is exactly node3's last on-air frame and coincides with the RPL
+   parent / TSCH time-source being set (~network-ready at 45 s).
+3. After 43.6 s the packet-selection call (`get_unicast_packet_for_any`) logs neither a SELECTED
+   nor a miss for node3 — because `tsch_schedule_get_next_active_link()` **never returns the ts2
+   unicast-TX link as `current_link`** anymore, even though the link is still in the schedule (the
+   75 s dump shows it present).
+
+So the root is **slot selection, not radio, routing, backoff, or link-selector**: the ts2 TX cell
+stops being serviced by the slot operation the moment the Orchestra schedule is reorganised at
+time-source assignment. The reorg installs the unicast RX link (`new_time_source`, at hash(own)=ts3)
+**and a duplicate TX link** at ts2 (both `new_time_source→add_uc_link(parent)` *and*
+`neighbor_updated→add_uc_link(parent)` add one). The strong hypothesis is that this
+duplicate-link / RX-TX overlap interacts badly with `tsch_schedule_get_next_active_link`'s
+`curr_best`/`curr_backup` arbitration so the ts2 TX cell is permanently shadowed by an overlapping
+link after the reorg — plausibly compounded by node3's (spurious, tolerated) one-slotframe ASN
+offset shifting its per-slotframe `TSCH_ASN_MOD` timeslot.
 
 ## PR assessment
-Not yet a clean PR: it is a solid, reproducible characterization with the suspect narrowed to
-the shared unicast-TX-slot packet selection, but the exact failing line needs a slot-level trace
-(instrument `tsch_queue_get_unicast_packet_for_any` / the ts2 slot's `get_packet_and_neighbor_for_link`
-+ backoff state on node3) and a **cross-check against mainline Cooja or real hardware** to decide
-Contiki-Orchestra vs cooja-ng-ge. Given the minimal-schedule bug here was emulator-side (the
-spurious ASN drift), check the emulator's Orchestra unicast/link-selector/channel path first.
+A concrete, reproducible, well-localised bug: **an Orchestra-scheduled unicast TX cell stops being
+selected by `tsch_schedule_get_next_active_link` after the time-source reorg, so a 2nd-tier node
+can never transmit to its parent** (queue fills, handshake dies). Two follow-ups make it PR-ready:
+1. Confirm the mechanism by instrumenting `tsch_schedule_get_next_active_link` (why ts2 is not
+   `curr_best` after 43.6 s) and by removing the duplicate add (`neighbor_updated` vs
+   `new_time_source`) to see if the ts2 cell keeps firing.
+2. **Cross-check mainline Cooja / real hardware** — the minimal-schedule bug here was emulator-side
+   (a spurious ASN-drift `rx_asn` artifact), so the ASN-offset angle means the exact failing line
+   could still be a cooja-ng-ge slot-timing artifact rather than Contiki Orchestra. Decide the PR
+   target (Contiki `os/net/mac/tsch` vs cooja-ng-ge) from that cross-check.
+
+The instrumentation used (revert after): `DIAG_UC` in `tsch_queue_get_unicast_packet_for_any`
+(SELECTED / miss-with-backoff) and a `printf` in `tsch_slot_operation` after
+`get_packet_and_neighbor_for_link` gated on `current_link->slotframe_handle==1 && TX`, built with
+`DEFINES=DIAG_UC,LOG_CONF_LEVEL_MAC=LOG_LEVEL_INFO`.
 
 ## Reproduce
 `emul-{c5t,x5c}-{2,3}hop-orch.json`; firmware built `ORCHESTRA=1 MAKE_MAC=MAKE_MAC_TSCH`
