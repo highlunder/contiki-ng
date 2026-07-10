@@ -1,0 +1,43 @@
+{
+  "title": "DTLS c509 handshake over 2-hop TSCH (server=root node1, client=node3)",
+  "timeout_ms": 600000,
+  "seed": 1,
+  "startup_delay_ms": 1000,
+  "radiomedium": {
+    "type": "udgm",
+    "tx_range": 55.0,
+    "interference_range": 110.0,
+    "success_ratio_tx": 1.0,
+    "success_ratio_rx": 1.0
+  },
+  "nodes": [
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/fw/dtls-c509-server.nrf",
+      "id": 1,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/fw/relay.nrf",
+      "id": 2,
+      "x": 50.0,
+      "y": 0.0
+    },
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/fw/dtls-c509-client-mh.nrf",
+      "id": 3,
+      "x": 100.0,
+      "y": 0.0
+    }
+  ],
+  "test": {
+    "description": "Line topology, 50 m spacing (tx_range 55 -> 2 hops). node1 = c5t server + RPL root + TSCH coordinator; nodes 2..2 = relays; node3 = c5t client (resolves root via EDHOC_CONF_SERVER_FROM_ROOT). Read the client's 'EDHOC finished' timestamp for handshake latency vs hop count. (M1 metric = handshake latency: validate on 'EDHOC finished'; the post-handshake OSCORE GET is best-effort UDP and unreliable over multi-hop.)",
+    "validators": [
+      {
+        "pattern": "full) PASSED",
+        "node": 3,
+        "min_count": 1
+      }
+    ]
+  }
+}

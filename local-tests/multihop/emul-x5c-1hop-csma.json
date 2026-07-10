@@ -1,0 +1,37 @@
+{
+  "title": "EDHOC x5c handshake over 1-hop TSCH (server=root node1, client=node2)",
+  "timeout_ms": 400000,
+  "seed": 1,
+  "startup_delay_ms": 1000,
+  "radiomedium": {
+    "type": "udgm",
+    "tx_range": 55.0,
+    "interference_range": 110.0,
+    "success_ratio_tx": 1.0,
+    "success_ratio_rx": 1.0
+  },
+  "nodes": [
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/fw/csma-x509-server.nrf",
+      "id": 1,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/fw/csma-x509-client-mh.nrf",
+      "id": 2,
+      "x": 50.0,
+      "y": 0.0
+    }
+  ],
+  "test": {
+    "description": "1-hop baseline for the M1 latency-vs-hops sweep (X.509 x5chain, cert inline). node1 = x5c server + RPL root + TSCH coordinator; node2 = x5c client (direct neighbour). Read the client's 'EDHOC finished' timestamp. Same multi-hop client firmware as the 2/3-hop configs; at 1 hop the ASN-drift tolerance is a no-op.",
+    "validators": [
+      {
+        "pattern": "EDHOC finished",
+        "node": 2,
+        "min_count": 1
+      }
+    ]
+  }
+}
