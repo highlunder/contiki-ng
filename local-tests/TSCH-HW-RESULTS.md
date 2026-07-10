@@ -164,10 +164,16 @@ crypto makes the emulator's CSMA optimistic.
    idle duty); firmware-side ENERGEST across the handshake window on HW.
 8. **Full enrollment (/crts + /sen) over real-RF TSCH** — Tier-2 enroll is emulator-only
    (2.9 s); run on the DK+dongle. + CC310-accelerated enroll.
-9. **Multi-hop / larger network** — add the 2nd dongle or a Firefly as an extra hop
-   (current results are single-hop); latency/duty vs hop count.
-10. **Lossy-link robustness on real RF** — distance/interference (or the GE medium's
-    real-RF analogue) handshake completion; the emulator GE study's hardware counterpart.
+9. **Multi-hop / larger network** — EMULATOR DONE (`multihop/MULTIHOP-M1-RESULTS.md`):
+   c5t vs x5c EDHOC over 1/2/3 TSCH hops; 1-hop clean c5t 1.1 s vs x5c 2.0 s; x5c fails to
+   complete at 3 hops while c5t succeeds. Blocker was a spurious ASN-drift eviction (fixed,
+   gated `TSCH_CONF_LEAVE_ON_ASN_DRIFT`). **HW residual:** add the 2nd dongle / a Firefly as
+   an extra hop and confirm the same on real RF (also validates the ASN-drift fix is
+   emulator-only).
+10. **Lossy-link robustness on real RF** — EMULATOR DONE (`multihop/MULTIHOP-LOSS-RESULTS.md`
+    UDGM + `MULTIHOP-GE-BURST-RESULTS.md` Gilbert-Elliott): under loss/burst the x5c handshake
+    degrades far faster than c5t and collapses at 2 hops. **HW residual:** distance/interference
+    handshake completion on real RF — the emulator loss/GE study's hardware counterpart.
 11. **CC310 in-handshake per-op DWT profiling on HW** — per-op cycles *during* a real
     handshake (vs the standalone `ecc-bench`), to see cache/contention effects.
 

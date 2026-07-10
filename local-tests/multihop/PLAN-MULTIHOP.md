@@ -107,23 +107,74 @@ Diagnosis chain that got here (all via RPL+EDHOC INFO logging): RPL routing is f
 (DAOs + DAO-ACKs round-trip over 2 hops, root has a route to the client) → MSG_1 *does*
 reach the server, just ~12 s late → the client's 10 s watchdog was the culprit.
 
-### 3-hop: still blocked on the deepest-relay EB rate
-`emul-c5t-3hop-tsch.json` FAILS: node4 never associates. node2 (relay, has child node3)
-beacons **192×**, but node3 (deepest relay, no child) beacons only **7×** despite the EB
-floor — so node4 can't catch an EB. The floor helps a relay that *has* a child but not the
-childless deepest one; `tsch_set_eb_period()` sets the period but likely does **not
-reschedule an already-scheduled EB timer**, so a relay whose RPL callback pushed the EB
-timer far out stays quiet until it next fires. **TODO for 3-hop:** a stronger EB assert
-(reschedule the EB timer, or a shorter re-assert interval, or an EB rule that beacons on a
-fixed independent timer) — then 3-hop should follow the 2-hop recipe.
+### ✅ SOLVED 2026-07-09 — multi-hop blocker was a spurious ASN-drift eviction
+Both 2-hop and 3-hop c5t handshakes now **PASS** end-to-end over TSCH (`TEST PASSED`).
+The chase went through several wrong hypotheses (EB-period backoff; then a supposed
+"TX-only death"; Orchestra was tried and *reverted* — it did not help and broke 2-hop),
+before instrumenting the TSCH per-node `tx_count`, which revealed the truth:
 
-### Next for DATA (M1)
-1-hop and 2-hop both work now → **M1 is collectable at 1+2 hops already** (the compounding
-trend from 1→2 hops): apply the same three client fixes to the **x5c** client, build the
-x5c multi-hop client, run `emul-{c5t,x5c}-{1,2}hop-tsch.json`, and compare the x5c−c5t
-handshake-latency gap at 1 vs 2 hops (expect it to grow). 3-hop adds a third point once the
-deepest-relay EB is fixed. Note: for a *clean* single-attempt latency, lengthen the connect
-delay so the first MSG_1 succeeds (the 2-hop PASS completed after a couple of retries).
+**Root cause:** the 2nd-tier node (whose TSCH time source is a *relay*, i.e. >=2 hops from
+the coordinator) was **repeatedly disassociating and re-joining**, not dying. `tx_count`
+reset to 0 every ~30–60 s (only `tsch_reset()` does that). The trigger, logged at MAC WARN:
+
+```
+! ASN drifted by 7, leaving the network
+```
+
+On every EB from its time source, the node found its ASN disagreed with the EB's stamped
+ASN by **exactly 7 = one minimal-slotframe (size 7)**, and the strict 6TiSCH check
+(`tsch.c` `eb_input`: `if(asn_diff != 0) tsch_disassociate()`) evicted it. It re-joined,
+drifted 7 again, left again — so it never stayed up long enough for the next hop to hear a
+stable EB. That is why node4 never associated (3-hop) and why 2-hop only passed when the
+client happened to finish EDHOC inside one join window.
+
+**Why it's spurious (safe to tolerate):** the node is *actually* slot-aligned and
+communicating — channel hopping lines up and full EDHOC handshakes complete once the check
+is relaxed. If its real ASN were 7 off, `channel = hop_seq[(ASN+choff) % hoplen]` (hoplen=4)
+would put it on a different channel and nothing would get through. So the drift is in the
+DETECTION (`current_input->rx_asn` vs the EB's `ie_asn` — a cycle-accurate-emulator timing
+artifact of when `rx_asn` is captured), not in the node's real slot clock. node2 never
+drifts because its time source is the *coordinator* (special path); only relay-sourced nodes
+hit it.
+
+**Fix (clean, gated, default-safe):** new `TSCH_LEAVE_ON_ASN_DRIFT` (tsch-conf.h, default 1
+= strict/upstream). Multi-hop firmwares set `TSCH_CONF_LEAVE_ON_ASN_DRIFT 0` (relay
+project-conf always; client project-conf gated on `MULTIHOP_CONNECT_DELAY_S`) so the drift
+is warned-but-tolerated. Single-hop syncs to the coordinator → never drifts → unaffected.
+Keep 1 on real hardware.
+
+**Two real secondary bugs also fixed** (both were masking / compounding the above):
+- `COAP_RESPONSE_TIMEOUT` was `3 s` (comment claimed 15) — far shorter than the >15 s
+  multi-hop MSG_1↔MSG_2 fragmented round trip, so CoAP CONs timed out (status 3) and the
+  client retransmitted into half-done handshakes. Now **25 s for multi-hop builds only**
+  (client Makefile, gated); single-hop stays 3 s → byte-identical single-hop timing.
+- `EDHOC_CONF_HS_DEADLINE_SEC` no-progress watchdog was 12 s (separate from
+  `EDHOC_CONF_TIMEOUT`), preempting multi-hop handshakes mid-round-trip → now **55 s** for
+  multi-hop builds (client project-conf, gated).
+
+**Build recipe (multi-hop fw):** server `MAKE_MAC=MAKE_MAC_TSCH` (coordinator, no extra
+flags); relay `MAKE_MAC=MAKE_MAC_TSCH`; client `MAKE_MAC=MAKE_MAC_TSCH
+MULTIHOP_CONNECT_DELAY_S=30`. All `TARGET=nrf BOARD=nrf52840/dk LDFLAGS_WERROR=`. (Connect
+delay 30 s is enough for routes to settle now that the node stays associated; 90 s is not
+needed and only lengthens the run.) Measured latencies: 2-hop c5t ≈ 49 s handshake
+(ready→finished, seed 1), 3-hop ≈ 85 s.
+
+### M1 DATA — COLLECTED 2026-07-09 → see MULTIHOP-M1-RESULTS.md
+Built the **x5c** multi-hop client (ported the connect-delay + 3 gated fixes onto
+`edhoc-oscore-x509-client`), added 1-hop configs, and ran `emul-{c5t,x5c}-{1,2,3}hop`
+(3 seeds each). Headline results:
+- **1-hop (clean, stable):** c5t **1.11 s** vs x5c **1.98 s** (~1.8× — the precise latency
+  comparison; tight across seeds).
+- **Reliability vs hops, X.509 degrades faster:** c5t 3/3, 3/3, 2/3 across 1/2/3 hops; x5c
+  3/3, 2/3, **0/3** — the big 384 B inline X.509 cert **never completes at 3 hops** (MSG_2
+  flight undeliverable even with a 150 s budget), while compact C509 c5t does. That's the
+  multi-hop headline for the paper: the compact credential is the difference between the
+  handshake completing or not, at depth.
+- Multi-hop *total* latency is noisy (CoAP-CON retransmit tails dominate: c5t-2hop 1.8–18.9 s);
+  report multi-hop as a reliability+trend result, 1-hop as the precise latency.
+Remaining fragility (occasional c5t 2/3-hop failures) is fragmented-message loss over the
+6TiSCH minimal single shared slot. Still worth confirming ASN-drift is emulator-only on real
+HW (DK + 2 dongles); the gate keeps HW strict by default.
 
 ## Progress (2026-07-09, second pass) — TSCH multi-hop JOIN fixed; delivery is a routing issue
 
