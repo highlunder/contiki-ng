@@ -451,7 +451,9 @@ eb_input(struct input_packet *current_input)
       if(asn_diff != 0) {
         /* We disagree with our time source's ASN -- leave the network */
         LOG_WARN("! ASN drifted by %"PRId32", leaving the network\n", asn_diff);
+#if TSCH_LEAVE_ON_ASN_DRIFT
         tsch_disassociate();
+#endif
       }
 
       if(eb_ies.ie_join_priority >= TSCH_MAX_JOIN_PRIORITY) {

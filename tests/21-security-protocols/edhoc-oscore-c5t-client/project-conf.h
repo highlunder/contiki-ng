@@ -78,6 +78,25 @@
  * multi-hop (MULTIHOP_CONNECT_DELAY_S>0); single-hop keeps the tight 10 s. */
 #if defined(MULTIHOP_CONNECT_DELAY_S) && (MULTIHOP_CONNECT_DELAY_S > 0)
 #define EDHOC_CONF_TIMEOUT 60000
+/* THE multi-hop fix: when the client is >=2 hops from the coordinator its TSCH
+ * time source is a relay, and the cooja-ng-ge emulator then reports a spurious
+ * one-slotframe ASN drift on every EB, evicting the client every slotframe. It is
+ * actually slot-aligned and communicating (handshakes complete once tolerated),
+ * so relax the strict drift-leave here. Single-hop syncs to the coordinator and
+ * never drifts, so this is a no-op there. See tsch-conf.h. */
+#define TSCH_CONF_LEAVE_ON_ASN_DRIFT 0
+/* The no-progress handshake deadline (edhoc-config.h default 12 s) is a SEPARATE
+ * watchdog from EDHOC_CONF_TIMEOUT: it preempts a handshake that made no progress
+ * within the deadline. Over multi-hop, forwarding MSG_1/MSG_2 across several TSCH
+ * slotframes routinely exceeds 12 s, so the 12 s deadline fires mid-round-trip and
+ * the client keeps preempting its own handshakes (the flaky-2-hop cause). Extend it
+ * with the same per-hop headroom as the session timeout on multi-hop builds.
+ * #undef first: edhoc-config.h may set the default (12) earlier in some units'
+ * include order, so a bare #define would trip -Werror=redefined. */
+#undef  EDHOC_CONF_HS_DEADLINE_SEC
+#define EDHOC_CONF_HS_DEADLINE_SEC 150   /* generous: a clean 3-hop c5t handshake
+   * already takes ~55 s (3 EDHOC messages x block-wise CoAP x 3-hop TSCH slotframe
+   * forwarding), so keep well clear of the no-progress deadline. */
 #else
 #define EDHOC_CONF_TIMEOUT 10000  /* E0: was 100000 */
 #endif

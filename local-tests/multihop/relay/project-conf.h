@@ -30,6 +30,12 @@
  * hop. DOUBLINGS=2 -> DIO max ~4.096 s x 2^2 = ~16 s. */
 #define RPL_CONF_DIO_INTERVAL_DOUBLINGS 2
 
+/* THE multi-hop fix: tolerate the emulator's spurious one-slotframe ASN-drift
+ * detection so a relay whose time source is another relay (>=2 hops from the
+ * coordinator) stays associated instead of being evicted every slotframe. Without
+ * this the emulated network silently caps at a single hop. See tsch-conf.h. */
+#define TSCH_CONF_LEAVE_ON_ASN_DRIFT 0
+
 #define LOG_CONF_LEVEL_MAC LOG_LEVEL_WARN
 
 #endif /* PROJECT_CONF_H_ */

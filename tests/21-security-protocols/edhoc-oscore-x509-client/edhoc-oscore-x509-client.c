@@ -169,6 +169,20 @@ PROCESS_THREAD(edhoc_oscore_x509_client, ev, data)
     etimer_reset(&timer);
   }
 
+  /* Multi-hop settle (build-time; default 0 = no delay for single-hop configs).
+   * node_is_reachable() goes true as soon as an UPWARD default route exists, but
+   * the RPL DOWNWARD route (for MSG_2) and per-hop TSCH slots are not yet settled,
+   * so a MSG_1 sent immediately is forwarded into a black hole. Wait first.
+   * Mirrors the c5t multi-hop client. */
+#ifndef MULTIHOP_CONNECT_DELAY_S
+#define MULTIHOP_CONNECT_DELAY_S 0
+#endif
+#if MULTIHOP_CONNECT_DELAY_S > 0
+  LOG_INFO("Multi-hop connect delay %d s...\n", MULTIHOP_CONNECT_DELAY_S);
+  etimer_set(&timer, CLOCK_SECOND * MULTIHOP_CONNECT_DELAY_S);
+  PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
+#endif
+
   /* Set up X.509 x5chain credentials.
    * Own key (initiator): attach cert — it will be sent inline in MSG_3.
    * Peer key (responder): register minimal entry with no cert — the server's

@@ -70,6 +70,28 @@
  * Reduce to ~30 s if tighter failure detection is needed on production HW. */
 #define EDHOC_CONF_TIMEOUT 100000
 
+/* --- Multi-hop over TSCH (build with MULTIHOP_CONNECT_DELAY_S>0). Mirrors the
+ * c5t multi-hop client; see its project-conf and tsch-conf.h for the rationale. */
+#if defined(MULTIHOP_CONNECT_DELAY_S) && (MULTIHOP_CONNECT_DELAY_S > 0)
+/* Session watchdog: raise above the 150 s no-progress deadline so the deadline is
+ * the effective limit (x5chain 3-hop can run long). */
+#undef  EDHOC_CONF_TIMEOUT
+#define EDHOC_CONF_TIMEOUT 200000
+/* Tolerate the emulator's spurious one-slotframe ASN-drift detection so a node
+ * whose TSCH time source is a relay (>=2 hops from the coordinator) stays
+ * associated instead of being evicted every slotframe. Single-hop syncs to the
+ * coordinator and never drifts, so this is a no-op there. */
+#define TSCH_CONF_LEAVE_ON_ASN_DRIFT 0
+/* No-progress handshake deadline (edhoc-config.h default 12 s) is SEPARATE from
+ * EDHOC_CONF_TIMEOUT and preempts mid-round-trip over multi-hop — even worse for
+ * x5chain, whose 384 B inline cert fragments into many block-wise CoAP transfers.
+ * #undef first (edhoc-config.h may have set the default earlier -> -Werror). */
+#undef  EDHOC_CONF_HS_DEADLINE_SEC
+#define EDHOC_CONF_HS_DEADLINE_SEC 150   /* generous: x5chain's 384 B inline cert
+   * fragments into many block-wise CoAP transfers, so a 3-hop handshake needs a
+   * long no-progress budget (55 s was too tight and preempted it). */
+#endif
+
 #define LOG_CONF_LEVEL_EDHOC LOG_LEVEL_INFO
 
 #endif /* PROJECT_CONF_H_ */

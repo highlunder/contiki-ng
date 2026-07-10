@@ -71,6 +71,23 @@
 #define TSCH_DESYNC_THRESHOLD (2 * TSCH_MAX_KEEPALIVE_TIMEOUT)
 #endif
 
+/* Leave the network when our ASN disagrees with our time source's ASN (as
+ * carried in its EB). Default 1 (strict, per 6TiSCH). Set to 0 to only warn:
+ * under the cooja-ng-ge cycle-accurate emulator, a node whose time source is a
+ * non-coordinator relay (i.e. >=2 hops from the coordinator) reports a spurious,
+ * constant one-slotframe ASN drift on every EB from its time source, even though
+ * it is in fact correctly slot-aligned and communicating (channel hopping lines
+ * up and handshakes complete). The strict check then evicts it every slotframe,
+ * so it never stays associated long enough for the next hop to join — which
+ * silently caps the emulated network at a single hop. The drift is in the
+ * DETECTION (rx_asn vs the EB's ie_asn timestamp), not the node's real ASN, so
+ * tolerating it is safe here. Keep 1 on real hardware. */
+#ifdef TSCH_CONF_LEAVE_ON_ASN_DRIFT
+#define TSCH_LEAVE_ON_ASN_DRIFT TSCH_CONF_LEAVE_ON_ASN_DRIFT
+#else
+#define TSCH_LEAVE_ON_ASN_DRIFT 1
+#endif
+
 /* The default period between two consecutive EBs (not taking into account any randomization).
  * When TSCH_CONF_EB_PERIOD is set to 0, sending EBs is disabled completely; the EB process is not started.
  * Otherwise, if RPL is used, TSCH_CONF_EB_PERIOD used only before joining the RPL network;
