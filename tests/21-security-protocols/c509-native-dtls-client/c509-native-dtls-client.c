@@ -34,7 +34,9 @@
 #define LOG_MODULE "C509-Nat-Cl"
 #define LOG_LEVEL  LOG_LEVEL_INFO
 
-#define CONNECT_DELAY_S    15
+#ifndef CONNECT_DELAY_S
+#define CONNECT_DELAY_S    15   /* multi-hop builds override to ~30 (Makefile MULTIHOP=1) */
+#endif
 #define HANDSHAKE_TIMEOUT_S 120
 
 /*---------------------------------------------------------------------------*/

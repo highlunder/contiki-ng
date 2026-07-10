@@ -399,6 +399,18 @@ PROCESS_THREAD(edhoc_oscore_crts_client, ev, data)
     etimer_reset(&timer);
   }
 
+  /* Multi-hop settle (build-time; default 0 = no delay for single-hop). Lets the RPL
+   * downward route (for the responses) and per-hop TSCH slots settle before the
+   * EDHOC handshake + /crts + /sen. Mirrors the c5t handshake client. */
+#ifndef MULTIHOP_CONNECT_DELAY_S
+#define MULTIHOP_CONNECT_DELAY_S 0
+#endif
+#if MULTIHOP_CONNECT_DELAY_S > 0
+  LOG_INFO("Multi-hop connect delay %d s...\n", MULTIHOP_CONNECT_DELAY_S);
+  etimer_set(&timer, CLOCK_SECOND * MULTIHOP_CONNECT_DELAY_S);
+  PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
+#endif
+
   edhoc_error_t result = edhoc_create_key_list();
   if(result != EDHOC_SUCCESS) {
     LOG_ERR("edhoc_create_key_list: %d\n", result);

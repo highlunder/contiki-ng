@@ -44,4 +44,16 @@
 #define EDHOC_CONF_TIMEOUT 10000
 #define LOG_CONF_LEVEL_EDHOC LOG_LEVEL_INFO
 
+/* Multi-hop over TSCH (built with MULTIHOP_CONNECT_DELAY_S>0): tolerate the
+ * emulator's spurious one-slotframe ASN-drift eviction so a relay-sourced node stays
+ * associated (see tsch-conf.h), and give the EDHOC handshake's no-progress deadline
+ * per-hop headroom. Single-hop syncs to the coordinator -> no-op. */
+#if defined(MULTIHOP) && MULTIHOP
+#define TSCH_CONF_LEAVE_ON_ASN_DRIFT 0
+#undef  EDHOC_CONF_TIMEOUT
+#define EDHOC_CONF_TIMEOUT 60000
+#undef  EDHOC_CONF_HS_DEADLINE_SEC
+#define EDHOC_CONF_HS_DEADLINE_SEC 150
+#endif
+
 #endif /* PROJECT_CONF_H_ */

@@ -34,4 +34,10 @@
 #define RPL_MRHOF_CONF_MAX_LINK_METRIC 16384
 #define RPL_MRHOF_CONF_MAX_PATH_COST   32768
 
+/* Multi-hop: tolerate the emulator's spurious one-slotframe ASN-drift detection so a
+ * relay-sourced node stays associated (see tsch-conf.h). Single-hop -> no-op. */
+#if defined(MULTIHOP) && MULTIHOP
+#define TSCH_CONF_LEAVE_ON_ASN_DRIFT 0
+#endif
+
 #endif /* PROJECT_CONF_H_ */

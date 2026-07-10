@@ -28,7 +28,17 @@ CFLAGS += -DuECC_SQUARE_FUNC=1
 # -> handle_retry) preempts it WITHIN the run budget, instead of the CoAP CON
 # retransmitting for ~245 s (COAP_RESPONSE_TIMEOUT 15 * exp) and outlasting it.
 # (Only the EDHOC handshake uses CoAP here; /crts+/sen use their own UDP retransmit.)
-CFLAGS += -DCOAP_RESPONSE_TIMEOUT=3
+# Multi-hop (build with MULTIHOP_CONNECT_DELAY_S>0): settle delay + relaxed TSCH
+# ASN-drift eviction (project-conf) + longer CoAP CON timeout for the EDHOC handshake
+# (the >15 s multi-hop MSG round trip outlasts a 3 s CON, causing premature restarts).
+# Single-hop keeps the tight restart-on-failure 3 s. /crts+/sen use their own UDP
+# retransmit (ENROLL_MAX_RETX) regardless.
+ifdef MULTIHOP_CONNECT_DELAY_S
+  CFLAGS += -DMULTIHOP_CONNECT_DELAY_S=$(MULTIHOP_CONNECT_DELAY_S) -DMULTIHOP=1
+  CFLAGS += -DCOAP_RESPONSE_TIMEOUT=25
+else
+  CFLAGS += -DCOAP_RESPONSE_TIMEOUT=3
+endif
 CFLAGS += -DCOAP_MAX_RETRANSMIT=2
 
 # restart-on-failure Phase 2: give the EDHOC handshake more attempts under lossy

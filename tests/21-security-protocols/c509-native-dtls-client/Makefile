@@ -17,4 +17,10 @@ MODULES += os/lib
 CFLAGS += -I$(CONTIKI)/os/net/security/edhoc
 CFLAGS += -DCOOJA_MTARCH_STACKSIZE=65536
 
+# Multi-hop (build with MULTIHOP=1): longer settle before the handshake + relaxed
+# TSCH ASN-drift eviction (see tsch-conf.h). Single-hop unaffected.
+ifdef MULTIHOP
+  CFLAGS += -DCONNECT_DELAY_S=30 -DMULTIHOP=1
+endif
+
 include $(CONTIKI)/Makefile.include
