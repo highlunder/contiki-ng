@@ -45,6 +45,20 @@
 #include "edhoc-cred-c509.h"
 #include "edhoc-trust-store.h"
 #include "oscore.h"
+#ifdef ENROLL_X509
+/* X.509-DER enrollment trial (build ENROLL_X509=1): the /crts CA chain and /sen
+ * issued cert are returned as full X.509 DER (~380 B each) instead of the compact
+ * C509 forms (~135/144 B), to measure the X.509-sized enrollment flights over
+ * multi-hop. Reuses the X.509 DER equivalents of the C509 native test certs; the
+ * C509 CA issuance + PoP verification still run (only the wire format changes).
+ * The fully-dynamic wrapper (x509_encode_full_cert from the issued C509 cert) is
+ * feasible but needs the c509/os-lib cbor.o collision resolved — see
+ * X509-ENROLL-WRAPPING.md. */
+#include "edhoc-cred-x509-native-test.h"
+#define RESP_PAYLOAD_SZ 640
+#else
+#define RESP_PAYLOAD_SZ 256
+#endif
 #include "c509-chain.h"
 #include "c509-csr-parse.h"
 #include "c509-ca.h"
@@ -86,7 +100,11 @@ static const uint8_t issued_serial[] = { 0x05 };
  * for a multi-client CA. */
 static uint8_t g_last_csr[256];
 static size_t  g_last_csr_len = 0;
+#ifdef ENROLL_X509
+static uint8_t g_last_cert[640];   /* X.509 DER issued cert is ~390 B */
+#else
 static uint8_t g_last_cert[256];
+#endif
 static size_t  g_last_cert_len = 0;
 
 static struct simple_udp_connection oscore_udp;
@@ -147,10 +165,17 @@ oscore_request_callback(struct simple_udp_connection *c,
   LOG_INFO("OSCORE request OK: code=0x%02x, payload=%zu bytes\n", code, req_payload_len);
 
   uint8_t resp_code;
-  static uint8_t resp_payload[256];
+  static uint8_t resp_payload[RESP_PAYLOAD_SZ];
   size_t resp_payload_len = 0;
 
   if(code == COAP_CODE_GET) {
+#ifdef ENROLL_X509
+    /* /crts: return the X.509 DER CA certificate (bare, ~380 B). */
+    memcpy(resp_payload, x509_native_ca_cert, sizeof(x509_native_ca_cert));
+    resp_payload_len = sizeof(x509_native_ca_cert);
+    resp_code = COAP_CODE_CONTENT;
+    LOG_INFO("/crts: returning X.509 DER CA cert (%zu bytes)\n", resp_payload_len);
+#else
     /* /crts: respond with the CertificateChain [c509_native_ca_cert]. */
     c509_chain_entry_t chain_entries[1];
     chain_entries[0].ptr = c509_native_ca_cert;
@@ -164,6 +189,7 @@ oscore_request_callback(struct simple_udp_connection *c,
     }
     resp_code = COAP_CODE_CONTENT;
     LOG_INFO("/crts: returning CertificateChain (%zu bytes)\n", resp_payload_len);
+#endif
   } else if(code == COAP_CODE_POST) {
     /* /sen (Phase 3.2): req_payload is a C509 Type-3 CSR. Verify its PoP
      * self-signature, then issue a new Type-2 cert for the CSR's
@@ -207,6 +233,13 @@ oscore_request_callback(struct simple_udp_connection *c,
       } else {
         resp_code = COAP_CODE_CREATED;
         LOG_INFO("/sen: issued %zu-byte Type-2 cert for CSR subject\n", resp_payload_len);
+#ifdef ENROLL_X509
+        /* Return the issued cert in X.509 DER form (~390 B). The C509 issuance +
+         * PoP above still ran; only the returned wire format changes. */
+        memcpy(resp_payload, x509_native_client_cert, sizeof(x509_native_client_cert));
+        resp_payload_len = sizeof(x509_native_client_cert);
+        LOG_INFO("/sen: returning X.509 DER cert (%zu bytes)\n", resp_payload_len);
+#endif
         /* Cache (CSR -> cert) so a retransmit is idempotent. */
         if(req_payload_len <= sizeof(g_last_csr) &&
            resp_payload_len <= sizeof(g_last_cert)) {

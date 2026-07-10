@@ -105,6 +105,27 @@ Not a "simple handshake": the client runs the EDHOC handshake, then an OSCORE GE
    self-collision floor (§B) — the recovery is partly compensating for that schedule
    artifact; on CSMA the enrollment would complete faster and with less recovery.
 
+### C.1 X.509 vs C509 enrollment (the wire-size effect on enrollment)
+
+An **X.509 enrollment wrapper** (`ENROLL_X509=1`, see X509-ENROLL-WRAPPING.md) returns the
+`/crts` CA chain and `/sen` issued cert as full X.509 DER (**339 B / 364 B**) instead of the
+compact C509 forms (135 B / 144 B) — the C509 CA issuance + PoP still run, only the wire
+format of the two downlink flights changes. `emul-enroll-x509-{1,2}hop-tsch.json`, 3 seeds.
+
+| enrollment | 1 hop | 2 hops |
+|------------|-------|--------|
+| **C509** (135/144 B flights)  | 3/3, 2.8 s | **3/3** (recovery, ~30–250 s) |
+| **X.509** (339/364 B flights) | 3/3, 2.9 s | **0/3** (the 339 B `/crts` flight never delivers) |
+
+**Finding — the credential-size effect carries over to the enrollment workload, and harder.**
+At one hop both complete in ~2.8–2.9 s (the bigger flight is a single reassembly, fine). At two
+hops the compact C509 enrollment completes 3/3 (via recovery), but the **X.509 enrollment fails
+3/3**: the 339 B CA-chain flight times out through all five restart-on-failure retransmits and
+never reassembles across the two hops. This is the enrollment analogue of the `x5chain` vs `c5t`
+handshake result (§ MULTIHOP-M1), and it is *sharper* because enrollment moves two big downlink
+flights, not one — so even the recovery that rescues C509 enrollment cannot rescue X.509. (Same
+minimal-schedule caveat as §B: CSMA / a dedicated-slot schedule would likely deliver it, slower.)
+
 ## D. Orchestra (dedicated-slot TSCH) — attempted, NEGATIVE
 
 To test whether the §B reliability failures are specifically the 6TiSCH *minimal*

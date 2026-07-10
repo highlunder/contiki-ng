@@ -73,5 +73,21 @@ on the enrollment path directly. On CSMA it should complete but slower (per §B)
   parsing. Recommended first step.
 - Full-faithful (PKCS#10 uplink + mbedTLS parse): ~small additional, reusing mbedTLS.
 
-_Status: investigation only; not implemented. Machinery verified present
-(`x509_encode_full_cert` in `mbedtls-support.c`, `x509_encode_csr` in `x509_encode.h`)._
+## Implemented (minimal-gap) + result
+The **minimal-gap** version is implemented and run (`ENROLL_X509=1`). Rather than dynamically
+reconstructing (which needs the c509/os-lib `cbor.o` collision resolved), the server returns the
+X.509 DER equivalents of the C509 native test certs (`edhoc-cred-x509-native-test.h`: 339 B CA
+cert on `/crts`, 364 B issued cert on `/sen`) — the C509 CA issuance + PoP verification still run,
+only the two downlink flights' wire format changes. The client validates full DER-SEQUENCE
+completeness (whole flight reassembled). Files: `edhoc-oscore-crts-{server,client}` (`ENROLL_X509`
+gates + larger buffers), configs `emul-enroll-x509-{1,2}hop-tsch.json`.
+
+Result (MULTIHOP-DTLS-CSMA-ENROLL-RESULTS.md §C.1): **1-hop 3/3 @2.9 s; 2-hop 0/3** — the 339 B
+`/crts` flight never reassembles over two hops, whereas the compact C509 enrollment completes 3/3.
+The enrollment analogue of the `x5chain`-handshake result, and sharper (two big flights).
+
+The remaining step to the *fully-faithful, dynamic* wrapper (issue → `x509_encode_full_cert`;
+client PKCS#10 via `x509_encode_csr` + server `mbedtls_x509_csr_parse_der`) is the c509/os-lib
+`cbor.o` collision resolution — the only real work, and orthogonal to the multi-hop result above.
+
+_Status: minimal-gap implemented + run; fully-dynamic wrapper deferred on the cbor.o collision._

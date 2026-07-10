@@ -24,4 +24,11 @@ CFLAGS += -I$(CONTIKI)/os/services/c509
 CFLAGS += -DuECC_OPTIMIZATION_LEVEL=4
 CFLAGS += -DuECC_SQUARE_FUNC=1
 
+# X.509-DER enrollment trial (build ENROLL_X509=1): /crts + /sen return full X.509
+# DER certs (~380 B) instead of the compact C509 forms, to measure the X.509-sized
+# enrollment flights over multi-hop. See the .c and X509-ENROLL-WRAPPING.md.
+ifdef ENROLL_X509
+  CFLAGS += -DENROLL_X509=1
+endif
+
 include $(CONTIKI)/Makefile.include

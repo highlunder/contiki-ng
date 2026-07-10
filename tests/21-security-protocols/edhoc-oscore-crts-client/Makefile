@@ -45,4 +45,11 @@ CFLAGS += -DCOAP_MAX_RETRANSMIT=2
 # links (default 2), with exponential inter-attempt backoff (edhoc-config.h).
 CFLAGS += -DEDHOC_CONF_ATTEMPTS=5
 
+# X.509-DER enrollment trial (build ENROLL_X509=1): validate the /crts + /sen
+# responses as full X.509 DER certs (~380 B) rather than compact C509, to measure
+# the X.509-sized enrollment flights over multi-hop. See X509-ENROLL-WRAPPING.md.
+ifdef ENROLL_X509
+  CFLAGS += -DENROLL_X509=1
+endif
+
 include $(CONTIKI)/Makefile.include
