@@ -31,4 +31,21 @@
 int c509_to_x509_der(const uint8_t *c509, size_t c509_len,
                      uint8_t *out, size_t out_size, size_t *out_len);
 
+/**
+ * @brief Convert a C509 Type-3 CSR to a PKCS#10 DER CertificationRequest.
+ *
+ * Thin cbor-free wrapper around x509_encode_csr(); keeps the c509/cbor headers
+ * out of the caller's translation unit (same rationale as c509_to_x509_der).
+ * Safe when @p out aliases @p c509 (input copied internally first).
+ *
+ * @param c509      C509 Type-3 CSR bytes (flat sequence or CBOR array).
+ * @param c509_len  length of @p c509.
+ * @param out       output buffer for the PKCS#10 DER CertificationRequest.
+ * @param out_size  capacity of @p out.
+ * @param out_len   [out] number of DER bytes written on success.
+ * @return 0 on success, <0 on error.
+ */
+int c509_csr_to_pkcs10_der(const uint8_t *c509, size_t c509_len,
+                           uint8_t *out, size_t out_size, size_t *out_len);
+
 #endif /* C509_X509_WRAP_H_ */

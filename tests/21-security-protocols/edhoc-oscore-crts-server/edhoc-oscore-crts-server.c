@@ -72,6 +72,8 @@
 #else
 /* cbor-free wrapper: keeps the c509/os-lib cbor.h collision out of this TU. */
 #include "c509-x509-wrap.h"
+/* minimal PKCS#10 DER parser for the fully-faithful X.509 uplink CSR. */
+#include "x509-csr-parse.h"
 #endif
 #define RESP_PAYLOAD_SZ 640
 #else
@@ -233,10 +235,33 @@ oscore_request_callback(struct simple_udp_connection *c,
       LOG_INFO("/sen: idempotent replay — returning cached %zu-byte cert\n",
                resp_payload_len);
     } else {
+      /* Parse + PoP-verify the CSR, producing the (subject, publicKey) the CA
+       * issues against. The uplink CSR format depends on the build:
+       *  - ENROLL_X509_DYN: a PKCS#10 DER CertificationRequest (fully-faithful
+       *    X.509 enrollment) — parsed by the minimal secp256r1 PKCS#10 parser,
+       *    the inverse of x509_encode_csr; PoP is over the CertificationRequestInfo.
+       *  - default: a compact C509 Type-3 CSR; PoP is over its flat TBS prefix. */
+      const uint8_t *subject = NULL, *pk_key = NULL;
+      size_t subject_len = 0, pk_key_len = 0;
+      int64_t issue_pk_alg = C509_PK_SECP256R1;
+      int csr_ok = 0;
+#if defined(ENROLL_X509_DYN)
+      const uint8_t *cri_ptr; size_t cri_len; uint8_t sig_rs[64];
+      if(x509_csr_parse(req_payload, req_payload_len,
+                        &subject, &subject_len, &pk_key, &pk_key_len,
+                        &cri_ptr, &cri_len, sig_rs) != 0) {
+        LOG_ERR("/sen: PKCS#10 CSR parse failed or unsupported shape\n");
+      } else if(c509_csr_verify_pop(cri_ptr, cri_len, pk_key, pk_key_len, sig_rs, 64) != 0) {
+        LOG_ERR("/sen: PKCS#10 CSR proof-of-possession verification failed\n");
+      } else {
+        LOG_INFO("/sen: parsed %zu-byte PKCS#10 CSR (CN %.*s), PoP OK\n",
+                 req_payload_len, (int)subject_len, (const char *)subject);
+        csr_ok = 1;
+      }
+#else
       int64_t csr_type, csr_sig_alg, csr_pk_alg;
-      const uint8_t *subject, *pk_key, *sig;
-      size_t subject_len, pk_key_len, tbs_len, sig_len;
-
+      const uint8_t *sig;
+      size_t tbs_len, sig_len;
       if(c509_csr_parse(req_payload, req_payload_len,
                          &csr_type, &csr_sig_alg,
                          &subject, &subject_len,
@@ -245,16 +270,21 @@ oscore_request_callback(struct simple_udp_connection *c,
          csr_type != 3 || csr_sig_alg != C509_SIG_ECDSA_SHA256 ||
          csr_pk_alg != C509_PK_SECP256R1) {
         LOG_ERR("/sen: CSR parse failed or unsupported algorithm\n");
-        resp_code = COAP_CODE_BAD_REQUEST;
       } else if(c509_csr_verify_pop(req_payload, tbs_len, pk_key, pk_key_len, sig, sig_len) != 0) {
         LOG_ERR("/sen: CSR proof-of-possession verification failed\n");
+      } else {
+        issue_pk_alg = csr_pk_alg;
+        csr_ok = 1;
+      }
+#endif
+      if(!csr_ok) {
         resp_code = COAP_CODE_BAD_REQUEST;
       } else if(c509_ca_issue_cert(resp_payload, sizeof(resp_payload), &resp_payload_len,
                                     issued_serial, sizeof(issued_serial),
                                     ca_issuer_name, sizeof(ca_issuer_name) - 1,
                                     ISSUED_NOT_BEFORE, ISSUED_NOT_AFTER,
                                     subject, subject_len,
-                                    csr_pk_alg, pk_key, pk_key_len,
+                                    issue_pk_alg, pk_key, pk_key_len,
                                     ca_priv_key_d, sizeof(ca_priv_key_d)) != 0) {
         LOG_ERR("/sen: c509_ca_issue_cert failed\n");
         resp_code = COAP_CODE_BAD_REQUEST;

@@ -40,11 +40,12 @@ ifdef ENROLL_X509_DYN
   CFLAGS += -DC509_X509_ENCODE_UECC=1
   vpath c509-x509-wrap.c $(CONTIKI)/os/services/c509
   vpath x509_encode.c $(CONTIKI)/os/services/c509
+  vpath x509-csr-parse.c $(CONTIKI)/os/services/c509
   vpath c509.c        $(CONTIKI)/os/services/c509
   vpath c509-cbor.c   $(CONTIKI)/os/services/c509
   vpath der.c         $(CONTIKI)/os/services/c509
   vpath validity.c    $(CONTIKI)/os/services/c509
-  CONTIKI_SOURCEFILES += c509-x509-wrap.c x509_encode.c c509.c c509-cbor.c der.c validity.c
+  CONTIKI_SOURCEFILES += c509-x509-wrap.c x509_encode.c x509-csr-parse.c c509.c c509-cbor.c der.c validity.c
   CFLAGS += -I$(CONTIKI)/os/net/security/micro-ecc
 endif
 

@@ -52,4 +52,22 @@ ifdef ENROLL_X509
   CFLAGS += -DENROLL_X509=1
 endif
 
+# ENROLL_X509_DYN=1: fully-faithful X.509 uplink — POST a real PKCS#10 DER CSR on
+# /sen (via c509_csr_to_pkcs10_der -> x509_encode_csr) instead of the compact C509
+# Type-3 CSR. Pulls the c509 encoder (cbor-collision-free through the wrapper) and
+# selects x509_encode's micro-ecc point-decompression backend.
+ifdef ENROLL_X509_DYN
+  CFLAGS += -DENROLL_X509_DYN=1
+  CFLAGS += -DC509_X509_ENCODE_UECC=1
+  vpath c509-x509-wrap.c $(CONTIKI)/os/services/c509
+  vpath x509_encode.c $(CONTIKI)/os/services/c509
+  vpath x509-csr-parse.c $(CONTIKI)/os/services/c509
+  vpath c509.c        $(CONTIKI)/os/services/c509
+  vpath c509-cbor.c   $(CONTIKI)/os/services/c509
+  vpath der.c         $(CONTIKI)/os/services/c509
+  vpath validity.c    $(CONTIKI)/os/services/c509
+  CONTIKI_SOURCEFILES += c509-x509-wrap.c x509_encode.c x509-csr-parse.c c509.c c509-cbor.c der.c validity.c
+  CFLAGS += -I$(CONTIKI)/os/net/security/micro-ecc
+endif
+
 include $(CONTIKI)/Makefile.include

@@ -129,9 +129,42 @@ the failure is structural (X.509-sized flight over the minimal multi-hop schedul
 whether the DER is static or reconstructed.
 
 _Status: fully-dynamic downlink wrapper implemented + run (1-hop PASS, 2-hop FAIL, matching the
-static arm). Remaining full-faithfulness item (out of scope of this result): a PKCS#10 **uplink**
-CSR (client `x509_encode_csr` + server `mbedtls_x509_csr_parse_der`); the two downlinks — the
-multi-hop-relevant reassembled flights — are now fully dynamic._
+static arm)._
+
+## Implemented (PKCS#10 uplink — fully faithful) + result
+
+The final full-faithfulness item is now done: the `/sen` **uplink** carries a genuine PKCS#10
+DER CertificationRequest, so **all three enrollment flights are X.509-sized** and the whole
+round-trip is on-device with **no static blobs and no mbedTLS in the enroll link** (uECC only).
+
+Client (`ENROLL_X509_DYN`): a straight transcode won't do — `x509_encode_csr()` copies the C509
+CSR's sigValue verbatim, but that signature is over the *C509 TBS*, not the PKCS#10
+CertificationRequestInfo (CRI), so it wouldn't verify. So the client signs a **two-pass**: build
+the C509 CSR (placeholder sig) → transcode to get the exact CRI bytes → `x509_csr_sign_msg()`
+signs those CRI bytes → inject the r||s into the C509 CSR's sigValue → transcode again. The CRI is
+invariant to sigValue, so the second transcode's signature covers exactly the CRI the server
+hashes. New client helper `x509_csr_sign_msg()` (in c509-csr-build.c, signs arbitrary bytes;
+`x509_csr_sign()` refactored onto it) + the cbor-free `c509_csr_to_pkcs10_der()` shim.
+
+Server (`ENROLL_X509_DYN`): new self-contained `x509-csr-parse.{c,h}` — a minimal secp256r1
+PKCS#10 DER parser (the inverse of `x509_encode_csr`; no ASN.1 library, no mbedTLS, no cbor.h, so
+no `cbor_major_type_t` collision). It extracts the CN, the 65-byte uncompressed public key, the
+CRI (signed bytes) and the r||s signature, which feed the existing `c509_csr_verify_pop()` +
+`c509_ca_issue_cert()` unchanged. The `/sen` handler branches: PKCS#10 parse under
+`ENROLL_X509_DYN`, C509 parse otherwise.
+
+Result (cooja-ng-ge seed 1, 1-hop TSCH, sw uECC): **PASS @18.3 s**. Client emits a 213 B
+self-signed PKCS#10 CSR (from the 150 B C509 CSR); server logs `parsed 213-byte PKCS#10 CSR
+(CN edhoc-client), PoP OK`, issues the 144 B Type-2 cert, reconstructs it to 288 B X.509 DER;
+client receives it complete. (The 213 B CSR reflects the minimal single-CN / empty-attributes
+profile these test certs use; a full-attribute PKCS#10 would be the ~408 B of the §8 size table.)
+Config `emul-enroll-x509-pkcs10-1hop-tsch.json`, firmware
+`fw/enroll-x509-pkcs10-{server,client}.nrf`.
+
+_Status: X.509 enrollment now fully faithful on all three flights (PKCS#10 uplink + runtime DER
+downlinks), 1-hop PASS. The 2-hop reassembly-failure characterisation is already established by
+the downlink arm above; the uplink change does not affect it (the downlinks remain the dominant
+reassembled flights)._
 
 ### The earlier deferral (now closed)
 The remaining step to the *fully-faithful, dynamic* wrapper (issue → `x509_encode_full_cert`;

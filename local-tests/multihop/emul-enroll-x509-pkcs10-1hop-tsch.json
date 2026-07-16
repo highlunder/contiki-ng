@@ -1,0 +1,37 @@
+{
+  "title": "Fully-faithful X.509 enrollment over 1-hop TSCH (PKCS#10 uplink + runtime DER downlinks)",
+  "timeout_ms": 400000,
+  "seed": 1,
+  "startup_delay_ms": 1000,
+  "radiomedium": {
+    "type": "udgm",
+    "tx_range": 55.0,
+    "interference_range": 110.0,
+    "success_ratio_tx": 1.0,
+    "success_ratio_rx": 1.0
+  },
+  "nodes": [
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/fw/enroll-x509-pkcs10-server.nrf",
+      "id": 1,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/fw/enroll-x509-pkcs10-client.nrf",
+      "id": 2,
+      "x": 50.0,
+      "y": 0.0
+    }
+  ],
+  "test": {
+    "description": "All three enrollment flights are X.509-sized. Client (node2) POSTs a real PKCS#10 DER CertificationRequest on /sen (c509_csr_to_pkcs10_der -> x509_encode_csr); server (node1, CA/root/coordinator) parses it with the minimal secp256r1 PKCS#10 parser (x509_csr_parse), verifies the PoP over the CertificationRequestInfo, issues a C509 Type-2 cert, and returns both /crts and /sen as runtime-reconstructed X.509 DER. Proves the full X.509 enrollment round-trip on-device (no static blobs, no mbedTLS in the enroll link).",
+    "validators": [
+      {
+        "pattern": "enroll end-to-end test: TEST PASSED",
+        "node": 2,
+        "min_count": 1
+      }
+    ]
+  }
+}

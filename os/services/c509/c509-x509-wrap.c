@@ -37,3 +37,24 @@ c509_to_x509_der(const uint8_t *c509, size_t c509_len,
   }
   return 0;
 }
+
+int
+c509_csr_to_pkcs10_der(const uint8_t *c509, size_t c509_len,
+                       uint8_t *out, size_t out_size, size_t *out_len)
+{
+  uint8_t tmp[C509_WRAP_TMP_SZ];
+
+  if(c509 == NULL || out == NULL || out_len == NULL) {
+    return -1;
+  }
+  if(c509_len == 0 || c509_len > sizeof(tmp)) {
+    return -2;
+  }
+  memcpy(tmp, c509, c509_len);
+
+  *out_len = 0;
+  if(x509_encode_csr(out, out_size, out_len, tmp, c509_len) != 0) {
+    return -3;
+  }
+  return 0;
+}

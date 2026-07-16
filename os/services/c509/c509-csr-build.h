@@ -111,4 +111,23 @@ int x509_encode_csr_build(uint8_t *buffer, size_t size, size_t *offset,
 int x509_csr_sign(uint8_t *buffer, size_t tbs_len, size_t total_len,
                   const uint8_t *priv_key, size_t priv_key_len);
 
+/**
+ * \brief Deterministic-ECDSA-signs an arbitrary message, returning raw r||s.
+ *
+ * Computes SHA-256 over \p msg and signs it with uECC_sign_deterministic()
+ * (RFC 6979, secp256r1). Unlike x509_csr_sign() (which signs a CSR's own TBS
+ * in place), this signs external bytes — used to sign a reconstructed PKCS#10
+ * CertificationRequestInfo so the resulting DER CSR is genuinely self-signed.
+ *
+ * \param msg          Message bytes to sign.
+ * \param msg_len      Length of \p msg.
+ * \param priv_key     Private key scalar `d`, big-endian (32 bytes).
+ * \param priv_key_len Length of \p priv_key (must be 32).
+ * \param sig_out      Out: 64-byte buffer receiving `r||s`.
+ * \return 0 on success, -1 on error.
+ */
+int x509_csr_sign_msg(const uint8_t *msg, size_t msg_len,
+                      const uint8_t *priv_key, size_t priv_key_len,
+                      uint8_t *sig_out);
+
 #endif /* C509_CSR_BUILD_H */

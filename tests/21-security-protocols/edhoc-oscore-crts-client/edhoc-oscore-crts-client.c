@@ -43,6 +43,20 @@
 #include "c509_registry.h"
 #include "c509-csr-build.h"
 #include "c509-csr-parse.h"
+/* ENROLL_X509_DYN implies ENROLL_X509 (same enlarged buffers + X.509 downlink
+ * validation) but additionally POSTs a real PKCS#10 DER CSR on /sen instead of
+ * the compact C509 Type-3 CSR — the fully-faithful X.509 enrollment uplink. */
+#ifdef ENROLL_X509_DYN
+#ifndef ENROLL_X509
+#define ENROLL_X509 1
+#endif
+/* cbor-free shim exposing c509_csr_to_pkcs10_der() — keeps the c509/os-lib
+ * cbor.h collision out of this TU (same rationale as the crts server). */
+#include "c509-x509-wrap.h"
+/* minimal PKCS#10 parser — used to locate the reconstructed CertificationRequestInfo
+ * so the client can sign exactly those bytes (a genuine PKCS#10 self-signature). */
+#include "x509-csr-parse.h"
+#endif
 
 #include "sys/log.h"
 #define LOG_MODULE "OscoreCrts-Cl"
@@ -107,7 +121,11 @@ static cose_key_t client_key;
 #ifndef ENROLL_RETX_T0
 #define ENROLL_RETX_T0 (2 * CLOCK_SECOND)
 #endif
+#ifdef ENROLL_X509_DYN
+static uint8_t g_csr[512];   /* PKCS#10 DER CSR (~380 B) needs more than 256 */
+#else
 static uint8_t g_csr[256];
+#endif
 static size_t  g_csr_len = 0;
 static volatile bool g_advanced = false;      /* callback advanced the FSM */
 static volatile bool g_enroll_done = false;
@@ -398,14 +416,67 @@ send_oscore_post_request(const uip_ipaddr_t *server_addr,
 static size_t
 build_and_sign_csr(const cose_key_t *key, uint8_t *csr_buf, size_t csr_buf_size)
 {
-  size_t offset = 0, tbs_len = 0;
+  size_t tbs_len = 0;
   uint8_t pk_key[65];
   static const uint8_t subject[] = "edhoc-client";
-
   pk_key[0] = 0x04;
   memcpy(pk_key + 1, key->ecc.pub.x, 32);
   memcpy(pk_key + 33, key->ecc.pub.y, 32);
 
+#ifdef ENROLL_X509_DYN
+  /* Fully-faithful X.509 uplink: emit a genuinely self-signed PKCS#10 DER CSR.
+   *
+   * x509_encode_csr() only transcodes a C509 CSR's fields to DER, copying its
+   * sigValue verbatim — but a C509 CSR is signed over its *C509 TBS*, which is
+   * not the PKCS#10 CertificationRequestInfo (CRI) bytes, so a straight copy
+   * would not verify. So: (1) build the C509 CSR (placeholder sig) and transcode
+   * it to obtain the exact CRI bytes; (2) sign those CRI bytes; (3) inject the
+   * signature into the C509 CSR's sigValue and transcode again. The CRI does not
+   * depend on sigValue, so the second transcode's signature covers the same CRI
+   * the server will hash. */
+  {
+    uint8_t c509_csr[256];
+    uint8_t pkcs10_tmp[512];
+    size_t c509_len = 0, tmp_len = 0, der_len = 0;
+
+    if(x509_encode_csr_build(c509_csr, sizeof(c509_csr), &c509_len,
+                             subject, sizeof(subject) - 1,
+                             C509_PK_SECP256R1,
+                             pk_key, sizeof(pk_key), &tbs_len) != 0) {
+      LOG_ERR("CSR build failed\n");
+      return 0;
+    }
+    /* pass 1: transcode (placeholder sig) to obtain the CRI bytes */
+    if(c509_csr_to_pkcs10_der(c509_csr, c509_len,
+                              pkcs10_tmp, sizeof(pkcs10_tmp), &tmp_len) != 0) {
+      LOG_ERR("PKCS#10 CSR conversion (pass 1) failed\n");
+      return 0;
+    }
+    const uint8_t *subj, *pk, *cri; size_t subj_l, pk_l, cri_l; uint8_t junk_rs[64];
+    if(x509_csr_parse(pkcs10_tmp, tmp_len, &subj, &subj_l, &pk, &pk_l,
+                      &cri, &cri_l, junk_rs) != 0) {
+      LOG_ERR("PKCS#10 CRI locate failed\n");
+      return 0;
+    }
+    /* sign the CRI and inject r||s into the C509 CSR's sigValue placeholder */
+    uint8_t rs[64];
+    if(x509_csr_sign_msg(cri, cri_l, key->ecc.priv, sizeof(key->ecc.priv), rs) != 0) {
+      LOG_ERR("CRI sign failed\n");
+      return 0;
+    }
+    memcpy(c509_csr + c509_len - 64, rs, 64);
+    /* pass 2: transcode with the real signature -> genuinely self-signed CSR */
+    if(c509_csr_to_pkcs10_der(c509_csr, c509_len,
+                              csr_buf, csr_buf_size, &der_len) != 0) {
+      LOG_ERR("PKCS#10 CSR conversion (pass 2) failed\n");
+      return 0;
+    }
+    LOG_INFO("Built %zu-byte C509 CSR -> %zu-byte self-signed PKCS#10 DER CSR\n",
+             c509_len, der_len);
+    return der_len;
+  }
+#else
+  size_t offset = 0;
   if(x509_encode_csr_build(csr_buf, csr_buf_size, &offset,
                             subject, sizeof(subject) - 1,
                             C509_PK_SECP256R1,
@@ -427,6 +498,7 @@ build_and_sign_csr(const cose_key_t *key, uint8_t *csr_buf, size_t csr_buf_size)
   LOG_INFO_("\n");
 
   return offset;
+#endif
 }
 /*---------------------------------------------------------------------------*/
 PROCESS(edhoc_oscore_crts_client, "EDHOC OSCORE /crts Client");

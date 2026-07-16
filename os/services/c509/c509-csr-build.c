@@ -93,14 +93,13 @@ static void uecc_sha256_finish(const uECC_HashContext *context, uint8_t *hash_re
     SHA_256.finalize(hash_result);
 }
 
-int x509_csr_sign(uint8_t *buffer, size_t tbs_len, size_t total_len,
-                  const uint8_t *priv_key, size_t priv_key_len) {
-    /* sigValue = 2-byte bstr(64) header (0x58 0x40) + 64 bytes r||s */
-    if (total_len < tbs_len + 2 + 64) return -1;
+int x509_csr_sign_msg(const uint8_t *msg, size_t msg_len,
+                      const uint8_t *priv_key, size_t priv_key_len,
+                      uint8_t *sig_out) {
     if (priv_key_len != 32) return -1;
 
     uint8_t hash[32];
-    sha_256_hash(buffer, tbs_len, hash);
+    sha_256_hash(msg, msg_len, hash);
 
     uint8_t tmp[2 * SHA_256_DIGEST_LENGTH + SHA_256_BLOCK_SIZE];
     uECC_HashContext ctx = {
@@ -112,8 +111,19 @@ int x509_csr_sign(uint8_t *buffer, size_t tbs_len, size_t total_len,
         .tmp = tmp,
     };
 
+    if (!uECC_sign_deterministic(priv_key, hash, sizeof(hash), &ctx, sig_out, uECC_secp256r1())) {
+        return -1;
+    }
+    return 0;
+}
+
+int x509_csr_sign(uint8_t *buffer, size_t tbs_len, size_t total_len,
+                  const uint8_t *priv_key, size_t priv_key_len) {
+    /* sigValue = 2-byte bstr(64) header (0x58 0x40) + 64 bytes r||s */
+    if (total_len < tbs_len + 2 + 64) return -1;
+
     uint8_t sig[64];
-    if (!uECC_sign_deterministic(priv_key, hash, sizeof(hash), &ctx, sig, uECC_secp256r1())) {
+    if (x509_csr_sign_msg(buffer, tbs_len, priv_key, priv_key_len, sig) != 0) {
         return -1;
     }
 
