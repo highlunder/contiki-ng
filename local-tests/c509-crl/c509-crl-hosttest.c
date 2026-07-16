@@ -2,7 +2,8 @@
 #include <string.h>
 #include "c509-crl.h"
 
-/* Compile the module under test directly. */
+/* Compile the module under test (+ its shared CBOR walker) directly. */
+#include "c509-cbor-lite.c"
 #include "c509-crl.c"
 
 static size_t
