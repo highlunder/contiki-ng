@@ -113,4 +113,32 @@ int c509_ocsp_build_unsigned_request(uint8_t *out, size_t out_size, size_t *out_
                                      const c509_ocsp_group_t *groups,
                                      size_t n_groups);
 
+/**
+ * \brief Build a signed C509SignedOCSPRequest (type 1), ECDSA-secp256r1-SHA256.
+ *
+ * Lays out `[1, sigAlg, hashAlg, nonce, requestorCertHash, extensions, requests,
+ * requestorCerts, signatureValue]` and signs the `TBSOCSPRequest` (the CBOR
+ * sequence of the first eight elements) with the requestor's secp256r1 key,
+ * appending the 64-byte r||s signature. Links the ECDSA signer
+ * (x509_csr_sign_msg from c509-csr-build.c) at link time.
+ *
+ * \param sig_alg              signatureAlgorithm id written into the request.
+ * \param hash_alg             hashAlgorithm id.
+ * \param nonce,nonce_len      nonce bytes, or NULL for a null nonce.
+ * \param requestor_cert_hash  the requestor's cert hash (+ its length).
+ * \param groups,n_groups      per-issuer request groups.
+ * \param requestor_certs      requestorCerts blob, or NULL for null (+ length).
+ * \param priv_key,priv_key_len requestor secp256r1 private key (32 bytes).
+ * \return 0 on success, -1 on error.
+ */
+int c509_ocsp_build_signed_request(uint8_t *out, size_t out_size, size_t *out_len,
+                                   int64_t sig_alg, int64_t hash_alg,
+                                   const uint8_t *nonce, size_t nonce_len,
+                                   const uint8_t *requestor_cert_hash,
+                                   size_t requestor_hash_len,
+                                   const c509_ocsp_group_t *groups, size_t n_groups,
+                                   const uint8_t *requestor_certs,
+                                   size_t requestor_certs_len,
+                                   const uint8_t *priv_key, size_t priv_key_len);
+
 #endif /* C509_OCSP_REQ_H */

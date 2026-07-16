@@ -144,6 +144,43 @@ c509_ocsp_build_simple_request(uint8_t *out, size_t out_size, size_t *out_len,
   return 0;
 }
 
+/* Write the `requests` field: an array of 3-element PerIssuer groups
+ * (issuerCertHash, extensions, singleRequests), each singleRequests being an
+ * array of 2-element (serialNumberHash, extensions) entries. */
+static int
+wr_requests(uint8_t *b, size_t sz, size_t *off,
+            const c509_ocsp_group_t *groups, size_t n_groups)
+{
+  if(wr_array(b, sz, off, (uint64_t)n_groups * 3) != 0) {
+    return -1;
+  }
+  for(size_t g = 0; g < n_groups; g++) {
+    const c509_ocsp_group_t *grp = &groups[g];
+    if(grp->issuer_cert_hash == NULL ||
+       (grp->singles == NULL && grp->n_singles != 0)) {
+      return -1;
+    }
+    if(wr_bstr(b, sz, off, grp->issuer_cert_hash, grp->issuer_hash_len) != 0 ||
+       wr_array(b, sz, off, 0) != 0) {          /* per-issuer extensions */
+      return -1;
+    }
+    if(wr_array(b, sz, off, (uint64_t)grp->n_singles * 2) != 0) {
+      return -1;
+    }
+    for(size_t s = 0; s < grp->n_singles; s++) {
+      if(grp->singles[s].serial_number_hash == NULL) {
+        return -1;
+      }
+      if(wr_bstr(b, sz, off, grp->singles[s].serial_number_hash,
+                 grp->singles[s].serial_hash_len) != 0 ||
+         wr_array(b, sz, off, 0) != 0) {         /* per-single extensions */
+        return -1;
+      }
+    }
+  }
+  return 0;
+}
+
 int
 c509_ocsp_build_unsigned_request(uint8_t *out, size_t out_size, size_t *out_len,
                                  int64_t hash_alg,
@@ -163,35 +200,65 @@ c509_ocsp_build_unsigned_request(uint8_t *out, size_t out_size, size_t *out_len,
      wr_array(out, out_size, &off, 0) != 0) {    /* top-level extensions */
     return -1;
   }
-  /* requests: array of 3-element PerIssuer groups
-   * (issuerCertHash, extensions, singleRequests). */
-  if(wr_array(out, out_size, &off, (uint64_t)n_groups * 3) != 0) {
+  if(wr_requests(out, out_size, &off, groups, n_groups) != 0) {
     return -1;
   }
-  for(size_t g = 0; g < n_groups; g++) {
-    const c509_ocsp_group_t *grp = &groups[g];
-    if(grp->issuer_cert_hash == NULL ||
-       (grp->singles == NULL && grp->n_singles != 0)) {
-      return -1;
-    }
-    if(wr_bstr(out, out_size, &off, grp->issuer_cert_hash, grp->issuer_hash_len) != 0 ||
-       wr_array(out, out_size, &off, 0) != 0) {   /* per-issuer extensions */
-      return -1;
-    }
-    /* singleRequests: array of 2-element (serialNumberHash, extensions). */
-    if(wr_array(out, out_size, &off, (uint64_t)grp->n_singles * 2) != 0) {
-      return -1;
-    }
-    for(size_t s = 0; s < grp->n_singles; s++) {
-      if(grp->singles[s].serial_number_hash == NULL) {
-        return -1;
-      }
-      if(wr_bstr(out, out_size, &off, grp->singles[s].serial_number_hash,
-                 grp->singles[s].serial_hash_len) != 0 ||
-         wr_array(out, out_size, &off, 0) != 0) { /* per-single extensions */
-        return -1;
-      }
-    }
+  *out_len = off;
+  return 0;
+}
+
+/* ECDSA-secp256r1-SHA256 signer over arbitrary bytes (r||s out), from
+ * c509-csr-build.c. Declared extern so this TU pulls in no crypto header and
+ * the unsigned/simple builders remain host-testable without a crypto backend;
+ * the symbol resolves at link (real in Contiki, stubbed in the host test). */
+extern int x509_csr_sign_msg(const uint8_t *msg, size_t msg_len,
+                             const uint8_t *priv_key, size_t priv_key_len,
+                             uint8_t *sig_out);
+
+int
+c509_ocsp_build_signed_request(uint8_t *out, size_t out_size, size_t *out_len,
+                               int64_t sig_alg, int64_t hash_alg,
+                               const uint8_t *nonce, size_t nonce_len,
+                               const uint8_t *requestor_cert_hash,
+                               size_t requestor_hash_len,
+                               const c509_ocsp_group_t *groups, size_t n_groups,
+                               const uint8_t *requestor_certs,
+                               size_t requestor_certs_len,
+                               const uint8_t *priv_key, size_t priv_key_len)
+{
+  if(out == NULL || out_len == NULL || requestor_cert_hash == NULL ||
+     priv_key == NULL || (groups == NULL && n_groups != 0)) {
+    return -1;
+  }
+  size_t off = 0;
+  /* C509SignedOCSPRequest = array[9]:
+   *   [1, sigAlg, hashAlg, nonce, requestorCertHash, extensions, requests,
+   *    requestorCerts, signatureValue].
+   * The signature is over the TBSOCSPRequest = the CBOR sequence of the first
+   * eight elements (their concatenated bytes, no array wrapper). */
+  if(wr_array(out, out_size, &off, 9) != 0) {
+    return -1;
+  }
+  size_t tbs_start = off;
+  if(wr_int(out, out_size, &off, 1) != 0 ||                        /* type */
+     wr_int(out, out_size, &off, sig_alg) != 0 ||
+     wr_int(out, out_size, &off, hash_alg) != 0 ||
+     wr_nonce(out, out_size, &off, nonce, nonce_len) != 0 ||
+     wr_bstr(out, out_size, &off, requestor_cert_hash, requestor_hash_len) != 0 ||
+     wr_array(out, out_size, &off, 0) != 0 ||                      /* extensions */
+     wr_requests(out, out_size, &off, groups, n_groups) != 0 ||
+     wr_nonce(out, out_size, &off, requestor_certs, requestor_certs_len) != 0) {
+    return -1;   /* requestorCerts: bstr or null (wr_nonce = opt-bytes-or-null) */
+  }
+  size_t tbs_len = off - tbs_start;
+
+  /* Sign the TBS (secp256r1 / SHA-256) and append signatureValue = bstr(64). */
+  uint8_t sig[64];
+  if(x509_csr_sign_msg(out + tbs_start, tbs_len, priv_key, priv_key_len, sig) != 0) {
+    return -1;
+  }
+  if(wr_bstr(out, out_size, &off, sig, sizeof(sig)) != 0) {
+    return -1;
   }
   *out_len = off;
   return 0;

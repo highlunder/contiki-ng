@@ -35,6 +35,18 @@ ed25519_verify(const uint8_t pk[32], const uint8_t sig[64],
   g_msg_len = msg_len;
   return 0;
 }
+/* Stub the ECDSA signer that c509-ocsp-req.c's signed-request builder calls, so
+ * the host test links crypto-free and can byte-check the request's TBS layout
+ * (the signature bytes themselves are exercised by the real 07-c509 round-trip).
+ * Writes a fixed marker signature. */
+int
+x509_csr_sign_msg(const uint8_t *msg, size_t msg_len,
+                  const uint8_t *priv_key, size_t priv_key_len, uint8_t *sig_out)
+{
+  (void)msg; (void)msg_len; (void)priv_key; (void)priv_key_len;
+  memset(sig_out, 0xAB, 64);
+  return 0;
+}
 #include "c509-rev-verify.c"
 
 static size_t
@@ -187,6 +199,35 @@ main(void)
   int64_t alg = -999;
   checkl("sig_alg ret", c509_rev_sig_alg(buf, n, &alg), 0);
   checkl("sig_alg value", (long)alg, 12);
+
+  /* Signed OCSP request (type 1): build the TBS with the draft's SIGNED_REQ_NO_CERT
+   * parameters (sigAlg=SIG_ED25519=12) and confirm the TBS bytes match the draft
+   * example. The stub signer fills sigValue; the real signature is exercised in
+   * 07-c509. TBS = out[1 .. out_len-66] (strip array head + 58 40 + 64-byte sig). */
+  static const char *SIGNED_REQ_NO_CERT =
+    "89010c0050111111111111111111111111111111114844f052"
+    "8b56f35ad9808648a01c73a5f3b0633480865410652787fa0527bc2449a1bfc5ab31aa5a6f0d8d805475d8bc4"
+    "fbafc6694467641e748dfd53a8b9d176d8054d1ac135d7da29bdcf4dca0d5281a51605b67840080482222222222"
+    "222222808254d3a0c1e3db92e8f6810537d45cfaecf6ce417e3b80f658407da70be70d8c88f5150218b2f60a21"
+    "320d26faf8dc198f16654d54cb617a1c3c3f420b3f2fbf74c9b107d81d1815c2ce09b22eaf491313003c49d43a"
+    "ab8d970b";
+  kn = unhex(SIGNED_REQ_NO_CERT, kat);
+  /* offsets: nonce@5, requestorCertHash@22, issuer0@33, serials@44/66/88,
+   * issuer1@110, serial@121. */
+  c509_ocsp_single_t sg0[3] = { { kat + 44, 20 }, { kat + 66, 20 }, { kat + 88, 20 } };
+  c509_ocsp_single_t sg1[1] = { { kat + 121, 20 } };
+  c509_ocsp_group_t sgroups[2] = { { kat + 33, 8, sg0, 3 }, { kat + 110, 8, sg1, 1 } };
+  uint8_t privdummy[32] = { 0 };
+  bn = 0;
+  rc = c509_ocsp_build_signed_request(built, sizeof(built), &bn,
+                                      12 /*SIG_ED25519*/, 0 /*SHA-256*/,
+                                      kat + 5, 16, kat + 22, 8, sgroups, 2,
+                                      NULL, 0, privdummy, 32);
+  checkl("signed req build ret", rc, 0);
+  checkl("signed req len", (long)bn, (long)kn);
+  checkl("signed req TBS matches draft",
+         (long)(bn == kn && memcmp(built + 1, kat + 1, (size_t)kn - 66) == 0), 1);
+  checkl("signed req sigValue header", (long)(built[bn - 66] == 0x58 && built[bn - 65] == 0x40), 1);
 
   printf("\n%s (%d failures)\n", fails ? "TESTS FAILED" : "ALL TESTS PASSED", fails);
   return fails ? 1 : 0;

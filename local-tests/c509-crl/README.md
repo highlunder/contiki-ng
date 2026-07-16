@@ -60,14 +60,17 @@ PASS 2026-07-16. On-device C509 revocation codec for the LICE/LRev revocation
 follow-up (the paper's Tier-1 eval gap — the Rust `c509rev` impl is host-only):
 - CRL parse + binary-search lookup — DONE (`c509-crl`).
 - OCSP response status codec — DONE (`c509-ocsp`).
-- OCSP **request** builder, Simple + Unsigned — DONE (`c509-ocsp-req`; the host
-  test reproduces the draft `SIMPLE_REQ` (51 B) and `UNSIGNED_REQ` (132 B) KATs
-  byte-for-byte).
+- OCSP **request** builder, Simple + Unsigned + **Signed (type 1)** — DONE
+  (`c509-ocsp-req`; the host test reproduces the draft `SIMPLE_REQ` (51 B),
+  `UNSIGNED_REQ` (132 B), and the signed request's `TBS` (from `SIGNED_REQ_NO_CERT`,
+  209 B) byte-for-byte; the signed request's ECDSA-P256 signing + verify round-trip
+  runs in 07-c509 with a tampered-TBS negative control).
 - CRL/OCSP signature verify, **Ed25519 + ECDSA-secp256r1-SHA256** — DONE
   (`c509-rev-verify` + `c509-rev-verify-ecdsa`; `c509_rev_sig_alg()` picks the
   algorithm). Real KATs in 07-c509: the Ed25519 published-key CRL and a
   deterministic P-256 CRL from `idc509rev` `examples/ecdsa_crl_vector`, each with
   a flipped-key negative control.
-- Next: the signed OCSP request (type 1, requestor signature — mirrors the CSR
-  signing pass), then Contiki integration into the DTLS/EDHOC validation path +
-  a setest scenario + CC310 energy measurement (Tier-1 hardware, E4/E5).
+- setest server scenario (server side) — DONE (`setest/modules/revocation.py`,
+  scenario `crlocsp`: GET /crl + POST /ocsp; smoke test cross-verified via c509rev).
+- Next: Contiki integration of the revocation check into the DTLS/EDHOC validation
+  path (an app-level CRL store/fetch) + CC310 energy measurement (Tier-1 hardware).

@@ -11,6 +11,8 @@
 #include "c509-crl.h"
 #include "c509-ocsp.h"
 #include "c509-rev-verify.h"
+#include "c509-ocsp-req.h"
+#include "os/net/security/micro-ecc/uECC.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -772,8 +774,51 @@ run_revocation_test(void)
     failures++;
   }
 
+  /* --- Signed OCSP request (type 1): build + self-verify round-trip --- */
+  {
+    static const uint8_t req_priv[32] = {
+      0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+      0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01,
+      0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+      0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11
+    };
+    uint8_t req_pub64[64], req_pub65[65];
+    static const uint8_t ich[8] = { 0xa0, 0x1c, 0x73, 0xa5, 0xf3, 0xb0, 0x63, 0x34 };
+    static const uint8_t snh[20] = {
+      0x10, 0x65, 0x27, 0x87, 0xfa, 0x05, 0x27, 0xbc, 0x24, 0x49,
+      0xa1, 0xbf, 0xc5, 0xab, 0x31, 0xaa, 0x5a, 0x6f, 0x0d, 0x8d
+    };
+    static const uint8_t rch[8] = { 0x44, 0xf0, 0x52, 0x8b, 0x56, 0xf3, 0x5a, 0xd9 };
+    c509_ocsp_single_t s0[1] = { { snh, 20 } };
+    c509_ocsp_group_t g0[1] = { { ich, 8, s0, 1 } };
+    uint8_t req[256];
+    size_t reqlen = 0;
+    if(uECC_compute_public_key(req_priv, req_pub64, uECC_secp256r1()) != 1) {
+      printf("REVOCATION: signed OCSP request keygen FAILED\n");
+      failures++;
+    } else {
+      req_pub65[0] = 0x04;
+      memcpy(req_pub65 + 1, req_pub64, 64);
+      if(c509_ocsp_build_signed_request(req, sizeof(req), &reqlen,
+                                        C509_SIG_ECDSA_SHA256, 0 /*SHA-256*/,
+                                        NULL, 0, rch, sizeof(rch),
+                                        g0, 1, NULL, 0,
+                                        req_priv, sizeof(req_priv)) != 0 ||
+         c509_rev_verify_ecdsa_p256(req, reqlen, req_pub65, 65) != 0) {
+        printf("REVOCATION: signed OCSP request build/verify FAILED\n");
+        failures++;
+      }
+      /* Negative control: tamper a TBS byte -> signature must reject. */
+      req[3] ^= 0x01;
+      if(c509_rev_verify_ecdsa_p256(req, reqlen, req_pub65, 65) == 0) {
+        printf("REVOCATION: signed OCSP request accepted a tampered TBS\n");
+        failures++;
+      }
+    }
+  }
+
   if(failures == 0) {
-    printf("REVOCATION: CRL + OCSP + Ed25519/ECDSA-verify tests OK\n");
+    printf("REVOCATION: CRL + OCSP + Ed25519/ECDSA-verify + signed-req tests OK\n");
   }
   return failures;
 }
