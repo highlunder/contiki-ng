@@ -82,4 +82,25 @@ int c509_rev_locate_tbs(const uint8_t *buf, size_t len,
 int c509_rev_verify_ed25519(const uint8_t *buf, size_t len,
                             const uint8_t pk[32]);
 
+/**
+ * \brief Verify a flat-array C509 revocation object's ECDSA-secp256r1-SHA256
+ *        signature (micro-ecc + SHA-256; SIG_ECDSA_SHA256).
+ *
+ * \param buf     the full CBOR `array[N]` object.
+ * \param len     length of \p buf.
+ * \param pubkey  secp256r1 public key: 65-byte uncompressed (`0x04||X||Y`) or
+ *                the bare 64-byte `X||Y`.
+ * \param pubkey_len 65 or 64.
+ * \return 0 if the signature is valid, -1 otherwise.
+ */
+int c509_rev_verify_ecdsa_p256(const uint8_t *buf, size_t len,
+                               const uint8_t *pubkey, size_t pubkey_len);
+
+/**
+ * \brief Read the signatureAlgorithm field (array element index 1) of a
+ *        flat-array C509 revocation object, so a caller can pick the right
+ *        verifier. \return 0 on success (id in \p alg_out), -1 on error.
+ */
+int c509_rev_sig_alg(const uint8_t *buf, size_t len, int64_t *alg_out);
+
 #endif /* C509_REV_VERIFY_H */

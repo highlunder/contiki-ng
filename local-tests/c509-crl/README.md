@@ -60,7 +60,14 @@ PASS 2026-07-16. On-device C509 revocation codec for the LICE/LRev revocation
 follow-up (the paper's Tier-1 eval gap — the Rust `c509rev` impl is host-only):
 - CRL parse + binary-search lookup — DONE (`c509-crl`).
 - OCSP response status codec — DONE (`c509-ocsp`).
-- CRL/OCSP Ed25519 signature verify — DONE (`c509-rev-verify`; real KAT in 07-c509).
-- Next: OCSP **request** builder (Simple/Unsigned) + ECDSA-P256 verify path, then
-  Contiki integration into the DTLS/EDHOC validation path + a setest scenario +
-  CC310 energy measurement (Tier-1 hardware, E4/E5).
+- OCSP **request** builder, Simple + Unsigned — DONE (`c509-ocsp-req`; the host
+  test reproduces the draft `SIMPLE_REQ` (51 B) and `UNSIGNED_REQ` (132 B) KATs
+  byte-for-byte).
+- CRL/OCSP signature verify, **Ed25519 + ECDSA-secp256r1-SHA256** — DONE
+  (`c509-rev-verify` + `c509-rev-verify-ecdsa`; `c509_rev_sig_alg()` picks the
+  algorithm). Real KATs in 07-c509: the Ed25519 published-key CRL and a
+  deterministic P-256 CRL from `idc509rev` `examples/ecdsa_crl_vector`, each with
+  a flipped-key negative control.
+- Next: the signed OCSP request (type 1, requestor signature — mirrors the CSR
+  signing pass), then Contiki integration into the DTLS/EDHOC validation path +
+  a setest scenario + CC310 energy measurement (Tier-1 hardware, E4/E5).

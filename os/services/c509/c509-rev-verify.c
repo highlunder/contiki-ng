@@ -81,6 +81,39 @@ c509_rev_locate_tbs(const uint8_t *buf, size_t len,
 }
 
 int
+c509_rev_sig_alg(const uint8_t *buf, size_t len, int64_t *alg_out)
+{
+  if(buf == NULL || alg_out == NULL) {
+    return -1;
+  }
+  const uint8_t *end = buf + len;
+  uint8_t major;
+  uint64_t n;
+  const uint8_t *body;
+  if(c509_cbor_head(buf, end, &major, &n, &body) != 0 ||
+     major != C509_CBOR_ARRAY || n < 2) {
+    return -1;
+  }
+  /* element 0 = type/crlType; element 1 = signatureAlgorithm (int). */
+  const uint8_t *p = body;
+  if(c509_cbor_skip(&p, end) != 0) {          /* skip element 0 */
+    return -1;
+  }
+  uint64_t arg;
+  if(c509_cbor_head(p, end, &major, &arg, &body) != 0) {
+    return -1;
+  }
+  if(major == C509_CBOR_UINT) {
+    *alg_out = (int64_t)arg;
+  } else if(major == C509_CBOR_NINT) {
+    *alg_out = -1 - (int64_t)arg;
+  } else {
+    return -1;
+  }
+  return 0;
+}
+
+int
 c509_rev_verify_ed25519(const uint8_t *buf, size_t len, const uint8_t pk[32])
 {
   const uint8_t *tbs, *sig;

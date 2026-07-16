@@ -16,6 +16,8 @@
 /* Compile the modules under test (+ shared walker) directly. */
 #include "c509-cbor-lite.c"
 #include "c509-ocsp.c"
+#include "c509-ocsp-req.h"
+#include "c509-ocsp-req.c"
 
 /* Stub the Ed25519 primitive so c509-rev-verify.c links without mbedTLS; it
  * records the (msg, sig) it is handed so we can byte-check the TBS locator.
@@ -143,6 +145,48 @@ main(void)
   checkl("verify ret(stub)", c509_rev_verify_ed25519(buf, n, pk), 0);
   checkl("verify msg==tbs", (long)(g_msg == tbs && g_msg_len == tbs_len), 1);
   checkl("verify sig==sig", (long)(g_sig == sig), 1);
+
+  /* --- OCSP request builders (build must reproduce the draft KATs) --- */
+  /* Simple request: nonce@4 (16B), issuerCertHash@21 (8B), serial@30 (20B). */
+  static const char *SIMPLE_REQ =
+    "860200501111111111111111111111111111111148a01c73a5f3b063"
+    "345410652787fa0527bc2449a1bfc5ab31aa5a6f0d8d80";
+  uint8_t kat[256], built[256];
+  size_t kn = unhex(SIMPLE_REQ, kat), bn = 0;
+  int rc = c509_ocsp_build_simple_request(built, sizeof(built), &bn,
+                                          0 /*SHA-256*/,
+                                          kat + 4, 16, kat + 21, 8, kat + 30, 20);
+  checkl("simple req build ret", rc, 0);
+  checkl("simple req len", (long)bn, (long)kn);
+  checkl("simple req bytes", (long)(bn == kn && memcmp(built, kat, kn) == 0), 1);
+
+  /* Unsigned request: nonce@4; issuer0@23, serials@34/56/78; issuer1@100, serial@111. */
+  static const char *UNSIGNED_REQ =
+    "8500005011111111111111111111111111111111808648a01c73a5f3"
+    "b0633480865410652787fa0527bc2449a1bfc5ab31aa5a6f0d8d805475d8bc4fbafc6694467641e748dfd53a8"
+    "b9d176d8054d1ac135d7da29bdcf4dca0d5281a51605b67840080482222222222222222808254d3a0c1e3db92"
+    "e8f6810537d45cfaecf6ce417e3b80";
+  kn = unhex(UNSIGNED_REQ, kat);
+  c509_ocsp_single_t g0s[3] = {
+    { kat + 34, 20 }, { kat + 56, 20 }, { kat + 78, 20 }
+  };
+  c509_ocsp_single_t g1s[1] = { { kat + 111, 20 } };
+  c509_ocsp_group_t groups[2] = {
+    { kat + 23, 8, g0s, 3 },
+    { kat + 100, 8, g1s, 1 }
+  };
+  bn = 0;
+  rc = c509_ocsp_build_unsigned_request(built, sizeof(built), &bn, 0,
+                                        kat + 4, 16, groups, 2);
+  checkl("unsigned req build ret", rc, 0);
+  checkl("unsigned req len", (long)bn, (long)kn);
+  checkl("unsigned req bytes", (long)(bn == kn && memcmp(built, kat, kn) == 0), 1);
+
+  /* signatureAlgorithm reader on the CRL (element 1 = 0x0c = SIG_ED25519). */
+  n = unhex(CRL_NO_REVOKED, buf);
+  int64_t alg = -999;
+  checkl("sig_alg ret", c509_rev_sig_alg(buf, n, &alg), 0);
+  checkl("sig_alg value", (long)alg, 12);
 
   printf("\n%s (%d failures)\n", fails ? "TESTS FAILED" : "ALL TESTS PASSED", fails);
   return fails ? 1 : 0;

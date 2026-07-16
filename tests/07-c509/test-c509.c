@@ -714,6 +714,35 @@ run_revocation_test(void)
     }
   }
 
+  /* --- Real ECDSA-secp256r1-SHA256 CRL signature verification --- */
+  /* Deterministic P-256 KAT from idc509rev examples/ecdsa_crl_vector (the draft
+   * ships Ed25519 example keys only). */
+  static const char *CRL_ECDSA =
+    "8b00006f746573742063726c6f6373702d636154000000000000000000000000000000000000"
+    "0000011a6775d7001a00093a80f680f658403bed30a2bda5e478371775f9d1f52f601faddf5f4"
+    "6afb126bea8d337132f305ec9ec2ee58852d34a79d8982e0c46dbb13e2d3f2287a3d9c3409dfa"
+    "2a894e82a7";
+  static uint8_t crl3[256];
+  int crl3_len = hexbytes(CRL_ECDSA, crl3, sizeof(crl3));
+  static const char *P256_PUB_HEX =
+    "04a6e256f513aa79e17913c5986bb7da2902b2aae4180b2c3781f9b552be025683805"
+    "1386ff23d6f428493c0e05b2febf63e158909b5a7a10d54df92be70d6dfc3";
+  static uint8_t p256_pub[65];
+  hexbytes(P256_PUB_HEX, p256_pub, sizeof(p256_pub));
+  if(c509_rev_verify_ecdsa_p256(crl3, crl3_len, p256_pub, 65) != 0) {
+    printf("REVOCATION: CRL ECDSA-P256 signature verify FAILED\n");
+    failures++;
+  }
+  {
+    uint8_t badpk[65];
+    memcpy(badpk, p256_pub, 65);
+    badpk[1] ^= 0x01;
+    if(c509_rev_verify_ecdsa_p256(crl3, crl3_len, badpk, 65) == 0) {
+      printf("REVOCATION: CRL ECDSA verify accepted a wrong key\n");
+      failures++;
+    }
+  }
+
   /* --- C509 OCSP: Basic response status lookup --- */
   static const char *BASIC_RESP =
     "8a010c005011111111111111111111111111111111480600867838e3311a"
@@ -734,7 +763,7 @@ run_revocation_test(void)
   }
 
   if(failures == 0) {
-    printf("REVOCATION: CRL + OCSP + Ed25519-verify tests OK\n");
+    printf("REVOCATION: CRL + OCSP + Ed25519/ECDSA-verify tests OK\n");
   }
   return failures;
 }
