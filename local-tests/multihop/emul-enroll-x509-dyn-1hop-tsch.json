@@ -1,0 +1,37 @@
+{
+  "title": "Fully-dynamic X.509 enrollment over 1-hop TSCH (server reconstructs DER at runtime)",
+  "timeout_ms": 400000,
+  "seed": 1,
+  "startup_delay_ms": 1000,
+  "radiomedium": {
+    "type": "udgm",
+    "tx_range": 55.0,
+    "interference_range": 110.0,
+    "success_ratio_tx": 1.0,
+    "success_ratio_rx": 1.0
+  },
+  "nodes": [
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/fw/enroll-x509-dyn-server.nrf",
+      "id": 1,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/fw/enroll-x509-client-mh.nrf",
+      "id": 2,
+      "x": 50.0,
+      "y": 0.0
+    }
+  ],
+  "test": {
+    "description": "1-hop fully-dynamic X.509 enrollment. node1 = CA/EDHOC responder + RPL root + TSCH coordinator, built ENROLL_X509_DYN=1 so /crts and /sen reconstruct the X.509 DER at runtime via x509_encode_full_cert() (uECC point-decompression backend) instead of shipping static blobs. node2 = same multihop X.509 enroll client as the static arm (validates full DER-SEQUENCE completeness). Proves the lossless C509->X.509 converter end-to-end on the enrollment path.",
+    "validators": [
+      {
+        "pattern": "enroll end-to-end test: TEST PASSED",
+        "node": 2,
+        "min_count": 1
+      }
+    ]
+  }
+}

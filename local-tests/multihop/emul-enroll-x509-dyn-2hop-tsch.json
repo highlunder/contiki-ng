@@ -1,0 +1,43 @@
+{
+  "title": "Fully-dynamic X.509 enrollment over 2-hop TSCH (server reconstructs DER at runtime)",
+  "timeout_ms": 600000,
+  "seed": 1,
+  "startup_delay_ms": 1000,
+  "radiomedium": {
+    "type": "udgm",
+    "tx_range": 55.0,
+    "interference_range": 110.0,
+    "success_ratio_tx": 1.0,
+    "success_ratio_rx": 1.0
+  },
+  "nodes": [
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/fw/enroll-x509-dyn-server.nrf",
+      "id": 1,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/fw/relay.nrf",
+      "id": 2,
+      "x": 50.0,
+      "y": 0.0
+    },
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/fw/enroll-x509-client-mh.nrf",
+      "id": 3,
+      "x": 100.0,
+      "y": 0.0
+    }
+  ],
+  "test": {
+    "description": "Line topology, 50 m spacing (tx_range 55 -> 2 hops). node1 = CA/EDHOC responder + RPL root + TSCH coordinator built ENROLL_X509_DYN=1 (runtime x509_encode_full_cert reconstruction); node2 = relay; node3 = X.509 enroll client. Compares against the static-blob 2-hop arm: does the runtime-reconstructed (~288 B) X.509 flight reassemble over two hops, like the static (~339 B) one did not?",
+    "validators": [
+      {
+        "pattern": "enroll end-to-end test: TEST PASSED",
+        "node": 3,
+        "min_count": 1
+      }
+    ]
+  }
+}

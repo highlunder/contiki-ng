@@ -86,8 +86,55 @@ Result (MULTIHOP-DTLS-CSMA-ENROLL-RESULTS.md §C.1): **1-hop 3/3 @2.9 s; 2-hop 0
 `/crts` flight never reassembles over two hops, whereas the compact C509 enrollment completes 3/3.
 The enrollment analogue of the `x5chain`-handshake result, and sharper (two big flights).
 
-The remaining step to the *fully-faithful, dynamic* wrapper (issue → `x509_encode_full_cert`;
-client PKCS#10 via `x509_encode_csr` + server `mbedtls_x509_csr_parse_der`) is the c509/os-lib
-`cbor.o` collision resolution — the only real work, and orthogonal to the multi-hop result above.
+## Implemented (fully-dynamic downlinks) + result
 
-_Status: minimal-gap implemented + run; fully-dynamic wrapper deferred on the cbor.o collision._
+The **fully-dynamic** downlink wrapper is now implemented and run (`ENROLL_X509_DYN=1`). Both
+`/crts` (CA chain) and `/sen` (issued cert) responses are reconstructed to X.509 DER **at
+runtime** with `x509_encode_full_cert()` — the same lossless converter the DTLS path uses —
+instead of shipping static blobs. This exercises the C509→X.509 encoder end-to-end on the
+enrollment path (not just DTLS).
+
+Two blockers were resolved:
+1. **`cbor.o` object collision** — the c509 decoder `os/services/c509/cbor.c` was renamed
+   `c509-cbor.c` (header `cbor.h` kept), so its object no longer collides with `os/lib/cbor.o`
+   (EDHOC's CBOR writer) and both link together.
+2. **`cbor_major_type_t` *header* collision** — `os/lib/cbor.h` (named enum) vs the c509
+   `cbor.h` (anonymous enum typedef) still clash if both are included in one TU. Solved with a
+   cbor-free shim `os/services/c509/c509-x509-wrap.{c,h}` exposing
+   `c509_to_x509_der(c509, len, out, size, *out_len)`; it keeps all c509/cbor headers inside its
+   own `.c`, and copies the input internally so it is safe for the `/sen` in-place
+   parse→re-encode. The server TU includes only the shim header.
+3. `x509_encode.c`'s two EC point-decompression sites (full-cert + CSR encoder) were gated
+   `C509_X509_ENCODE_UECC` → micro-ecc `uECC_decompress` (secp256r1) for the enroll apps, which
+   link uECC not mbedTLS; the default `#else` mbedTLS branch (07-c509 / DTLS) is unchanged and
+   still builds clean.
+
+Files: `edhoc-oscore-crts-server.c` (`ENROLL_X509_DYN` gates → `c509_to_x509_der`), Makefile
+(`-DENROLL_X509_DYN=1 -DC509_X509_ENCODE_UECC=1`, adds `c509-x509-wrap.c x509_encode.c c509.c
+c509-cbor.c der.c validity.c`), new `os/services/c509/c509-x509-wrap.{c,h}`. Configs
+`emul-enroll-x509-dyn-{1,2}hop-tsch.json`, firmware `fw/enroll-x509-dyn-server.nrf` (paired with
+the same `enroll-x509-client-mh.nrf`).
+
+Result (cooja-ng-ge, seed 1, sw uECC P-256):
+
+| hops | `/crts` DER | `/sen` DER | outcome |
+|------|-------------|-----------|---------|
+| **1** | 289 B (runtime) | 288 B (runtime, from 144 B C509) | **PASS @ ~48.2 s** (both flights received complete) |
+| **2** | 289 B (runtime) | — | **FAIL (timeout)** — EDHOC finishes @72.2 s, server reconstructs+retransmits the 289 B CA cert, but the client never reassembles the `/crts` flight over two hops |
+
+This **reproduces the static-blob arm's headline** (1-hop 3/3, 2-hop 0/3): the X.509-sized
+downlink fails to reassemble at 2 hops where the compact C509 enrollment completes 3/3. Notably
+the runtime-reconstructed DER (289 B) is *smaller* than the static blob (339 B) yet still fails —
+the failure is structural (X.509-sized flight over the minimal multi-hop schedule), independent of
+whether the DER is static or reconstructed.
+
+_Status: fully-dynamic downlink wrapper implemented + run (1-hop PASS, 2-hop FAIL, matching the
+static arm). Remaining full-faithfulness item (out of scope of this result): a PKCS#10 **uplink**
+CSR (client `x509_encode_csr` + server `mbedtls_x509_csr_parse_der`); the two downlinks — the
+multi-hop-relevant reassembled flights — are now fully dynamic._
+
+### The earlier deferral (now closed)
+The remaining step to the *fully-faithful, dynamic* wrapper (issue → `x509_encode_full_cert`;
+client PKCS#10 via `x509_encode_csr` + server `mbedtls_x509_csr_parse_der`) was the c509/os-lib
+`cbor.o` collision resolution. The downlink half of that (the reassembled, multi-hop-relevant
+flights) is now done; only the PKCS#10 uplink remains.

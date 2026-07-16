@@ -45,16 +45,34 @@
 #include "edhoc-cred-c509.h"
 #include "edhoc-trust-store.h"
 #include "oscore.h"
+/* ENROLL_X509_DYN implies ENROLL_X509 (same enlarged buffers) but reconstructs the
+ * X.509 DER at runtime instead of shipping static blobs — see below. */
+#ifdef ENROLL_X509_DYN
+#ifndef ENROLL_X509
+#define ENROLL_X509 1
+#endif
+#endif
 #ifdef ENROLL_X509
 /* X.509-DER enrollment trial (build ENROLL_X509=1): the /crts CA chain and /sen
  * issued cert are returned as full X.509 DER (~380 B each) instead of the compact
  * C509 forms (~135/144 B), to measure the X.509-sized enrollment flights over
- * multi-hop. Reuses the X.509 DER equivalents of the C509 native test certs; the
- * C509 CA issuance + PoP verification still run (only the wire format changes).
- * The fully-dynamic wrapper (x509_encode_full_cert from the issued C509 cert) is
- * feasible but needs the c509/os-lib cbor.o collision resolved — see
- * X509-ENROLL-WRAPPING.md. */
+ * multi-hop. The C509 CA issuance + PoP verification always run; only the wire
+ * format of the two downlinks changes.
+ *
+ * Two modes:
+ *  - default (ENROLL_X509=1): return the static X.509 DER equivalents of the C509
+ *    native test certs (minimal-gap trial, no reconstruction).
+ *  - ENROLL_X509_DYN=1: fully-dynamic — parse the C509 CA cert / freshly-issued
+ *    C509 cert and reconstruct its X.509 DER with x509_encode_full_cert() (the same
+ *    lossless converter the DTLS path uses). Needs the c509/os-lib cbor.o collision
+ *    resolved (c509 decoder renamed c509-cbor.c) + x509_encode's uECC decompression
+ *    backend (C509_X509_ENCODE_UECC), both provided by this app's Makefile. */
+#ifndef ENROLL_X509_DYN
 #include "edhoc-cred-x509-native-test.h"
+#else
+/* cbor-free wrapper: keeps the c509/os-lib cbor.h collision out of this TU. */
+#include "c509-x509-wrap.h"
+#endif
 #define RESP_PAYLOAD_SZ 640
 #else
 #define RESP_PAYLOAD_SZ 256
@@ -169,8 +187,19 @@ oscore_request_callback(struct simple_udp_connection *c,
   size_t resp_payload_len = 0;
 
   if(code == COAP_CODE_GET) {
-#ifdef ENROLL_X509
-    /* /crts: return the X.509 DER CA certificate (bare, ~380 B). */
+#if defined(ENROLL_X509_DYN)
+    /* /crts: reconstruct the CA cert's X.509 DER at runtime from its C509 bytes
+     * (parse -> x509_encode_full_cert), proving the lossless converter end-to-end
+     * on the enrollment path (not just DTLS). */
+    if(c509_to_x509_der(c509_native_ca_cert, sizeof(c509_native_ca_cert),
+                        resp_payload, sizeof(resp_payload), &resp_payload_len) != 0) {
+      LOG_ERR("/crts: C509->X.509 reconstruction (CA) failed\n");
+      return;
+    }
+    resp_code = COAP_CODE_CONTENT;
+    LOG_INFO("/crts: reconstructed X.509 DER CA cert (%zu bytes)\n", resp_payload_len);
+#elif defined(ENROLL_X509)
+    /* /crts: return the static X.509 DER CA certificate (bare, ~380 B). */
     memcpy(resp_payload, x509_native_ca_cert, sizeof(x509_native_ca_cert));
     resp_payload_len = sizeof(x509_native_ca_cert);
     resp_code = COAP_CODE_CONTENT;
@@ -233,9 +262,25 @@ oscore_request_callback(struct simple_udp_connection *c,
       } else {
         resp_code = COAP_CODE_CREATED;
         LOG_INFO("/sen: issued %zu-byte Type-2 cert for CSR subject\n", resp_payload_len);
-#ifdef ENROLL_X509
-        /* Return the issued cert in X.509 DER form (~390 B). The C509 issuance +
-         * PoP above still ran; only the returned wire format changes. */
+#if defined(ENROLL_X509_DYN)
+        /* Reconstruct the just-issued C509 cert's X.509 DER at runtime
+         * (parse -> x509_encode_full_cert). resp_payload currently holds the C509
+         * cert; parse it, then re-encode into resp_payload. */
+        {
+          size_t der_len = 0;
+          if(c509_to_x509_der(resp_payload, resp_payload_len,
+                             resp_payload, sizeof(resp_payload), &der_len) != 0) {
+            LOG_ERR("/sen: C509->X.509 reconstruction (issued) failed\n");
+            resp_code = COAP_CODE_BAD_REQUEST;
+            resp_payload_len = 0;
+          } else {
+            resp_payload_len = der_len;
+            LOG_INFO("/sen: reconstructed X.509 DER cert (%zu bytes)\n", resp_payload_len);
+          }
+        }
+#elif defined(ENROLL_X509)
+        /* Return the issued cert in static X.509 DER form (~390 B). The C509
+         * issuance + PoP above still ran; only the returned wire format changes. */
         memcpy(resp_payload, x509_native_client_cert, sizeof(x509_native_client_cert));
         resp_payload_len = sizeof(x509_native_client_cert);
         LOG_INFO("/sen: returning X.509 DER cert (%zu bytes)\n", resp_payload_len);

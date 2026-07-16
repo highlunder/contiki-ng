@@ -11,7 +11,15 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+/* EC point decompression backend. The DTLS path links mbedTLS and uses it for
+ * all curves. mbedTLS-free builds (e.g. the EDHOC/OSCORE enrollment apps, which
+ * link micro-ecc instead) define C509_X509_ENCODE_UECC to decompress secp256r1
+ * points with uECC_decompress() — matching edhoc-cred-c509.c's approach. */
+#if defined(C509_X509_ENCODE_UECC)
+#include "uECC.h"
+#else
 #include <mbedtls/ecp.h>
+#endif
 
 /* Unix timestamp of 2050-01-01T00:00:00Z */
 #define UNIX_2050 2524608000LL
@@ -1744,6 +1752,20 @@ int x509_encode_tbs(uint8_t *buffer, size_t size, size_t *offset, const c509_cer
         uint8_t decompressed[133];
 
         if (pk_len > 0 && (pk_ptr[0] == 0xFE || pk_ptr[0] == 0xFD)) {
+#if defined(C509_X509_ENCODE_UECC)
+            /* micro-ecc path (secp256r1 only): C509 0xFE/0xFD + X -> ANSI
+             * 0x02/0x03 + X, decompress to x||y, prepend 0x04 for the DER SPKI. */
+            if ((int)cert->pk_alg.val == C509_PK_SECP256R1) {
+                uint8_t sec1[33];
+                sec1[0] = (pk_ptr[0] == 0xFE) ? 0x02 : 0x03;
+                memcpy(sec1 + 1, pk_ptr + 1, 32);
+                uint8_t xy[64];
+                uECC_decompress(sec1, xy, uECC_secp256r1());
+                decompressed[0] = 0x04;
+                memcpy(decompressed + 1, xy, 64);
+                pk_ptr = decompressed; pk_len = 65;
+            }
+#else
             mbedtls_ecp_group grp; mbedtls_ecp_point Q;
             mbedtls_ecp_group_init(&grp); mbedtls_ecp_point_init(&Q);
             mbedtls_ecp_group_id gid = MBEDTLS_ECP_DP_NONE;
@@ -1768,6 +1790,7 @@ int x509_encode_tbs(uint8_t *buffer, size_t size, size_t *offset, const c509_cer
                 }
             }
             mbedtls_ecp_group_free(&grp); mbedtls_ecp_point_free(&Q);
+#endif /* C509_X509_ENCODE_UECC */
         }
 
         der_write_tag_len(pk_bit_str, sizeof(pk_bit_str), &pk_bit_str_off, DER_TAG_BIT_STRING, pk_len + 1);
@@ -1907,6 +1930,19 @@ int x509_encode_csr(uint8_t *buffer, size_t size, size_t *offset,
      * prefix); decompress to standard uncompressed (0x04) form for DER, same
      * convention as used elsewhere for certificate SubjectPublicKeyInfo. */
     if (pk_len > 0 && (pk_ptr[0] == 0xFE || pk_ptr[0] == 0xFD)) {
+#if defined(C509_X509_ENCODE_UECC)
+        /* micro-ecc backend: secp256r1 only (the curve the enroll apps use). */
+        if ((int)pk_alg_id == C509_PK_SECP256R1) {
+            uint8_t sec1[33];
+            sec1[0] = (pk_ptr[0] == 0xFE) ? 0x02 : 0x03;
+            memcpy(sec1 + 1, pk_ptr + 1, 32);
+            uint8_t xy[64];
+            uECC_decompress(sec1, xy, uECC_secp256r1());
+            pk_decompressed[0] = 0x04;
+            memcpy(pk_decompressed + 1, xy, 64);
+            pk_ptr = pk_decompressed; pk_len = 65;
+        }
+#else
         mbedtls_ecp_group grp; mbedtls_ecp_point Q;
         mbedtls_ecp_group_init(&grp); mbedtls_ecp_point_init(&Q);
         mbedtls_ecp_group_id gid = MBEDTLS_ECP_DP_NONE;
@@ -1931,6 +1967,7 @@ int x509_encode_csr(uint8_t *buffer, size_t size, size_t *offset,
             }
         }
         mbedtls_ecp_group_free(&grp); mbedtls_ecp_point_free(&Q);
+#endif /* C509_X509_ENCODE_UECC */
     }
     der_write_tag_len(pk_bit, sizeof(pk_bit), &pk_bit_off, DER_TAG_BIT_STRING, pk_len + 1);
     pk_bit[pk_bit_off++] = 0x00;

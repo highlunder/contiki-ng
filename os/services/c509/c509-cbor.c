@@ -1,6 +1,8 @@
 /**
- * @file cbor.c
+ * @file c509-cbor.c
  * @brief Implementation of the low-footprint CBOR decoder.
+ *        (Renamed from cbor.c so its object does not collide with os/lib/cbor.o,
+ *        letting the c509 decoder and EDHOC's CBOR writer coexist in one link.)
  */
 
 #include "cbor.h"
