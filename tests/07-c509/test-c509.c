@@ -8,6 +8,9 @@
 #include "validity.h"
 #include "ed25519_verify.h"
 #include "c509-chain.h"
+#include "c509-crl.h"
+#include "c509-ocsp.h"
+#include "c509-rev-verify.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -637,6 +640,105 @@ run_timing_benchmarks(void)
 #undef BENCH_ITERS
 }
 
+/*---------------------------------------------------------------------------*/
+/* C509 revocation (draft-liao-cose-c509-revocation): CRL lookup, OCSP status,
+ * and the real Ed25519 CRL-signature KAT (published crlocsp-ca key). Vectors
+ * copied from the c509rev reference implementation's tests. */
+static int
+hexbytes(const char *h, uint8_t *out, size_t out_sz)
+{
+  size_t n = 0;
+  for(; h[0] && h[1] && n < out_sz; h += 2) {
+    unsigned v;
+    sscanf(h, "%2x", &v);
+    out[n++] = (uint8_t)v;
+  }
+  return (int)n;
+}
+
+static int
+run_revocation_test(void)
+{
+  int failures = 0;
+
+  /* --- C509 CRL: parse + binary-search revocation lookup --- */
+  static const char *CRL_REVOKED =
+    "8b000c6f746573742063726c6f6373702d6361542f45e78d2caedf36"
+    "8cdf53c39005d492450e1056021a677c71721a00093a80f68085f6840302031a677488728218571a67748580"
+    "5824112206978006123400000001334403f480065566015180065678054600009abc02a30000f6584070bb7a"
+    "38065fbcabfe615170f05a9a9fe83dc892d5f735812b2a053af4b300eb466babb4f1a387cdce90d8302c680b7"
+    "7aa61566423d7c235f7bd31344cf7f405";
+  static uint8_t crl_buf[512];
+  int crl_len = hexbytes(CRL_REVOKED, crl_buf, sizeof(crl_buf));
+  c509_crl_t crl;
+  if(c509_crl_parse(crl_buf, crl_len, &crl) != 0 || crl.n_entries != 6) {
+    printf("REVOCATION: CRL parse FAILED\n");
+    failures++;
+  } else {
+    const uint8_t rev[2] = { 0x12, 0x34 };
+    const uint8_t clean[2] = { 0x20, 0x00 };
+    if(c509_crl_is_revoked(&crl, rev, 2) != 1 ||
+       c509_crl_is_revoked(&crl, clean, 2) != 0 ||
+       c509_crl_reason(&crl, rev, 2) != 1) {
+      printf("REVOCATION: CRL lookup FAILED\n");
+      failures++;
+    }
+  }
+
+  /* --- Real Ed25519 CRL signature verification (published crlocsp-ca key) --- */
+  static const char *CRL_NO_REVOKED =
+    "8b000c6f746573742063726c6f6373702d6361542f45e78d2c"
+    "aedf368cdf53c39005d492450e1056011a6775d7001a00093a80f680f6584013834f4e38aa9f0dc5b8d21c86"
+    "50c776a6d961c31c894c36a71a6433f5ed7d30e67f787f13c7e4c349b2848a181fdbbce361a14c220021c4a2"
+    "67367ad5f1d90d";
+  static const uint8_t CA_PUB[32] = {
+    0x5e, 0xf8, 0xa3, 0x55, 0xa0, 0x01, 0xa7, 0xc5,
+    0x0d, 0x23, 0x49, 0x47, 0x01, 0x20, 0x81, 0x31,
+    0xa4, 0xbb, 0x2a, 0xb9, 0x20, 0xd4, 0x0b, 0xfb,
+    0x0e, 0xe1, 0xf6, 0xab, 0x28, 0xff, 0x74, 0x00
+  };
+  static uint8_t crl2[256];
+  int crl2_len = hexbytes(CRL_NO_REVOKED, crl2, sizeof(crl2));
+  if(c509_rev_verify_ed25519(crl2, crl2_len, CA_PUB) != 0) {
+    printf("REVOCATION: CRL Ed25519 signature verify FAILED\n");
+    failures++;
+  }
+  /* Negative control: a flipped public-key byte must reject. */
+  {
+    uint8_t bad[32];
+    memcpy(bad, CA_PUB, 32);
+    bad[0] ^= 0x01;
+    if(c509_rev_verify_ed25519(crl2, crl2_len, bad) == 0) {
+      printf("REVOCATION: CRL verify accepted a wrong key\n");
+      failures++;
+    }
+  }
+
+  /* --- C509 OCSP: Basic response status lookup --- */
+  static const char *BASIC_RESP =
+    "8a010c005011111111111111111111111111111111480600867838e3311a"
+    "1a67c4f100808648a01c73a5f3b06334808f5410652787fa0527bc2449a1bfc5ab31aa5a6f0d8d0039707f1962"
+    "70805475d8bc4fbafc6694467641e748dfd53a8b9d176d0139707f1962708054d1ac135d7da29bdcf4dca0d528"
+    "1a51605b678400821a67c32f000439707f19627080482222222222222222808554d3a0c1e3db92e8f6810537d4"
+    "5cfaecf6ce417e3b0239707f19627080f65840e4869c57a66bab501acaeb7e5024105253d72f45d349ae21fb94"
+    "1abe4435f8a6c9d1ca5d2784ab30cf177ff075b5502aeaee09c1146cf490663eaed9243a760d";
+  static uint8_t resp_buf[512];
+  int resp_len = hexbytes(BASIC_RESP, resp_buf, sizeof(resp_buf));
+  c509_ocsp_result_t res;
+  /* issuer0 hash @38 (8 B); revoked serial @107 (20 B). */
+  if(c509_ocsp_resp_type(resp_buf, resp_len) != 1 ||
+     c509_ocsp_lookup(resp_buf, resp_len, resp_buf + 38, 8, resp_buf + 107, 20, &res) != 0 ||
+     res.status != C509_OCSP_REVOKED || res.revocation_reason != 4) {
+    printf("REVOCATION: OCSP Basic lookup FAILED\n");
+    failures++;
+  }
+
+  if(failures == 0) {
+    printf("REVOCATION: CRL + OCSP + Ed25519-verify tests OK\n");
+  }
+  return failures;
+}
+/*---------------------------------------------------------------------------*/
 PROCESS(test_c509_process, "C509 Test Process");
 AUTOSTART_PROCESSES(&test_c509_process);
 
@@ -683,6 +785,9 @@ PROCESS_THREAD(test_c509_process, ev, data)
 
   /* CA-side issuance from a CSR (Phase 3.1 of LICE/C509 enrollment plan) */
   failures += (run_ca_issue_test() != 0);
+
+  /* C509 revocation: CRL lookup + OCSP status + Ed25519 CRL-signature KAT */
+  failures += run_revocation_test();
 
   if(failures == 0) {
     printf("C509: All Tests Finished OK\n");

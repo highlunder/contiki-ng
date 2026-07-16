@@ -33,111 +33,12 @@
  */
 
 #include "c509-crl.h"
+#include "c509-cbor-lite.h"
 #include <string.h>
-
-/* Minimal CBOR major types (high 3 bits of the initial byte). */
-#define CBOR_UINT   0
-#define CBOR_NINT   1
-#define CBOR_BSTR   2
-#define CBOR_TSTR   3
-#define CBOR_ARRAY  4
-#define CBOR_MAP    5
-#define CBOR_SIMPLE 7   /* includes null (0xf6) */
 
 /* Control flag bits (draft RevokedCertsControl). */
 #define CTRL_FLAG_SORTED 0x01
 #define CTRL_FLAG_REASON 0x02
-
-/**
- * \brief Read one CBOR head: major type, argument, and the offset just past the
- *        head (not the content). Handles immediate + 1/2/4/8-byte arguments.
- * \return 0 on success, -1 on truncation.
- */
-static int
-cbor_head(const uint8_t *p, const uint8_t *end,
-          uint8_t *major, uint64_t *arg, const uint8_t **body)
-{
-  if(p >= end) {
-    return -1;
-  }
-  uint8_t ib = *p++;
-  *major = ib >> 5;
-  uint8_t ai = ib & 0x1f;
-  uint64_t v = 0;
-  if(ai < 24) {
-    v = ai;
-  } else if(ai == 24) {
-    if(p + 1 > end) { return -1; }
-    v = *p++;
-  } else if(ai == 25) {
-    if(p + 2 > end) { return -1; }
-    v = ((uint64_t)p[0] << 8) | p[1];
-    p += 2;
-  } else if(ai == 26) {
-    if(p + 4 > end) { return -1; }
-    v = ((uint64_t)p[0] << 24) | ((uint64_t)p[1] << 16) |
-        ((uint64_t)p[2] << 8) | p[3];
-    p += 4;
-  } else if(ai == 27) {
-    if(p + 8 > end) { return -1; }
-    for(int i = 0; i < 8; i++) { v = (v << 8) | p[i]; }
-    p += 8;
-  } else {
-    return -1;    /* reserved / indefinite not supported */
-  }
-  *major = ib >> 5;
-  *arg = v;
-  *body = p;
-  return 0;
-}
-
-/**
- * \brief Advance \p *pp past exactly one complete CBOR item (recursing into
- *        arrays/maps). \return 0 on success, -1 on malformed input.
- */
-static int
-cbor_skip(const uint8_t **pp, const uint8_t *end)
-{
-  uint8_t major;
-  uint64_t arg;
-  const uint8_t *body;
-  if(cbor_head(*pp, end, &major, &arg, &body) != 0) {
-    return -1;
-  }
-  switch(major) {
-  case CBOR_UINT:
-  case CBOR_NINT:
-  case CBOR_SIMPLE:
-    *pp = body;
-    return 0;
-  case CBOR_BSTR:
-  case CBOR_TSTR:
-    if(body + arg > end) { return -1; }
-    *pp = body + arg;
-    return 0;
-  case CBOR_ARRAY:
-    *pp = body;
-    for(uint64_t i = 0; i < arg; i++) {
-      if(cbor_skip(pp, end) != 0) { return -1; }
-    }
-    return 0;
-  case CBOR_MAP:
-    *pp = body;
-    for(uint64_t i = 0; i < arg * 2; i++) {
-      if(cbor_skip(pp, end) != 0) { return -1; }
-    }
-    return 0;
-  default:
-    return -1;
-  }
-}
-
-/* Is the item at p a CBOR null (0xf6)? */
-static int
-is_null(const uint8_t *p, const uint8_t *end)
-{
-  return p < end && *p == 0xf6;
-}
 
 int
 c509_crl_parse(const uint8_t *buf, size_t len, c509_crl_t *crl)
@@ -154,7 +55,7 @@ c509_crl_parse(const uint8_t *buf, size_t len, c509_crl_t *crl)
   const uint8_t *body;
 
   /* Outer C509CRL array (11 elements). */
-  if(cbor_head(p, end, &major, &arg, &body) != 0 || major != CBOR_ARRAY ||
+  if(c509_cbor_head(p, end, &major, &arg, &body) != 0 || major != C509_CBOR_ARRAY ||
      arg != 11) {
     return -1;
   }
@@ -164,16 +65,16 @@ c509_crl_parse(const uint8_t *buf, size_t len, c509_crl_t *crl)
    * authoritySubject, authorityKeyIdentifier, crlNumber, thisUpdate,
    * nextUpdate, baseCrlNumber, crlExtensions. */
   for(int i = 0; i < 9; i++) {
-    if(cbor_skip(&p, end) != 0) {
+    if(c509_cbor_skip(&p, end) != 0) {
       return -1;
     }
   }
 
   /* revokedCertsList: null, or an array of 5*groups elements. */
-  if(is_null(p, end)) {
+  if(c509_cbor_is_null(p, end)) {
     return 0;    /* no revocations */
   }
-  if(cbor_head(p, end, &major, &arg, &body) != 0 || major != CBOR_ARRAY ||
+  if(c509_cbor_head(p, end, &major, &arg, &body) != 0 || major != C509_CBOR_ARRAY ||
      arg == 0 || (arg % 5) != 0) {
     return -1;
   }
@@ -182,33 +83,33 @@ c509_crl_parse(const uint8_t *buf, size_t len, c509_crl_t *crl)
 
   /* First group: (issuer, control, extensions, revoked, removed). */
   /* issuer */
-  if(cbor_skip(&p, end) != 0) {
+  if(c509_cbor_skip(&p, end) != 0) {
     return -1;
   }
   /* control: null, or array(4) = [flags, snLen, dateLen, base_date] */
-  if(is_null(p, end)) {
+  if(c509_cbor_is_null(p, end)) {
     /* no control -> no revoked entries in this group */
     return 0;
   }
-  if(cbor_head(p, end, &major, &arg, &body) != 0 || major != CBOR_ARRAY ||
+  if(c509_cbor_head(p, end, &major, &arg, &body) != 0 || major != C509_CBOR_ARRAY ||
      arg != 4) {
     return -1;
   }
   p = body;
   uint64_t flags, snlen, dlen, base;
-  if(cbor_head(p, end, &major, &flags, &body) != 0 || major != CBOR_UINT) {
+  if(c509_cbor_head(p, end, &major, &flags, &body) != 0 || major != C509_CBOR_UINT) {
     return -1;
   }
   p = body;
-  if(cbor_head(p, end, &major, &snlen, &body) != 0 || major != CBOR_UINT) {
+  if(c509_cbor_head(p, end, &major, &snlen, &body) != 0 || major != C509_CBOR_UINT) {
     return -1;
   }
   p = body;
-  if(cbor_head(p, end, &major, &dlen, &body) != 0 || major != CBOR_UINT) {
+  if(c509_cbor_head(p, end, &major, &dlen, &body) != 0 || major != C509_CBOR_UINT) {
     return -1;
   }
   p = body;
-  if(cbor_head(p, end, &major, &base, &body) != 0 || major != CBOR_UINT) {
+  if(c509_cbor_head(p, end, &major, &base, &body) != 0 || major != C509_CBOR_UINT) {
     return -1;
   }
   p = body;
@@ -224,14 +125,14 @@ c509_crl_parse(const uint8_t *buf, size_t len, c509_crl_t *crl)
   crl->entry_len = (uint32_t)snlen + (uint32_t)dlen + (crl->has_reason ? 1 : 0);
 
   /* extensions */
-  if(cbor_skip(&p, end) != 0) {
+  if(c509_cbor_skip(&p, end) != 0) {
     return -1;
   }
   /* revokedCerts: null, or a byte string of fixed-width entries. */
-  if(is_null(p, end)) {
+  if(c509_cbor_is_null(p, end)) {
     return 0;
   }
-  if(cbor_head(p, end, &major, &arg, &body) != 0 || major != CBOR_BSTR) {
+  if(c509_cbor_head(p, end, &major, &arg, &body) != 0 || major != C509_CBOR_BSTR) {
     return -1;
   }
   if(body + arg > end) {
