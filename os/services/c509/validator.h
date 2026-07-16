@@ -20,7 +20,8 @@ typedef enum {
     VALIDATOR_ERR_TIME,
     VALIDATOR_ERR_NOT_CA,
     VALIDATOR_ERR_CHAIN_BROKEN,
-    VALIDATOR_ERR_INTERNAL
+    VALIDATOR_ERR_INTERNAL,
+    VALIDATOR_ERR_REVOKED
 } validator_error_t;
 
 /**
@@ -47,5 +48,30 @@ validator_error_t c509_verify_chain(const uint8_t **chain,
                                    size_t root_pk_len,
                                    int64_t root_pk_alg,
                                    int64_t current_time);
+
+/**
+ * @brief Verify a C509 chain and then check the leaf's revocation status.
+ *
+ * Runs c509_verify_chain(); on success, and if @p crl is non-NULL, parses the
+ * CRL and checks the leaf certificate's serialNumber against it, returning
+ * VALIDATOR_ERR_REVOKED if the leaf is revoked. The caller must have already
+ * established the CRL's authenticity (signature) and scope — see
+ * c509-rev-verify.h / c509-crl.h; this composes chain validation with the
+ * list-membership check for a single validate-then-revocation-check entry point.
+ *
+ * @param crl       CRL bytes (the C509CRL array), or NULL to skip the check.
+ * @param crl_len   length of @p crl.
+ * @return VALIDATOR_OK if the chain is valid and the leaf is not revoked;
+ *         VALIDATOR_ERR_REVOKED if revoked; otherwise the chain error.
+ */
+validator_error_t c509_verify_chain_with_revocation(const uint8_t **chain,
+                                   const size_t *chain_lens,
+                                   size_t chain_count,
+                                   const uint8_t *root_pk,
+                                   size_t root_pk_len,
+                                   int64_t root_pk_alg,
+                                   int64_t current_time,
+                                   const uint8_t *crl,
+                                   size_t crl_len);
 
 #endif // C509_VALIDATOR_H

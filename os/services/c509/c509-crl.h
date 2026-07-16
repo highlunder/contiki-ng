@@ -104,4 +104,24 @@ int c509_crl_is_revoked(const c509_crl_t *crl,
 int c509_crl_reason(const c509_crl_t *crl,
                     const uint8_t *serial, size_t serial_len);
 
+/**
+ * \brief Extract a C509 certificate's serialNumber (flat-array element 1, a
+ *        byte string). Points into \p cert; nothing is copied.
+ * \return 0 on success, -1 on malformed input.
+ */
+int c509_cert_serial(const uint8_t *cert, size_t cert_len,
+                     const uint8_t **serial, size_t *serial_len);
+
+/**
+ * \brief Is a C509 certificate revoked according to a parsed CRL?
+ *
+ * Extracts the cert's serialNumber and looks it up (\ref c509_crl_is_revoked).
+ * The caller is responsible for verifying the CRL's signature and scope (issuer,
+ * thisUpdate/nextUpdate) first; this only answers the list-membership question.
+ *
+ * \return 1 revoked, 0 not revoked, -1 on error.
+ */
+int c509_crl_is_cert_revoked(const uint8_t *cert, size_t cert_len,
+                             const c509_crl_t *crl);
+
 #endif /* C509_CRL_H */

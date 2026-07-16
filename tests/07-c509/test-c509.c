@@ -683,6 +683,16 @@ run_revocation_test(void)
       printf("REVOCATION: CRL lookup FAILED\n");
       failures++;
     }
+    /* cert-level check: a C509 cert (array, type, serialNumber bstr) whose
+     * serial is in the CRL must report revoked (the validator integration
+     * helper). Only the first two array elements are read. */
+    const uint8_t cert_rev[]   = { 0x8b, 0x02, 0x42, 0x12, 0x34 };
+    const uint8_t cert_clean[] = { 0x8b, 0x02, 0x42, 0x20, 0x00 };
+    if(c509_crl_is_cert_revoked(cert_rev, sizeof(cert_rev), &crl) != 1 ||
+       c509_crl_is_cert_revoked(cert_clean, sizeof(cert_clean), &crl) != 0) {
+      printf("REVOCATION: cert-level revocation check FAILED\n");
+      failures++;
+    }
   }
 
   /* --- Real Ed25519 CRL signature verification (published crlocsp-ca key) --- */

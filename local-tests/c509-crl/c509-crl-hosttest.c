@@ -93,11 +93,26 @@ main(void)
   check("reason 0x9abc", reason16(&crl, 0x9abc), 0);
   check("reason clean 0x2000", reason16(&crl, 0x2000), -1);
 
+  /* --- cert serial extraction + is_cert_revoked (integration helper) --- */
+  n = unhex(CRL_REVOKED, buf);
+  c509_crl_parse(buf, n, &crl);
+  /* Minimal C509 cert prefix: array(11), type=2, serialNumber bstr(2). Only the
+   * first two elements are read, so the trailing fields need not be present. */
+  const uint8_t cert_revoked[]  = { 0x8b, 0x02, 0x42, 0x12, 0x34 };  /* serial 0x1234 */
+  const uint8_t cert_clean[]    = { 0x8b, 0x02, 0x42, 0x20, 0x00 };  /* serial 0x2000 */
+  const uint8_t *ser; size_t ser_len;
+  check("cert_serial ret", c509_cert_serial(cert_revoked, sizeof(cert_revoked), &ser, &ser_len), 0);
+  check("cert_serial len", (int)ser_len, 2);
+  check("cert_serial byte0", ser[0], 0x12);
+  check("is_cert_revoked(revoked)", c509_crl_is_cert_revoked(cert_revoked, sizeof(cert_revoked), &crl), 1);
+  check("is_cert_revoked(clean)", c509_crl_is_cert_revoked(cert_clean, sizeof(cert_clean), &crl), 0);
+
   /* --- CRL with no revocations --- */
   n = unhex(CRL_NO_REVOKED, buf);
   check("parse(no-revoked)", c509_crl_parse(buf, n, &crl), 0);
   check("no-revoked n_entries", crl.n_entries, 0);
   check("no-revoked lookup", revoked16(&crl, 0x1234), 0);
+  check("no-revoked is_cert_revoked", c509_crl_is_cert_revoked(cert_revoked, sizeof(cert_revoked), &crl), 0);
 
   printf("\n%s (%d failures)\n", fails ? "TESTS FAILED" : "ALL TESTS PASSED", fails);
   return fails ? 1 : 0;

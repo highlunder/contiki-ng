@@ -222,3 +222,45 @@ c509_crl_reason(const c509_crl_t *crl,
   const uint8_t *e = crl->revoked + (size_t)idx * crl->entry_len;
   return e[crl->serial_len + crl->date_len];   /* reason byte follows serial+date */
 }
+
+int
+c509_cert_serial(const uint8_t *cert, size_t cert_len,
+                 const uint8_t **serial, size_t *serial_len)
+{
+  if(cert == NULL || serial == NULL || serial_len == NULL) {
+    return -1;
+  }
+  const uint8_t *end = cert + cert_len;
+  uint8_t major;
+  uint64_t n;
+  const uint8_t *body;
+  /* C509 certificate = flat array; element 0 = type, element 1 = serialNumber. */
+  if(c509_cbor_head(cert, end, &major, &n, &body) != 0 ||
+     major != C509_CBOR_ARRAY || n < 2) {
+    return -1;
+  }
+  const uint8_t *p = body;
+  if(c509_cbor_skip(&p, end) != 0) {    /* skip type */
+    return -1;
+  }
+  uint64_t slen;
+  if(c509_cbor_head(p, end, &major, &slen, &body) != 0 ||
+     major != C509_CBOR_BSTR || body + slen > end) {
+    return -1;
+  }
+  *serial = body;
+  *serial_len = (size_t)slen;
+  return 0;
+}
+
+int
+c509_crl_is_cert_revoked(const uint8_t *cert, size_t cert_len,
+                         const c509_crl_t *crl)
+{
+  const uint8_t *serial;
+  size_t serial_len;
+  if(c509_cert_serial(cert, cert_len, &serial, &serial_len) != 0) {
+    return -1;
+  }
+  return c509_crl_is_revoked(crl, serial, serial_len);
+}
