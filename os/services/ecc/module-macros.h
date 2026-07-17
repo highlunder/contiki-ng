@@ -41,6 +41,12 @@
 #define ECC_CONF_ENABLED 1
 #define CSPRNG_CONF_ENABLED 1
 #define uECC_ENABLE_VLI_API 1
+/* These curve settings really are mandatory, not defaults: ecc.c references
+ * uECC_secp192r1() and uECC_secp256r1() unconditionally, so a build that
+ * disables either fails to compile. Do not add #ifndef guards here to make them
+ * overridable without first guarding those call sites in ecc.c. (Two curves
+ * enabled also happens to satisfy uECC.h's condition for uECC_OPTIMIZATION_LEVEL
+ * =4 having any effect on ARM -- it needs more than one curve.) */
 #define uECC_SUPPORTS_secp160r1 0
 #define uECC_SUPPORTS_secp192r1 1
 #define uECC_SUPPORTS_secp224r1 0

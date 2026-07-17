@@ -184,3 +184,80 @@ DK flash: `nrfutil device program … --serial-number 683609980 --firmware energ
 Dongle flash: DFU (side RESET → pulsing) then `nrfutil pkg generate … --application
 energest-leaf-dongle.hex …` + `nrfutil dfu usb-serial -pkg … -p /dev/ttyACM0`.
 Read serial: `picocom --imap lfcrlf /dev/ttyACMx -b 115200`.
+
+---
+
+## Result 3b — the c5t 2x2 RE-MEASURED with the NVMC I-cache ON (2026-07-17)
+
+**These supersede Result 3.** Same topology (DK 683609980 = `edhoc-oscore-c5t-server`
+responder + root; nRF52840 dongle = `edhoc-c5t-bench` initiator, 20 iterations,
+both ends `LOG_LEVEL_ERR`), rebuilt after `arch/platform/nrf/platform.c` was changed
+to enable the NVMC instruction cache at boot. Result 3's numbers were cache-OFF:
+the cache had only ever been switched on inside `ecc-bench`, never in shipped
+firmware. See `tests/21-security-protocols/cc310-bringup/BENCH-RESULTS-LOG.md`
+(2026-07-17) for the per-primitive story.
+
+Firmware: `local-tests/bench/hw-2x2-icache/{server,client}-c5t-{sw,cc310}-{csma,tsch}-*.hex`,
+labels `edhoc-c5t-<be>-<mac>-icache`. All cells 20/20, `retx_tot=0`, 1 hop.
+
+| cell | median (ms) | mean | sd | Result 3 median (cache OFF) | gain |
+|---|---:|---:|---:|---:|---:|
+| sw CSMA | **1024.1** | 1036.9 | 35.4 | 1122.2 | 1.10x |
+| sw TSCH | **1092.7** | 1099.8 | 21.7 | 1297.7 | **1.19x** |
+| CC310 CSMA | **393.5** | 394.7 | 38.4 | 423.6 | 1.08x |
+| CC310 TSCH | **534.1** | 537.4 | 22.3 | 531.6 | ~1.00x |
+
+### The corrected CC310 whole-handshake speedup
+
+| MAC | Result 3 | **now** |
+|---|---:|---:|
+| CSMA | 2.65x | **2.60x** |
+| TSCH | 2.44x | **2.05x** |
+
+Exactly the expected direction: the I-cache accelerates flash-resident software
+(uECC, CoAP, CBOR, the netstack) but not CC310's EC math, which runs inside the
+CryptoCell. So software closed part of the gap and the accelerator's whole-handshake
+advantage fell to **2.05-2.60x** — now to be read against the corrected
+**~5x** per-operation P-256 figure (not the old ~8-9x), i.e. the dilution by the
+non-crypto terms is *less* dramatic than the paper currently states, because the
+per-op starting point was overstated.
+
+### FINDING — the "TSCH slotframe penalty" is NOT a stable term
+
+Computed as (TSCH - CSMA) for a fixed backend:
+
+| backend | Result 3 | now | moved |
+|---|---:|---:|---|
+| sw | 175.5 ms | **68.5 ms** | -107 ms |
+| CC310 | 108.0 ms | **140.6 ms** | +33 ms |
+
+The two moved **in opposite directions**, and the MAC configuration did not change —
+only compute speed did. So this quantity cannot be a fixed cost of duty cycling.
+Under Orchestra every EDHOC message waits for its node's next Tx slot, so the
+"penalty" is the handshake's **phase** against the slotframe (~70 ms = 7 slots x
+10 ms). Changing crypto time by ~10% re-phases each message and can add or remove
+up to a slotframe per message; over the three EDHOC messages a +-100 ms swing is
+entirely expected.
+
+**Methodological consequence:** each firmware is *phase-locked* — the same code path
+runs every iteration, so within-run `sd` is small (~22 ms) while the mean shifts a
+lot *between* firmwares. **A small `sd` here does NOT mean the number is precise: a
+run samples ONE phase, not the distribution.** Quoting "the TSCH penalty is X ms"
+from a single firmware pair is unsound. To get an expectation you must randomise the
+handshake start offset against the slotframe (e.g. a random pre-handshake delay per
+iteration) and average over phases — not yet done. Until then, report the TSCH
+penalty as a *range* (~70-175 ms at 1 hop, both backends pooled) and state that it is
+alignment-dependent.
+
+This also revises Result 3's decomposition, which attributed ~108 ms (CC310) /
+~175 ms (sw) to a "TSCH-specific slotframe penalty" as if it were a per-backend
+constant. The *existence* of a penalty is solid (TSCH > CSMA in every cell, always);
+its magnitude is an alignment sample.
+
+### Unchanged conclusions
+
+- TSCH > CSMA in all four cells: duty cycling costs latency, the flip side of the
+  ~22x idle-energy saving (Result 2, matched to 0.01 pp on silicon).
+- Crypto still dominates the handshake in software; CC310 still collapses it.
+- The CSMA CC310 cell keeps the widest spread (sd 38.4, min 336 / max 478) — the
+  CC310 RNG/session setup jitter noted in Result 3.

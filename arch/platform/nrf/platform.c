@@ -55,6 +55,7 @@
 #include "lpm.h"
 #include "nrfx_config.h"
 #include "usb.h"
+#include "hal/nrf_nvmc.h"
 
 /*---------------------------------------------------------------------------*/
 /* Log configuration */
@@ -64,6 +65,31 @@
 /*---------------------------------------------------------------------------*/
 #if NRF_HARDFAULT_HANDLER_EXTENDED
 void hardfault_print_saved_crash(void);
+#endif
+/*---------------------------------------------------------------------------*/
+/* NVMC instruction cache.
+ *
+ * The nRF startup code leaves the I-cache DISABLED, so every flash-resident hot
+ * loop pays flash wait-states. Nordic's own description: "Enabling ICache
+ * reduces the amount of accesses to flash memory, which can boost performance
+ * and lower power consumption" -- i.e. it is a pure win for flash-executing
+ * code, with no correctness implications (it is an instruction cache; flash
+ * writes go through the NVMC, which invalidates it).
+ *
+ * Measured on nRF52840 (uECC P-256, secp256r1): sign 117.0 ms -> 102.6 ms,
+ * verify ~127 -> 113.2 ms, i.e. ~1.15x, for a single register write. Until now
+ * only the ecc-bench app enabled it locally, so every shipped firmware in this
+ * tree ran the slow memory system -- and, because the benchmark did enable it,
+ * benchmark numbers were not representative of deployed builds.
+ *
+ * Enabled by default. Set NRF_CONF_ENABLE_ICACHE 0 to opt out -- e.g. to
+ * reproduce a pre-2026-07-17 timing baseline, or if profiling flash access.
+ * Guarded on the SoC actually having the cache (NVMC_FEATURE_CACHE_PRESENT):
+ * nRF52840/nRF5340 have it, nRF54L15 does not. Uses NRF_NVMC_ICACHE_ENABLE
+ * rather than nrfx_nvmc_icache_enable(), which would also turn on the
+ * hit/miss profiling counters. */
+#ifndef NRF_CONF_ENABLE_ICACHE
+#define NRF_CONF_ENABLE_ICACHE 1
 #endif
 /*---------------------------------------------------------------------------*/
 __attribute__((weak)) void
@@ -79,6 +105,10 @@ platform_init_board_stage_two(void)
 void
 platform_init_stage_one(void)
 {
+#if defined(NVMC_FEATURE_CACHE_PRESENT) && NRF_CONF_ENABLE_ICACHE
+  /* Before anything else: every subsequent instruction fetch benefits. */
+  nrf_nvmc_icache_config_set(NRF_NVMC, NRF_NVMC_ICACHE_ENABLE);
+#endif
   gpio_hal_init();
   platform_init_board();
   leds_init();

@@ -102,6 +102,72 @@ cf. Fedrecheski 2024 ~135 ms CC310 EDHOC).
 
 ---
 
+## PR-branch backend verified on silicon — `examples/libs/ecc` ecdsa (2026-06-29)
+
+Ran the PR's own in-tree test (`examples/libs/ecc/ecdsa`, CC310 build) on a real
+nRF52840-DK — verifies the **extracted `nrf52840-cc310-ecc-backend` branch**
+(off upstream `develop`, blob referenced not vendored), not the eval-phase5 tree.
+Build banner `v5.1-192-gc74bff480` = exactly the PR branch HEAD. PASS:
+
+```
+ECC backend: CC310 hardware
+key generation took 18ms
+validation took 0ms
+signature generation took 20ms
+signature verification took 22ms
+```
+
+Backend line correct, no `failed`, timings match the P-256 CC310 column (18.6/
+20.4/21.5 ms). ms granularity (not µs) is expected — this is a correctness test
+using `clock_time`, not the DWT-µs bench harness. Substantiates the
+`CC310-BACKEND-PR.md` "Validated on real nRF52840-DK" claim on the actual branch.
+
+ECDH program (`examples/libs/ecc/ecdh`, same branch `gc74bff480`) also PASS:
+both parties' `ECDH took 19ms` + `OK` (shared secrets agreed) — matches the
+P-256 CC310 ECDH column (18.8 ms).
+
+compress program (same branch) PASS too: `decompression took 13ms` + `OK`. The
+13 ms is the **software** `uECC_decompress` helper (CC310 has no point-decompress
+primitive — micro-ecc kept linked to fill it), confirming the backend's decompress
+delegation works (not a CC310 op).
+
+**All three `examples/libs/ecc` programs (ecdsa / ecdh / compress) now PASS on
+real silicon from the PR branch — backend hardware-validation complete.**
+
+---
+
+## Tier A — 25519 family on CC310, real HW (X25519 + Ed25519)
+
+`ec25519-bench` (EDHOC suite 0/1 primitives), 100 iters, RESULT PASS, CC310
+hardware. **This is a reproduction of the 2026-06-22 measurement** (same
+pre-stamp firmware `g1e9d6f0a0-dirty`) — numbers match within noise, confirming
+stability across a reflash/board cycle. Mean ms:
+
+| op | mean_us | mean_ms |
+|---|---|---|
+| x25519-keygen  | 11819 | 11.8 |
+| x25519-ecdh    | 11682 | 11.7 |
+| ed25519-keygen | 14802 | 14.8 |
+| ed25519-sign   | 16732 | 16.7 |
+| ed25519-verify | 17922 | 17.9 |
+
+**Curve25519 is faster than secp256r1 on CC310** (cf. the fw `20260626` P-256
+CC310 column): X25519 ECDH 11.7 ms vs P-256 ECDH 18.8 ms (~1.6×); Ed25519
+sign 16.7 vs ECDSA sign 20.4; Ed25519 verify 17.9 vs ECDSA verify 21.5. So the
+EDHOC suite 0/1 (X25519/Ed25519) primitives cost less on CC310 than suite 2
+(P-256/ES256).
+
+⚠️ **Traceability caveat — this hex is NOT fw-stamped.** `ec25519-bench.c` has
+neither the `FW_BUILD_ID` stamp nor the in-bench NVMC I-cache enable (only
+`ecc-bench`/`p256m-bench` got those). The only version marker is the Contiki
+build banner **`v5.1-164-g1e9d6f0a0-dirty`** (predates the stamp/I-cache commits).
+I-cache was therefore **OFF** for this run — but CC310 numbers are cache-
+insensitive (engine, not flash), so these stand as valid CC310 figures. TODO to
+make this self-identifying like the P-256 benches: add `FW_BUILD_ID` + the
+I-cache enable to `ec25519-bench.c` (and `mlkem-bench.c`) and rebuild.
+
+---
+
 ## Pre-stamp baseline (untracked, **I-cache OFF** — superseded by fw `20260626`)
 
 Captured before the build stamp + the NVMC I-cache enable existed. Kept for
@@ -116,3 +182,185 @@ reference only; the cache-on `20260626` runs replace these for the paper.
 
 (p256-m `verify` sd column read 1162359 — the uint64 variance overflow, since
 fixed. CC310 is largely cache-insensitive, so its numbers should hold ~19 ms.)
+
+---
+
+# 2026-07-17 — the software column was misconfigured; corrected 3-way + platform I-cache fix
+
+**DK J-Link SN 683609980, 100 iters/op, secp256r1.** Triggered by a contradiction:
+the new enrollment per-op bench (`local-tests/bench/ENROLL-OPS-RESULTS-LOG.md`,
+Exp H1) measured `csr-sign` = **117.0 ms**, i.e. SHA-256 + one ECDSA sign coming
+out *faster* than this log's bare `sign` = 161.2 ms. A composite op cannot beat the
+primitive it contains, so one of the builds was wrong. Both were — for two
+independent reasons.
+
+## Cause 1 — `ecc-bench` was the only uECC build in the tree at the library defaults
+
+uECC.h defaults to `uECC_OPTIMIZATION_LEVEL=2` / `uECC_SQUARE_FUNC=0`. Neither this
+app's Makefile nor `os/services/ecc/Makefile.ecc` overrode them. But **every
+deployed app** (`edhoc-*`, `enroll-*`, `enroll-ops-bench`) sets `LEVEL=4` +
+`SQUARE_FUNC=1`. So the benchmark measured a configuration nothing ships, and the
+published "software" column understated software by ~1.4x.
+**Fixed:** `ecc-bench/Makefile` now defaults `UECC_OPT=4 UECC_SQUARE=1` (the
+as-deployed config); reproduce the old column with `UECC_OPT=2 UECC_SQUARE=0`.
+
+## Cause 2 — the I-cache was on in the bench and off in every shipped build
+
+`ecc-bench.c` enabled the NVMC instruction cache itself; the nrf platform did not,
+and no other app did either. So benchmark numbers were cache-ON while all deployed
+firmware ran cache-OFF, paying flash wait-states on every uECC inner loop.
+**Fixed platform-wide:** `arch/platform/nrf/platform.c` now enables the I-cache in
+`platform_init_stage_one()` (guarded on `NVMC_FEATURE_CACHE_PRESENT`; opt out with
+`NRF_CONF_ENABLE_ICACHE=0`). `ecc-bench` gained `ECC_BENCH_ICACHE=0`, which also
+passes `-DNRF_CONF_ENABLE_ICACHE=0` so a cache-off measurement is really cache-off.
+
+## Results (mean ms; all rows level 4 + SQUARE_FUNC=1 unless noted)
+
+| config | keygen | sign | verify | ecdh | 4-op total |
+|---|---:|---:|---:|---:|---:|
+| level **2**, cache ON — *the old published column* (fw 20260626) | 150.6 | 161.2 | 180.0 | 150.5 | **642.3** |
+| level 4, cache **OFF** — as-deployed BEFORE today's fix (`fw:sw-opt4-nocache`) | 101.29 | 115.34 | 127.06 | 101.08 | **444.8** |
+| level 4, cache **ON** — as-deployed AFTER the fix (`fw:20260717-opt4`) | 92.08 | **102.60** | **113.19** | 91.93 | **399.8** |
+| level 4, cache ON, **-O3** (`fw:sw-opt4-o3`) | 92.81 | 103.70 | 114.21 | 92.66 | 403.4 |
+| **CC310** (fw 20260626, cache-insensitive) | 18.6 | 20.4 | 21.5 | 18.8 | **79.3** |
+
+### The corrected CC310 claim
+
+| software baseline | sign | 4-op | CC310 speedup |
+|---|---:|---:|---:|
+| level 2, cache ON *(what the paper currently claims)* | 161.2 | 642.3 | **8.1x** |
+| level 4, cache OFF (deployed until today) | 115.3 | 444.8 | **5.6x** |
+| level 4, cache ON (deployed from today) | **102.6** | **399.8** | **5.0x** |
+
+**CC310 is ~5x faster than properly-configured software, not ~8x.** The ~8x figure
+was measured against software crippled by two build accidents. Configuration alone
+— two `-D`s and one register write, no new code — makes software **1.61x faster**
+(642.3 -> 399.8 ms) and halves the CryptoCell's apparent advantage. This is the
+P-256 counterpart of the Ed25519 lesson in [[project-alt-kex-benches]] ("CC310 ~9x
+is vs uECC, not intrinsic"): the honest claim is that CC310 beats *tuned* software
+by ~5x.
+
+### Cross-validation (why the cache-OFF row is trustworthy)
+
+The cache-OFF row reproduces H1's independent `enroll-ops-bench` to within 1-2 ms —
+`sign` 115.34 vs `csr-sign` 116.97 (+1.6 ms) and `verify` 127.06 vs `chain-valid`
+127.57 (+0.5 ms) — and that residue is exactly the SHA-256 + CBOR assembly the
+composite ops add. Different firmware, different curve set (this app compiles
+secp192r1+secp256r1 via `os/services/ecc`; `enroll-ops-bench` compiles uECC's five
+defaults), same answer => the I-cache was the whole discrepancy, and curve count
+does not affect speed.
+
+### -O3: rejected on data
+
+`-O3` is **~1% SLOWER** than `-O2` on every op and costs **+16.6 KB flash**
+(`.text` 67 936 -> 84 516, +24%). Expected: uECC's hot path is hand-written UMAAL
+assembly the compiler cannot improve, so -O3 only adds inlining bloat and I-cache
+pressure. Keep `-O2`. (`EXTRA_OPT=-O3` is retained in the Makefile, appended after
+`Makefile.include` so the later -O wins; verified `-O2 -O3` on the uECC.c command
+line.)
+
+### uECC tuning: there is nothing left to turn on
+
+Verified against uECC.h/types.h and the actual compile line — every speed knob is
+already at maximum on this target:
+
+| knob | value | how established |
+|---|---|---|
+| `uECC_OPTIMIZATION_LEVEL` | 4 (max) | compile line |
+| `uECC_SQUARE_FUNC` | 1 | compile line |
+| ARM thumb2 asm (`asm_arm.inc`) | active | `__thumb2__` => `uECC_PLATFORM=uECC_arm_thumb2` |
+| `uECC_ARM_USE_UMAAL` (fastest multiply) | 1 | `__ARM_ARCH=7` + `__ARM_ARCH_7EM__` (not `7M`) => auto-on |
+| `uECC_WORD_SIZE` | 4 (forced for ARM) | types.h |
+| compiler | -O2 (-O3 rejected above) | compile line |
+
+Considered and ruled out:
+- **Single-curve build** (secp256r1 only): **not possible** via `os/services/ecc` —
+  `ecc.c` calls `uECC_secp192r1()` unconditionally, so disabling it fails to
+  compile (module-macros.h's "mandatory" comment is accurate; do not add #ifndef
+  guards there without guarding those call sites first). Note it would be a
+  code-size lever at best and could REGRESS speed: uECC.h says level 4 "only has an
+  effect on ARM platforms where more than one curve is enabled", and the two curves
+  this module enables are what make level 4 effective at all.
+- **`uECC_VLI_NATIVE_LITTLE_ENDIAN=1`**: cuts byte-swapping and stack, but changes
+  the endianness of every key/signature crossing the API — incompatible with
+  X.509/C509/EDHOC interop unless all parties swap. Bench-only curiosity.
+- **`uECC_SUPPORT_COMPRESSED_POINT=0`**: code size only, and we need decompression
+  for C509 point reconstruction.
+
+### Side note — variance structure
+
+`sign` sd ~100 us (0.1%) but `verify` sd ~1.9-2.3 ms (~2%, spread 121-132 ms).
+Verify's scalar multiplication is input-dependent (Shamir's trick over the random
+signature values); sign's is not. That asymmetry is the expected side-channel
+posture: the secret-scalar op is near-constant-time, the variable-time op runs only
+on public data.
+
+## Consequence for previously-logged numbers
+
+**Every nRF sw-crypto figure recorded before 2026-07-17 was cache-OFF**, including
+today's H1 block and the TSCH-HW-RESULTS EDHOC 2x2 (sw 1122 ms CSMA / 1298 ms TSCH,
+CC310 424/532). With the platform fix they should improve by ~10-12% on the
+software side only (CC310 is cache-insensitive), which will further compress the
+CC310 speedup on whole handshakes. Re-run before quoting; do not scale the old
+numbers analytically.
+
+---
+
+# 2026-07-17 — Exp H5: CC310-linked memory footprint (LICE PLAN §10.5)
+
+Build-time only (`arm-none-eabi-size`, no board). Closes the §5.3.9 flag: the
+paper's `Table:memory-footprint` is software-only, so the accelerator's ROM/RAM
+cost — the other half of the "is CC310 worth it?" question — was never quantified.
+Same app built twice, only `ECC_HW_BACKEND=cc310` differing.
+
+| config | text | data | bss | dec |
+|---|---:|---:|---:|---:|
+| `ecc-bench` sw | 67 956 | 1 128 | 14 520 | 83 604 |
+| `ecc-bench` **cc310** | 100 100 | 1 080 | 20 908 | 122 088 |
+| `edhoc-c5t-bench` sw, CSMA | 113 860 | 1 368 | 16 276 | 131 504 |
+| `edhoc-c5t-bench` **cc310**, CSMA | 149 712 | 1 320 | 22 664 | 173 696 |
+| `edhoc-oscore-c5t-server` sw, CSMA | 108 628 | 1 376 | 16 156 | 126 160 |
+| `edhoc-oscore-c5t-server` **cc310**, CSMA | 144 480 | 1 328 | 22 544 | 168 352 |
+| `enroll-ops-bench` sw (no cc310 path) | 74 264 | 1 032 | 11 160 | 86 456 |
+
+**Cost of enabling CC310** (cc310 − sw):
+
+| app | flash (.text) | RAM (.bss) |
+|---|---:|---:|
+| `ecc-bench` | **+32 144 B** (+47.3%) | **+6 388 B** (+44.0%) |
+| `edhoc-c5t-bench` | **+35 852 B** (+31.5%) | **+6 388 B** (+39.2%) |
+| `c5t-server` | **+35 852 B** (+33.0%) | **+6 388 B** (+39.5%) |
+
+`.data` *falls* by 48 B in every cc310 build (noise). The RAM delta is identical
+(+6 388 B) across all three apps and the flash delta is identical (+35 852 B) for the
+two real apps, so this is the fixed cost of linking Nordic's `nrf_crypto` + CC310
+runtime, not something that scales with the application. `ecc-bench`'s smaller flash
+delta (+32 144) reflects the EDHOC apps pulling a few more `nrf_crypto` modules.
+
+Note uECC is linked in **both** builds — the CC310 backend reuses `uECC_decompress`
+for EC point decompression (`os/services/ecc/Makefile.ecc`), so the +35.9 KB is
+purely additive; enabling hardware does not let you drop the software library.
+
+## The trade-off, stated honestly
+
+Pairing this with the 2026-07-17 speed results above:
+
+| option | flash cost | RAM cost | speed gain (per-op P-256) |
+|---|---:|---:|---:|
+| tune uECC (LEVEL 2→4 + SQUARE_FUNC) | **+1 292 B** | 0 | **1.57x** |
+| enable NVMC I-cache | **0 B** | 0 | **1.12x** |
+| *both (config only, no new code)* | **+1 292 B** | **0** | **1.61x** |
+| enable CC310 on top | **+35 852 B** | **+6 388 B** | further **~3.1x** (5.0x total) |
+
+**The first 1.6x is essentially free; the remaining ~3x costs ~36 KB of flash and
+~6.4 KB of RAM.** Per unit of flash the software tuning is ~28x more efficient. On
+the nRF52840 (1 MB flash / 256 KB RAM) CC310's ~3.6% flash and ~2.5% RAM are easily
+affordable and the accelerator remains the right choice where latency or energy
+matters — but the correct comparison is against *tuned* software (~5x, and only
+2.05-2.60x on a whole handshake), not the ~8-9x this log previously reported against
+a misconfigured build. On a smaller part (256 KB flash), ~36 KB for ~3x is a real
+decision rather than a free win.
+
+**Caveat:** the CC310 silicon exists on the die regardless — this is the cost of the
+*driver library*, not of hardware. And these are `-O2` figures; see the -O3 note
+above (rejected: +24% flash for ~1% slower).

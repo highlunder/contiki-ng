@@ -118,6 +118,16 @@ dwt_now(void)
  * the hw-vs-sw gap must be measured with the cache ON to be fair.) */
 #define NVMC_ICACHECNF (*(volatile uint32_t *)0x4001E540UL)
 
+/* Build with ECC_BENCH_ICACHE=0 to leave the cache in the state the platform
+ * actually boots with (disabled). That is the AS-DEPLOYED memory system: no
+ * shipped app in this tree enables the I-cache, only this bench does. Measuring
+ * with it on is the right choice for a fair hw-vs-sw comparison (see above), but
+ * it is NOT what the deployed software crypto experiences -- so both configs are
+ * worth having. The printout below always reports the real state. */
+#ifndef ECC_BENCH_ICACHE
+#define ECC_BENCH_ICACHE 1
+#endif
+
 static inline void
 icache_enable(void)
 {
@@ -289,7 +299,9 @@ PROCESS_THREAD(ecc_bench_process, ev, data)
   printf("backend: %s\n", ECC_BENCH_BACKEND);
   printf("fw-build: %s  (compiled %s %s)\n", FW_BUILD_ID, __DATE__, __TIME__);
 
+#if ECC_BENCH_ICACHE
   icache_enable();
+#endif
   printf("NVMC I-cache: %s\n", (NVMC_ICACHECNF & 1UL) ? "ENABLED" : "disabled");
 
   /* rung 3: is the DWT cycle counter alive? */
