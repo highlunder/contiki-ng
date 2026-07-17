@@ -1,0 +1,3 @@
+# Build artifacts (reproducible from build_enroll.sh via the crts client/server).
+*.hex
+emul/

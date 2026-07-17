@@ -131,6 +131,20 @@ static volatile bool g_advanced = false;      /* callback advanced the FSM */
 static volatile bool g_enroll_done = false;
 static volatile bool g_enroll_failed = false;
 
+/* Enrollment wall-clock instrumentation (Exp H2, on real silicon). clock_time()
+ * is fine here -- the flow is multi-second and the C509-vs-X.509 gap is expected
+ * in seconds -- and it is wrap-safe over the duration (unlike the 16 us rtimer).
+ * Split: EDHOC handshake vs the post-handshake /crts+/sen enrollment. */
+static clock_time_t g_t_start, g_t_edhoc;
+#ifndef FW_BUILD_ID
+#define FW_BUILD_ID "unstamped"
+#endif
+#ifdef ENROLL_X509
+#define ENROLL_ARM "x509"
+#else
+#define ENROLL_ARM "c509"
+#endif
+
 PROCESS_NAME(edhoc_oscore_crts_client);
 
 static void send_oscore_post_request(const uip_ipaddr_t *server_addr,
@@ -575,12 +589,14 @@ PROCESS_THREAD(edhoc_oscore_crts_client, ev, data)
   edhoc_set_c509_trust_store(&ca_anchor, 1);
   edhoc_set_cert_validator(edhoc_c509_validate_chain, NULL);
 
+  g_t_start = clock_time();          /* H2: enrollment wall-clock starts */
   edhoc_client_run();
 
   while(1) {
     PROCESS_WAIT_EVENT();
     int8_t ret = edhoc_client_callback(ev, data);
     if(ret > 0) {
+      g_t_edhoc = clock_time();      /* H2: EDHOC handshake done */
       LOG_INFO("EDHOC finished\n");
 
       oscore_ctx_t edhoc_out;
@@ -655,6 +671,23 @@ PROCESS_THREAD(edhoc_oscore_crts_client, ev, data)
             g_enroll_failed = true;
           }
         }
+      }
+
+      /* H2 enrollment wall-clock: EDHOC handshake vs post-handshake /crts+/sen,
+       * one self-identifying block (fw + arm stamped). clock_time() ticks are
+       * CLOCK_SECOND per second. */
+      {
+        clock_time_t t_end = clock_time();
+        uint32_t edhoc_ms =
+          (uint32_t)((uint64_t)(g_t_edhoc - g_t_start) * 1000 / CLOCK_SECOND);
+        uint32_t enroll_ms =
+          (uint32_t)((uint64_t)(t_end - g_t_edhoc) * 1000 / CLOCK_SECOND);
+        uint32_t total_ms =
+          (uint32_t)((uint64_t)(t_end - g_t_start) * 1000 / CLOCK_SECOND);
+        printf("[ENROLL-TIMING fw:%s arm:%s ok:%d] edhoc_ms=%lu crts_sen_ms=%lu "
+               "total_ms=%lu\n", FW_BUILD_ID, ENROLL_ARM, g_enroll_done ? 1 : 0,
+               (unsigned long)edhoc_ms, (unsigned long)enroll_ms,
+               (unsigned long)total_ms);
       }
       break;
     }

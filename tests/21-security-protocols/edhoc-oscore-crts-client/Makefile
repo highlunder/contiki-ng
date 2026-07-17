@@ -70,4 +70,8 @@ ifdef ENROLL_X509_DYN
   CFLAGS += -I$(CONTIKI)/os/net/security/micro-ecc
 endif
 
+# Firmware build id, stamped into the [ENROLL-TIMING] block (Exp H2 wall-clock).
+FW_ID ?= $(shell date -u +%Y%m%d)
+CFLAGS += -DFW_BUILD_ID='"$(FW_ID)"'
+
 include $(CONTIKI)/Makefile.include
