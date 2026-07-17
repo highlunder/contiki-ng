@@ -1,0 +1,5 @@
+# Generated per cell by gen-payloads.py (variant/R decide its contents).
+crl-payload.h
+# Emulator configs written by run-e10.py, and its logs/per-cell build output.
+conf/
+results/
