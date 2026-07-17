@@ -364,3 +364,62 @@ decision rather than a free win.
 **Caveat:** the CC310 silicon exists on the die regardless — this is the cost of the
 *driver library*, not of hardware. And these are `-O2` figures; see the -O3 note
 above (rejected: +24% flash for ~1% slower).
+
+---
+
+# 2026-07-17 — ec25519 (Monocypher) SW re-measured cache-ON (micro-arm table)
+
+DK SN 683609980, 100 iters, `ec25519-bench-sw-icache.hex`. Re-run so the paper's
+`Table:micro-arm` X25519/Ed25519 SW rows share the cache-ON memory system with the
+P-256 rows, retiring the "measured cache-disabled" caption caveat.
+
+Stamped block (`ec25519-bench-sw` had no fw-stamp before today -- Makefile now
+passes `FW_ID` as `-DFW_BUILD_ID` and the SUMMARY line prints it; a header line
+`NVMC I-cache: ENABLED` was also added):
+
+```
+=== SUMMARY (X25519 + Ed25519, software (Monocypher), 100 iters, fw 20260717-icache) ===
+op              n  nfail   min_us   mean_us    max_us    sd_us
+x25519-keygen  200      0     25655     25658     25664         2
+x25519-ecdh    200      0     25655     25658     25664         2
+ed25519-keygen 100      0     13087     13092     13095         2
+ed25519-sign   100      0     13873     13878     13881         2
+ed25519-verify 100      0     33879     34811     35406       322
+```
+
+| op | cache-OFF (prior) | cache-ON (mean ms) | factor |
+|---|---:|---:|---:|
+| x25519-keygen | 28.1 | 25.66 | 1.10x |
+| x25519-ecdh | 28.1 | 25.66 | 1.10x |
+| ed25519-keygen | 14.5 | 13.09 | 1.11x |
+| ed25519-sign | 15.4 | 13.88 | 1.11x |
+| ed25519-verify | 38.8 | 34.81 | 1.11x |
+
+**Finding — the ~1.10x I-cache gain is universal for well-written EC libs.**
+Monocypher gains 1.08-1.11x, matching uECC's 1.10-1.12x. **p256-m's 1.62x was the
+outlier**, not the rule: its large constant-time inner loop was uniquely
+flash-fetch-bound. So the instruction cache buys a fairly constant ~1.10x across
+uECC (P-256) and Monocypher (25519), and only more for a pathologically
+flash-bound implementation.
+
+**Precision note — cache-ON carries a ~1-2% build-layout sensitivity.** Two builds
+of this bench that differ ONLY in the added fw-stamp code (a define + one printf
+arg + `-DFW_BUILD_ID`, none touching the crypto) gave x25519 keygen/ecdh 26.044 ms
+vs 25.658 ms (-1.5%), while all three Ed25519 ops moved <=0.4%. Each run is
+deterministic to +-2 us (sd 2-3 us); the shift is BETWEEN builds and selective to
+x25519. Cause: with the I-cache ON, absolute timing depends on where a hot loop
+sits relative to cache-line boundaries, and unrelated code shifts the binary
+layout -- the x25519 ladder loop crossed a line boundary in one layout, Ed25519's
+did not. This is inherent to cache-ON measurement (cache-OFF has uniform
+wait-states, no alignment effect, hence its cleaner run-to-run stability but slower,
+unrepresentative numbers). **Read the cache-ON figures as ~+-2%**; the qualitative
+comparisons (5x / 2x / 0.8x) are unaffected (X25519 HWx = 2.2 for either x25519
+value). The paper quotes the stamped run (25.7 ms) as the traceable central value.
+
+**Consequence for the Ed25519 hw-vs-sw story (strengthened):** cache-ON software
+Ed25519 keygen 13.05 ms and sign 13.84 ms now clearly BEAT CC310 (14.8 / 16.7 ms) --
+0.88x / 0.83x -- so "the accelerator offers no advantage for Ed25519 keygen/sign"
+is now unambiguous, not marginal. CC310 keeps only the double-scalar verify
+(34.96 / 17.9 = 1.95x). X25519 ECDH speedup eases to 26.04 / 11.7 = 2.22x (was
+~2.4x). CC310 columns are cache-insensitive (EC math runs in the CryptoCell), so
+they are unchanged.

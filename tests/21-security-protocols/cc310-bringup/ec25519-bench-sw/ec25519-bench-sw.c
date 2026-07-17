@@ -32,6 +32,13 @@
 
 #define ECC_BENCH_BACKEND "software (Monocypher)"
 
+/* Firmware build id, stamped into the SUMMARY line for traceability (matches the
+ * ecc-bench / enroll-ops convention). Override with FW_ID=<id> at build; the
+ * Makefile passes it through as -DFW_BUILD_ID. */
+#ifndef FW_BUILD_ID
+#define FW_BUILD_ID "unstamped"
+#endif
+
 #define CPU_HZ        64000000UL
 #ifndef BENCH_ITERS
 #define BENCH_ITERS   100
@@ -166,6 +173,12 @@ PROCESS_THREAD(ec25519_sw_bench_process, ev, data)
 
   printf("\n=== nRF52840 EC25519 benchmark (X25519 + Ed25519) ===\n");
   printf("backend: %s\n", ECC_BENCH_BACKEND);
+  /* Report (do not set) the NVMC I-cache state: the platform enables it in
+   * platform_init_stage_one() from 2026-07-17, so a fresh build runs cache-ON.
+   * Monocypher is portable C (no ARM asm), hence flash-fetch-bound and
+   * cache-sensitive -- so this line matters for interpreting the numbers. */
+  printf("NVMC I-cache: %s\n",
+         ((*(volatile uint32_t *)0x4001E540UL) & 1UL) ? "ENABLED" : "disabled");
 
   dwt_init();
   t = dwt_now();
@@ -207,8 +220,8 @@ PROCESS_THREAD(ec25519_sw_bench_process, ev, data)
     PROG_TICK(i);
   }
 
-  printf("\n=== SUMMARY (X25519 + Ed25519, %s, %d iters) ===\n",
-         ECC_BENCH_BACKEND, BENCH_ITERS);
+  printf("\n=== SUMMARY (X25519 + Ed25519, %s, %d iters, fw %s) ===\n",
+         ECC_BENCH_BACKEND, BENCH_ITERS, FW_BUILD_ID);
   printf("op              n  nfail   min_us   mean_us    max_us    sd_us\n");
   for(g = 0; g < N_GROUPS; g++) {
     sum = 0;
