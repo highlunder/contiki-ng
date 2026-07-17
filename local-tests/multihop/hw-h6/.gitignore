@@ -1,0 +1,4 @@
+# Build artifacts (reproducible via -DTOPO_ROLE per role; see README).
+*.hex
+emul/
+dfu/
