@@ -55,6 +55,9 @@
 #include "net/netstack.h"
 #include "net/packetbuf.h"
 #include "net/mac/tsch/tsch.h"
+#ifdef TOPO_ROLE
+#include "net/mac/framer/frame802154.h"
+#endif
 #include "helpers/nrfx_gppi.h"
 #include <stdint.h>
 #include <stdbool.h>
@@ -712,6 +715,33 @@ read_frame(void *buf, unsigned short bufsize)
   }
 
   memcpy(buf, rx_buf.mpdu, payload_len);
+
+#ifdef TOPO_ROLE
+  /* Virtual line-topology filter (bench only). Every node runs a fixed address
+   * whose last byte is its role (see linkaddr-arch.c). Accept a frame only from
+   * an adjacent role (role +-1), so root and leaf never hear each other even
+   * when co-located -- forcing root--relay--leaf without physical separation.
+   * Applied here in the shared radio read path so it governs BOTH CSMA and TSCH
+   * (including TSCH enhanced-beacon sync, which a network-layer filter would
+   * miss). Frames without a parseable extended source (e.g. ACKs) are passed. */
+  {
+    frame802154_t f;
+    if(frame802154_parse(buf, payload_len, &f) &&
+       f.fcf.src_addr_mode == FRAME802154_LONGADDRMODE) {
+      /* frame802154_parse reverses the on-wire address, so f.src_addr[] is in
+       * linkaddr byte order -- the role byte we set at linkaddr[LINKADDR_SIZE-1]
+       * (linkaddr-arch.c) is at f.src_addr[7] (the long address is 8 bytes). */
+      uint8_t src_role = f.src_addr[7];
+      if(src_role != (uint8_t)(TOPO_ROLE) - 1 &&
+         src_role != (uint8_t)(TOPO_ROLE) + 1) {
+        rx_buf_clear();
+        enter_rx();
+        return 0;                          /* drop: non-adjacent role */
+      }
+    }
+  }
+#endif
+
   last_lqi = lqi_convert_to_802154_scale(rx_buf.mpdu[payload_len]);
   last_rssi = -(radio_rssi_sample_get());
 

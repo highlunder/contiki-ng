@@ -108,6 +108,25 @@ populate_link_address(void)
 
   memcpy(&linkaddr_node_addr, &device_address[8 - LINKADDR_SIZE],
          LINKADDR_SIZE);
+
+#ifdef TOPO_ROLE
+  /* Bench-only "virtual topology": override the FICR-derived address with a
+   * fixed one whose LAST byte is this node's line-topology role (1=root,
+   * 2..=relays, N=leaf). Deterministic per role so the source-role filter in the
+   * radio driver (nrf-ieee-driver-arch.c, TOPO_ROLE) can enforce a line topology
+   * even when every board is within RF range on one desk -- no attenuators or
+   * physical separation. First byte 0x02 flags a locally-administered address.
+   * SECURITY NOTICE: test topology aid only; never ship with a fixed address. */
+  {
+    uint8_t *la = (uint8_t *)&linkaddr_node_addr;
+    unsigned k;
+    for(k = 0; k < LINKADDR_SIZE; k++) {
+      la[k] = 0;
+    }
+    la[0] = 0x02;
+    la[LINKADDR_SIZE - 1] = (uint8_t)(TOPO_ROLE);
+  }
+#endif
 }
 /*---------------------------------------------------------------------------*/
 /**
