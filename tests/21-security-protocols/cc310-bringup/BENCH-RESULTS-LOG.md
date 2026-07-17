@@ -423,3 +423,23 @@ is now unambiguous, not marginal. CC310 keeps only the double-scalar verify
 (34.96 / 17.9 = 1.95x). X25519 ECDH speedup eases to 26.04 / 11.7 = 2.22x (was
 ~2.4x). CC310 columns are cache-insensitive (EC math runs in the CryptoCell), so
 they are unchanged.
+
+---
+
+# 2026-07-17 — ML-KEM (Kyber ref, SW) re-measured cache-ON
+
+DK SN 683609980, 100 iters, `fw:20260717-icache` (`mlkem-{512,768,1024}-sw-icache.hex`;
+now stamped + prints `NVMC I-cache: ENABLED`, hooks it previously lacked). All PASS
+(encaps/decaps shared secret matched every iteration).
+
+| level | keygen (ms) | encaps (ms) | decaps (ms) |
+|---|---:|---:|---:|
+| ML-KEM-512 | 16.46 | 17.75 | 20.66 |
+| ML-KEM-768 | 27.72 | 29.96 | 34.07 |
+| ML-KEM-1024 | 42.15 | 45.23 | 50.23 |
+
+sd ~150 us (~0.4%), larger than the EC benches' ~2 us -- Kyber's rejection sampling
+in keygen/encaps is data-dependent, so run-to-run variance is inherent (not the
+cache-layout effect). These supersede the cache-OFF alt-kex Tier-D numbers
+(2026-06-22) for the software ML-KEM column; the ~1.1x cache gain and ~±2% layout
+sensitivity noted for the EC benches apply here too.

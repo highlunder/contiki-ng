@@ -50,6 +50,13 @@
 #define BENCH_ITERS   100          /* override from Makefile: ITERS=<n> */
 #endif
 
+/* Firmware build id, stamped into the SUMMARY line for traceability (matches the
+ * ecc-bench / enroll-ops convention). Override with FW_ID=<id>; the Makefile
+ * passes it as -DFW_BUILD_ID. */
+#ifndef FW_BUILD_ID
+#define FW_BUILD_ID "unstamped"
+#endif
+
 #ifndef ECC_BENCH_DEBUG
 #define ECC_BENCH_DEBUG 0
 #endif
@@ -156,6 +163,11 @@ PROCESS_THREAD(mlkem_bench_process, ev, data)
   printf("sizes: pk=%d  sk=%d  ct=%d  ss=%d  (bytes on the wire: pk+ct=%d)\n",
          KYBER_PUBLICKEYBYTES, KYBER_SECRETKEYBYTES, KYBER_CIPHERTEXTBYTES,
          KYBER_SSBYTES, KYBER_PUBLICKEYBYTES + KYBER_CIPHERTEXTBYTES);
+  /* Report (do not set) the NVMC I-cache state -- the platform enables it in
+   * platform_init_stage_one() from 2026-07-17, so a fresh build runs cache-ON.
+   * ML-KEM's ref keccak/NTT is flash-resident, so this line matters. */
+  printf("NVMC I-cache: %s\n",
+         ((*(volatile uint32_t *)0x4001E540UL) & 1UL) ? "ENABLED" : "disabled");
 
   dwt_init();
   t = dwt_now();
@@ -176,8 +188,8 @@ PROCESS_THREAD(mlkem_bench_process, ev, data)
     PROG_TICK(i);
   }
 
-  printf("\n=== SUMMARY (%s, software ref, %d iters) ===\n",
-         MLKEM_NAME, BENCH_ITERS);
+  printf("\n=== SUMMARY (%s, software ref, %d iters, fw %s) ===\n",
+         MLKEM_NAME, BENCH_ITERS, FW_BUILD_ID);
   printf("op        n  nfail   min_us   mean_us    max_us    sd_us\n");
   for(g = 0; g < N_OPS; g++) {
     sum = 0;

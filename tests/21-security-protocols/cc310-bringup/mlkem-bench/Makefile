@@ -38,4 +38,8 @@ ifneq ($(ITERS),)
   CFLAGS += -DBENCH_ITERS=$(ITERS)
 endif
 
+# Firmware build id, stamped into the SUMMARY line (matches ecc-bench / ec25519).
+FW_ID ?= $(shell date -u +%Y%m%d)
+CFLAGS += -DFW_BUILD_ID='"$(FW_ID)"'
+
 include $(CONTIKI)/Makefile.include
