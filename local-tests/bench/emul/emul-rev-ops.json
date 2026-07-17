@@ -1,0 +1,22 @@
+{
+    "title": "C509 revocation consume-path per-op microbench on EMULATED nRF52840-DK (software, LRev E4)",
+    "timeout_ms": 20000,
+    "seed": 1,
+    "startup_delay_ms": 1000,
+    "radiomedium": {
+        "type": "udgm",
+        "tx_range": 55.0,
+        "interference_range": 110.0,
+        "success_ratio_tx": 1.0,
+        "success_ratio_rx": 1.0
+    },
+    "nodes": [
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/bench/emul/rev-ops-bench-emul.nrf52840", "id": 1, "x": 0.0, "y": 0.0 }
+    ],
+    "test": {
+        "description": "Single emulated nRF52840 node runs the compute-only rev-ops-bench (no radio): crl-parse, crl-lookup, ocsp-lookup, ocspreq-build (batched to resolve the ~16us rtimer) and one ecdsa-verify per sample. Cycle-accurate emulated-nRF per-op timing for the C509 revocation consume path -- the revocation analogue of the LICE C509->DER-overhead measurement. Passes when the node prints its REV-OPS-END block.",
+        "validators": [
+            { "pattern": "REV-OPS-END", "node": 1, "min_count": 1 }
+        ]
+    }
+}
