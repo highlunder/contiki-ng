@@ -92,6 +92,8 @@ PROCESS_THREAD(enroll_ops_bench, ev, data)
 
   PROCESS_BEGIN();
 
+  bench_marker_init();                 /* no-op unless -DENERGY_MARKER_PIN */
+
   printf("[ENROLL-OPS fw:%s compiled:%s %s backend:%s curve:secp256r1 iters:%d test:%s]\n",
          FW_BUILD_ID, __DATE__, __TIME__, ECC_BACKEND_NAME, EOP_ITERS, TEST_ID);
 
@@ -140,6 +142,12 @@ PROCESS_THREAD(enroll_ops_bench, ev, data)
   for(i = 0; i < EOP_ITERS; i++) {
     size_t off, tbs_len, tbs2_len, out_len;
 
+    /* PPK2 energy window: one pulse spans the whole 5-op compute sequence.
+     * These ops are pure P-256/SHA-256 compute at near-constant current, so
+     * per-op energy = (per-iteration energy) x (the per-op time fraction from
+     * H1), rather than needing five separate windows. */
+    bench_marker_high();
+
     /* --- csr-build --- */
     off = 0; tbs_len = 0;
     t0 = RTIMER_NOW();
@@ -148,6 +156,7 @@ PROCESS_THREAD(enroll_ops_bench, ev, data)
                              &tbs_len) == 0) {
       bench_stats_add_us(&s_build, bench_elapsed_us(t0, RTIMER_NOW()), 0);
     } else {
+      bench_marker_low();               /* don't leave the window open on skip */
       bench_stats_add_fail(&s_build);
       continue;
     }
@@ -194,6 +203,7 @@ PROCESS_THREAD(enroll_ops_bench, ev, data)
     } else {
       bench_stats_add_fail(&s_verify);
     }
+    bench_marker_low();                  /* end of the per-iteration compute window */
 
     /* Yield periodically so the watchdog/netstack stay happy on the DK. */
     if((i & 0x3) == 0) {

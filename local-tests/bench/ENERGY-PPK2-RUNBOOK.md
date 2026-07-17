@@ -108,33 +108,38 @@ Energy is only meaningful over a defined window. Two problems:
 `PLAN` §10.4 suggests a single-op-per-build variant (`EOP_ITERS=1`, one op enabled).
 That works but needs one build per op and still leaves the window fuzzy.
 
-**Better: a GPIO marker on the PPK2's digital input.** The PPK2 samples 8 logic
-channels (D0–D7) *synchronously with current*, so the app shows the marker next to
-the trace and the window becomes exact and machine-readable.
+**Solution: a GPIO marker on the PPK2's digital input — IMPLEMENTED.** The PPK2
+samples 8 logic channels (D0–D7) *synchronously with current*, so the app shows the
+marker next to the trace and the window is exact and machine-readable.
 
-**Firmware addition needed** (not yet written): raise a pin before the timed region
-and drop it after — the same region `bench_elapsed_us()` already brackets, so
-energy and latency measure *identically defined* windows. Contiki's GPIO HAL has
-what's needed (`gpio_hal_arch_port_set_pins` / `..._clear_pins`, see
-`arch/cpu/nrf/dev/gpio-hal-arch.c`). Suggested shape:
+`bench-stats.h` provides `bench_marker_init/high/low()`, gated behind
+`ENERGY_MARKER_PIN=<n>` (nRF **port 1**; default port overridable via
+`ENERGY_MARKER_PORT`). Off by default → timing builds are byte-identical to the
+logged H1/H2 runs (no GPIO write in the hot path). Wired into:
 
-```c
-/* PPK2 D0 marker: high for exactly the region the RTIMER also times, so the
- * energy window and the latency window are the same region by construction. */
-#ifdef ENERGY_MARKER_PIN
-#define MARK_HIGH() gpio_hal_arch_port_set_pins(0, 1UL << ENERGY_MARKER_PIN)
-#define MARK_LOW()  gpio_hal_arch_port_clear_pins(0, 1UL << ENERGY_MARKER_PIN)
-#else
-#define MARK_HIGH() do {} while(0)
-#define MARK_LOW()  do {} while(0)
-#endif
+- **`edhoc-c5t-bench`** — one pulse per handshake, high right after `t0` and low
+  right after `t1`, so the energy window is the same `run()→finished` region the
+  RTIMER times (to within a few instructions at each edge, symmetric, so the pulse
+  *width* ≈ the measured latency). Failure/deadline exits also drop the pin.
+- **`enroll-ops-bench`** — **one pulse per iteration** spanning the whole 5-op
+  compute sequence (build→sign→issue→chain-valid→cert-verify), not one per op. The
+  ops are pure P-256/SHA-256 compute at near-constant current, so per-op energy =
+  (per-iteration energy) × (the per-op time fraction from H1) — same fidelity as
+  five windows, far less edit risk. (If you want to *confirm* sign and verify draw
+  equal current rather than assume it, add per-op pairs; not done, as they are the
+  same scalar-multiplication primitive.)
+
+Build with the marker on (e.g. `P1.10`):
 ```
-Gate it behind `ENERGY_MARKER_PIN=<n>` so timing builds stay byte-identical to the
-ones already logged (a GPIO write inside a timed region would perturb H1/H2 by a few
-cycles — negligible, but there is no reason to invalidate the existing blocks).
+make -C local-tests/bench/edhoc-c5t-bench   TARGET=nrf BOARD=nrf52840/dk \
+  LDFLAGS_WERROR= ENERGY_MARKER_PIN=10 <arm-toolchain>
+make -C local-tests/bench/enroll-ops-bench  TARGET=nrf BOARD=nrf52840/dk \
+  LDFLAGS_WERROR= ENERGY_MARKER_PIN=10 <arm-toolchain>
+```
 
-Pick a pin that is **not** an LED (LEDs draw current and would pollute the DUT
-measurement) and not used by the radio/UART — an unused header pin on P3/P4.
+Pin choice is covered in §3 ("Choosing the marker pin"): any `P1.xx` (port 1 is
+free); **`P1.10`** is the default. Never an LED (they draw current and pollute the
+DUT reading).
 
 ## 5. Measurement plan
 
@@ -201,10 +206,13 @@ comparable to post-fix energy captures.
 
 - [ ] PPK2 attached to WSL (`usbipd attach --wsl --busid <id>`; Nordic VID `1915`)
 - [ ] `nRF ONLY | DEFAULT` switch → **`nRF ONLY`**; PPK2 across `nRF meas` (P22)
-- [ ] Marker-pin firmware support added (§4); pin = `P1.10` unless changed
+- [x] Marker-pin firmware support added (§4, `bench-stats.h` + both benches); pin = `P1.10`
+- [ ] Rebuild the DUT firmware with `ENERGY_MARKER_PIN=10` and wire D0 → the `P1.10` header pin
 - [ ] Supply voltage decided and written down (3.0 V suggested)
 - [ ] `ENERGY-RESULTS-LOG.md` created
 
-**Next action:** decide the marker pin, and I'll add the gated `ENERGY_MARKER_PIN`
-support to `bench-stats.h` + `enroll-ops-bench` + the EDHOC bench so the energy and
-latency windows are the same region by construction.
+**Next action:** the marker support is in (`bench-stats.h` + both benches, default
+`P1.10`). Wire up per §3, rebuild the DUT firmware with `ENERGY_MARKER_PIN=10`, and
+take capture #1 (idle CSMA vs TSCH) as a confidence check — the ~22× power ratio
+should reproduce Result 2's duty-cycle ratio before moving to the per-op and
+per-handshake sweeps.

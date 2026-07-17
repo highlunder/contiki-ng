@@ -42,4 +42,12 @@ CFLAGS += -DTEST_ID='"$(TEST_ID)"'
 # for a CC310 enrollment-op figure is future work). Kept honest: always software.
 CFLAGS += -DECC_BACKEND_NAME='"software (uECC)"'
 
+# PPK2 energy-window marker (Exp H4). ENERGY_MARKER_PIN=<n> drives nRF P1.<n>
+# high across the timed region so the PPK2's D0 logic channel marks it. Off by
+# default -> the timing build stays byte-identical to the logged H1 runs. The DK
+# has port 1 entirely free; P1.10 is the runbook default. See ENERGY-PPK2-RUNBOOK.md.
+ifdef ENERGY_MARKER_PIN
+  CFLAGS += -DENERGY_MARKER_PIN=$(ENERGY_MARKER_PIN)
+endif
+
 include $(CONTIKI)/Makefile.include

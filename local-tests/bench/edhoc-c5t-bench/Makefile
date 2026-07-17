@@ -51,4 +51,12 @@ endif
 CFLAGS += -DCOAP_RESPONSE_TIMEOUT=3
 CFLAGS += -DCOAP_MAX_RETRANSMIT=2
 
+# PPK2 energy-window marker (Exp H4). ENERGY_MARKER_PIN=<n> drives nRF P1.<n>
+# high across the timed handshake so the PPK2's D0 logic channel marks it. Off
+# by default -> timing builds stay byte-identical. P1.10 is the runbook default.
+# See ENERGY-PPK2-RUNBOOK.md.
+ifdef ENERGY_MARKER_PIN
+  CFLAGS += -DENERGY_MARKER_PIN=$(ENERGY_MARKER_PIN)
+endif
+
 include $(CONTIKI)/Makefile.include

@@ -216,6 +216,7 @@ PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
 
   PROCESS_BEGIN();
 
+  bench_marker_init();                 /* no-op unless -DENERGY_MARKER_PIN */
   bench_print_fw_build(ECC_BACKEND_NAME);
   printf("[BENCH] label=%s iters=%d (timing = EDHOC handshake run->finished)\n",
          BENCH_LABEL, BENCH_ITERS);
@@ -274,6 +275,7 @@ PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
     hs_ok = false;
     oscore_ready = false;
     t0 = bench_time_now();
+    bench_marker_high();               /* PPK2 energy window = this handshake */
     edhoc_client_run();
     /* Hard per-iteration deadline: abort a stuck handshake so it can't hang the
      * whole run on the protocol's internal retry budget. */
@@ -281,9 +283,10 @@ PROCESS_THREAD(edhoc_oscore_c5t_client, ev, data)
     while(1) {
       PROCESS_WAIT_EVENT();
       ret = edhoc_client_callback(ev, data);
-      if(ret > 0) { t1 = bench_time_now(); hs_ok = true; break; }
-      if(ret < 0) { hs_ok = false; LOG_ERR("EDHOC failure: %d\n", ret); break; }
+      if(ret > 0) { t1 = bench_time_now(); bench_marker_low(); hs_ok = true; break; }
+      if(ret < 0) { bench_marker_low(); hs_ok = false; LOG_ERR("EDHOC failure: %d\n", ret); break; }
       if(etimer_expired(&hs_deadline)) {
+        bench_marker_low();
         hs_ok = false; LOG_ERR("bench: handshake deadline (%d s)\n",
                                BENCH_HS_DEADLINE_S); break;
       }

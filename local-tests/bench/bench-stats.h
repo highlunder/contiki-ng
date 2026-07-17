@@ -20,6 +20,48 @@
 #include <stdio.h>
 #include "sys/rtimer.h"
 
+/* --- PPK2 energy-window marker (Exp H4, ENERGY-PPK2-RUNBOOK.md) ------------
+ *
+ * When built with ENERGY_MARKER_PIN=<n>, drive nRF port-1 pin <n> high across
+ * the exact region the RTIMER also times, so the PPK2's logic channel D0 marks
+ * the same window the latency measurement uses -- energy and latency then refer
+ * to one region by construction. Off by default, so timing-only builds are
+ * byte-identical to the ones already logged (no GPIO write in the hot path).
+ *
+ * Port 1 is chosen because it is entirely unused by the nRF52840-DK firmware
+ * (every LED/button/UART pin is on port 0); P1.10 is the runbook default. The
+ * DK silkscreens the GPIO name at each header pin, so wire D0 to the pin
+ * labelled "P1.<n>". Uses the GPIO HAL (portable, no direct register poke). */
+#ifdef ENERGY_MARKER_PIN
+#include "dev/gpio-hal.h"
+#ifndef ENERGY_MARKER_PORT
+#define ENERGY_MARKER_PORT 1
+#endif
+static inline void
+bench_marker_init(void)
+{
+  gpio_hal_arch_pin_set_output(ENERGY_MARKER_PORT, ENERGY_MARKER_PIN);
+  gpio_hal_arch_port_clear_pins(ENERGY_MARKER_PORT,
+                                (gpio_hal_pin_mask_t)1 << ENERGY_MARKER_PIN);
+}
+static inline void
+bench_marker_high(void)
+{
+  gpio_hal_arch_port_set_pins(ENERGY_MARKER_PORT,
+                              (gpio_hal_pin_mask_t)1 << ENERGY_MARKER_PIN);
+}
+static inline void
+bench_marker_low(void)
+{
+  gpio_hal_arch_port_clear_pins(ENERGY_MARKER_PORT,
+                                (gpio_hal_pin_mask_t)1 << ENERGY_MARKER_PIN);
+}
+#else
+static inline void bench_marker_init(void) {}
+static inline void bench_marker_high(void) {}
+static inline void bench_marker_low(void) {}
+#endif /* ENERGY_MARKER_PIN */
+
 /* Integer sqrt (bit-by-bit) so the harness needs no libm: the running mean/M2
  * stay in double (basic soft-float, no libm), only the final stddev takes a
  * root, on the integer variance. */
@@ -38,8 +80,13 @@ bench_isqrt64(uint64_t x)
 }
 
 typedef struct {
-  uint32_t n;          /* completed samples */
-  uint32_t fail;       /* failed/aborted operations (not counted in stats) */
+  uint32_t n;          /* completed samples (the OPERATION succeeded) */
+  uint32_t fail;       /* the OPERATION failed (e.g. handshake never completed) */
+  /* Post-operation verification (e.g. the untimed CoAP GET after a DTLS
+   * handshake) failed while the operation ITSELF succeeded. Kept separate from
+   * `fail` so a lost liveness-check GET does not discard a valid handshake-
+   * latency sample -- the handshake is still recorded in n/mean/... */
+  uint32_t get_fail;
   double   mean_us;    /* Welford running mean */
   double   m2_us;      /* Welford running sum of squared deviations */
   uint32_t min_us;
@@ -47,15 +94,46 @@ typedef struct {
   uint32_t last_us;
   uint32_t retx_last;  /* re-attempts of the last operation */
   uint32_t retx_total; /* cumulative re-attempts over all completed operations */
+  /* RPL DODAG repair, as OBSERVED by the app: how long an iteration had to wait
+   * for NETSTACK_ROUTING.node_is_reachable() to come back before it could run.
+   * Nonzero only when the route was actually down at iteration start (parent
+   * eviction / churn). Poll-granular (the re-wait etimer period, ~1-2 s), so
+   * read it as "the node could not proceed for ~this long while RPL healed",
+   * not a sub-second RPL-internal figure. A failed op during an outage also
+   * self-flags via hops=-1 on its printed line. */
+  uint32_t repair_events;   /* iterations that waited through a repair */
+  uint32_t repair_us_last;  /* repair wait before the LAST op (0 if route was up) */
+  uint32_t repair_us_total; /* cumulative repair wait */
+  uint32_t repair_us_max;   /* worst single repair wait */
 } bench_stats_t;
 
 static inline void
 bench_stats_init(bench_stats_t *s)
 {
-  s->n = 0; s->fail = 0;
+  s->n = 0; s->fail = 0; s->get_fail = 0;
   s->mean_us = 0.0; s->m2_us = 0.0;
   s->min_us = 0; s->max_us = 0; s->last_us = 0;
   s->retx_last = 0; s->retx_total = 0;
+  s->repair_events = 0; s->repair_us_last = 0;
+  s->repair_us_total = 0; s->repair_us_max = 0;
+}
+
+/* Clear the per-iteration repair figure; call at the top of each iteration
+ * before the reachability re-wait so a stale value isn't reprinted. */
+static inline void
+bench_stats_repair_reset_last(bench_stats_t *s)
+{
+  s->repair_us_last = 0;
+}
+
+/* Record an observed RPL repair wait of `us` microseconds. */
+static inline void
+bench_stats_add_repair(bench_stats_t *s, uint32_t us)
+{
+  s->repair_events++;
+  s->repair_us_last = us;
+  s->repair_us_total += us;
+  if(us > s->repair_us_max) { s->repair_us_max = us; }
 }
 
 /* Record one successful operation: duration x_us, and `retx` re-attempts /
@@ -86,6 +164,15 @@ bench_stats_add_fail(bench_stats_t *s)
   s->fail++;
 }
 
+/* Record that the post-operation verification (GET) failed though the operation
+ * itself succeeded. The operation's latency should still be recorded via
+ * bench_stats_add_us() -- this only tracks the liveness-check failure. */
+static inline void
+bench_stats_add_get_fail(bench_stats_t *s)
+{
+  s->get_fail++;
+}
+
 /* Sample standard deviation (n-1), in microseconds; 0 for n < 2. */
 static inline uint32_t
 bench_stats_stddev_us(const bench_stats_t *s)
@@ -102,6 +189,27 @@ bench_stats_stddev_us(const bench_stats_t *s)
 /* us -> "ms.mmm" for printf, split to avoid %f. */
 #define BENCH_MS_INT(us)  ((unsigned long)((us) / 1000u))
 #define BENCH_MS_FRAC(us) ((unsigned long)((us) % 1000u))
+
+/* Firmware build stamp for record-keeping. FW_BUILD_ID is a short date id the
+ * Makefile injects (-DFW_BUILD_ID, default below); __DATE__/__TIME__ are the
+ * compile time. Print it BOTH at startup and again with the FINAL line so a
+ * pasted result block is self-identifying (which firmware produced it) without
+ * scrolling back. `backend` (optional) names the crypto path, e.g. the EDHOC
+ * ECC backend; pass NULL where it does not apply (DTLS PSK/cert via mbedTLS). */
+#ifndef FW_BUILD_ID
+#define FW_BUILD_ID "dev"
+#endif
+static inline void
+bench_print_fw_build(const char *backend)
+{
+  if(backend != NULL && backend[0] != '\0') {
+    printf("fw-build: %s  (compiled %s %s)  ecc-backend: %s\n",
+           FW_BUILD_ID, __DATE__, __TIME__, backend);
+  } else {
+    printf("fw-build: %s  (compiled %s %s)\n",
+           FW_BUILD_ID, __DATE__, __TIME__);
+  }
+}
 
 /*
  * Print ONE self-contained cumulative-statistics line. `label` identifies the
@@ -120,18 +228,20 @@ bench_stats_print(const char *label, const bench_stats_t *s, int hops, int dbg)
 {
   uint32_t sd = bench_stats_stddev_us(s);
   uint32_t mean = (uint32_t)(s->mean_us + 0.5);
-  printf("[BENCH %s] n=%lu fail=%lu last=%lu.%03lu mean=%lu.%03lu "
+  printf("[BENCH %s] n=%lu fail=%lu get_fail=%lu last=%lu.%03lu mean=%lu.%03lu "
          "sd=%lu.%03lu min=%lu.%03lu max=%lu.%03lu hops=%d "
-         "retx_last=%lu retx_tot=%lu dbg=%d (ms)\n",
+         "retx_last=%lu retx_tot=%lu rpl_rep_ms=%lu.%03lu dbg=%d (ms)\n",
          label,
-         (unsigned long)s->n, (unsigned long)s->fail,
+         (unsigned long)s->n, (unsigned long)s->fail, (unsigned long)s->get_fail,
          BENCH_MS_INT(s->last_us), BENCH_MS_FRAC(s->last_us),
          BENCH_MS_INT(mean),       BENCH_MS_FRAC(mean),
          BENCH_MS_INT(sd),         BENCH_MS_FRAC(sd),
          BENCH_MS_INT(s->min_us),  BENCH_MS_FRAC(s->min_us),
          BENCH_MS_INT(s->max_us),  BENCH_MS_FRAC(s->max_us),
          hops,
-         (unsigned long)s->retx_last, (unsigned long)s->retx_total, dbg);
+         (unsigned long)s->retx_last, (unsigned long)s->retx_total,
+         BENCH_MS_INT(s->repair_us_last), BENCH_MS_FRAC(s->repair_us_last),
+         dbg);
 }
 
 /* In-place ascending sort (insertion; n<=BENCH_ITERS, done once at the end, so
@@ -177,21 +287,35 @@ bench_stats_print_final(const char *label, const bench_stats_t *s,
                          : (samples[s->n / 2 - 1] + samples[s->n / 2]) / 2;
     p95 = bench_percentile_us(samples, s->n, 95);
   }
-  printf("[BENCH %s FINAL] n=%lu fail=%lu mean=%lu.%03lu median=%lu.%03lu "
+  printf("[BENCH %s FINAL] n=%lu fail=%lu get_fail=%lu mean=%lu.%03lu median=%lu.%03lu "
          "p95=%lu.%03lu sd=%lu.%03lu min=%lu.%03lu max=%lu.%03lu hops=%d "
-         "retx_tot=%lu dbg=%d (ms)\n",
-         label, (unsigned long)s->n, (unsigned long)s->fail,
+         "retx_tot=%lu rpl_rep_events=%lu rpl_rep_ms_tot=%lu.%03lu "
+         "rpl_rep_ms_max=%lu.%03lu dbg=%d (ms)\n",
+         label, (unsigned long)s->n, (unsigned long)s->fail, (unsigned long)s->get_fail,
          BENCH_MS_INT(mean),      BENCH_MS_FRAC(mean),
          BENCH_MS_INT(median),    BENCH_MS_FRAC(median),
          BENCH_MS_INT(p95),       BENCH_MS_FRAC(p95),
          BENCH_MS_INT(sd),        BENCH_MS_FRAC(sd),
          BENCH_MS_INT(s->min_us), BENCH_MS_FRAC(s->min_us),
          BENCH_MS_INT(s->max_us), BENCH_MS_FRAC(s->max_us),
-         hops, (unsigned long)s->retx_total, dbg);
+         hops, (unsigned long)s->retx_total,
+         (unsigned long)s->repair_events,
+         BENCH_MS_INT(s->repair_us_total), BENCH_MS_FRAC(s->repair_us_total),
+         BENCH_MS_INT(s->repair_us_max),   BENCH_MS_FRAC(s->repair_us_max),
+         dbg);
 }
 
-/* Radio hops to the RPL root (DAG depth - 1); -1 if not in a DAG. Uses RPL-lite
- * curr_instance; RPL runs over both CSMA and TSCH. */
+/* Approximate radio hops to the RPL root, as DAG_RANK(rank) - 1; -1 if not in a
+ * DAG. Uses RPL-lite curr_instance; RPL runs over both CSMA and TSCH.
+ *
+ * CAVEAT (important when reading results): this is derived from the RPL *rank*,
+ * which is ETX-weighted (rank = parent_rank + link_metric), NOT a topological
+ * hop count. On a congested single-hop link -- e.g. the cert-DTLS benches, which
+ * flood the radio with ~22 6LoWPAN fragments per handshake -- the link ETX
+ * inflates, the rank climbs (RPL_MIN_HOPRANKINC is 128 for MRHOF, so a healthy
+ * 1-hop child is rank ~256 => hops 1), and this can report "hops" of 5-10 while
+ * the node is still one physical hop from the same parent. So a rising `hops`
+ * in a known single-hop testbed is a LINK-STRESS signal, not extra depth. */
 #include "net/routing/routing.h"
 #if ROUTING_CONF_RPL_LITE
 #include "net/routing/rpl-lite/rpl.h"
@@ -238,5 +362,19 @@ bench_elapsed_us(rtimer_clock_t start, rtimer_clock_t end)
 #ifndef BENCH_FAIL_SETTLE_S
 #define BENCH_FAIL_SETTLE_S 15
 #endif
+
+/* DTLS handshake completion is detected by polling coap_endpoint_is_connected()
+ * (unlike EDHOC, which finishes on an event). Poll this often: t1 is captured up
+ * to one poll-interval after the true completion, so the poll period is the
+ * timing resolution. 100 ms replaces the old 1 s poll that quantized every DTLS
+ * handshake to ~1000 ms. The deadline is a separate etimer, so a fine poll does
+ * not shorten it. */
+#ifndef BENCH_HS_POLL_MS
+#define BENCH_HS_POLL_MS 100
+#endif
+/* ms -> clock ticks, at least 1 (CLOCK_SECOND varies by target: 128 on nRF). */
+#define BENCH_HS_POLL_TICKS                                              \
+  (((CLOCK_SECOND) * (BENCH_HS_POLL_MS) / 1000) > 0                      \
+   ? ((CLOCK_SECOND) * (BENCH_HS_POLL_MS) / 1000) : 1)
 
 #endif /* BENCH_STATS_H_ */
