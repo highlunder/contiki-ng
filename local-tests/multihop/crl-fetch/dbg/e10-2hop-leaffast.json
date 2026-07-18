@@ -1,0 +1,43 @@
+{
+  "title": "E10 c509 2-hop DEBUG (fresh build, CRL_DIAG)",
+  "timeout_ms": 300000,
+  "seed": 1,
+  "startup_delay_ms": 1000,
+  "radiomedium": {
+    "type": "udgm",
+    "tx_range": 55.0,
+    "interference_range": 110.0,
+    "success_ratio_tx": 1.0,
+    "success_ratio_rx": 1.0
+  },
+  "nodes": [
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/crl-fetch/dbg/server.nrf52840",
+      "id": 1,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/fw/relay.nrf",
+      "id": 2,
+      "x": 50.0,
+      "y": 0.0
+    },
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/crl-fetch/dbg/client-leaffast.nrf52840",
+      "id": 3,
+      "x": 100.0,
+      "y": 0.0
+    }
+  ],
+  "test": {
+    "description": "2-hop; trace how the client dies",
+    "validators": [
+      {
+        "pattern": "E10-END",
+        "node": 3,
+        "min_count": 1
+      }
+    ]
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "title": "TOPO filter validation: 3 co-located nodes, filter must force a line",
+  "timeout_ms": 300000,
+  "seed": 1,
+  "startup_delay_ms": 1000,
+  "radiomedium": {
+    "type": "udgm",
+    "tx_range": 200.0,
+    "interference_range": 400.0,
+    "success_ratio_tx": 1.0,
+    "success_ratio_rx": 1.0
+  },
+  "nodes": [
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/topo-test/topo-role1.nrf52840",
+      "id": 1,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/topo-test/topo-role2.nrf52840",
+      "id": 2,
+      "x": 10.0,
+      "y": 0.0
+    },
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/multihop/topo-test/topo-role3.nrf52840",
+      "id": 3,
+      "x": 20.0,
+      "y": 0.0
+    }
+  ],
+  "test": {
+    "description": "All 3 within 200m tx_range -> without the filter, leaf hears root directly (1 hop). With the filter, leaf(3) can only hear relay(2). Check node3 becomes reachable AND its parent is role2 (addr ...02), not role1.",
+    "validators": [
+      {
+        "pattern": "Relay reachable=1",
+        "node": 3,
+        "min_count": 1
+      }
+    ]
+  }
+}
