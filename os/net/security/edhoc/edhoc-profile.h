@@ -23,12 +23,18 @@
  *   verify, ECDH, key-gen) from surrounding network/protocol time.
  *
  *   NOTE: CYCCNT is a real-silicon facility.  Emulators (e.g. cooja-ng) need
- *   not model it; there the reads simply return 0 and the profile lines print
- *   "0 cycles" — harmless.  Use this for on-hardware measurement.
+ *   not model it; there the CYCCNT reads return 0.  To keep the profile useful
+ *   in emulation too, every op is ALSO timed with the rtimer (which cooja-ng
+ *   does model, cycle-accurately), reported in microseconds.  So on hardware
+ *   the cycle count is the precise figure and the µs a cross-check; in the
+ *   emulator the cycle count is 0 and the µs is the figure of record.  This is
+ *   what lets us decompose the emulated handshake into crypto vs RF, and to
+ *   separate the (emulated-nRF) responder's crypto — which on real hardware
+ *   runs on a fast native x86 server and is ~free — from the client's.
  *
  *   Output format (one line per op, via printf so it does not depend on the
  *   including file's LOG_LEVEL):
- *     PROFILE <label>: <n> cycles
+ *     PROFILE <label>: <n> cycles <u> us
  */
 
 #ifndef EDHOC_PROFILE_H_
@@ -39,6 +45,7 @@
 #ifdef EDHOC_PROFILE_CYCLES
 
 #include <stdio.h>
+#include "sys/rtimer.h"
 
 /* ARM DWT / CoreDebug registers (raw addresses; no CMSIS dependency). */
 #define EDHOC_DWT_CYCCNT     (*(volatile uint32_t *)0xE0001004UL)
@@ -62,12 +69,20 @@ edhoc_profile_now(void)
   return EDHOC_DWT_CYCCNT;
 }
 
-#define EDHOC_PROFILE_DECL(var)  uint32_t var = edhoc_profile_now()
+/* Capture both the DWT cycle count and the rtimer tick at once. */
+#define EDHOC_PROFILE_DECL(var)                                       \
+  uint32_t var = edhoc_profile_now();                                 \
+  rtimer_clock_t var##_rt = RTIMER_NOW()
 #define EDHOC_PROFILE_REPORT(var, label)                              \
   do {                                                                \
     uint32_t edhoc_profile_delta_ = edhoc_profile_now() - (var);      \
-    printf("PROFILE %s: %lu cycles\n",                                \
-           (label), (unsigned long)edhoc_profile_delta_);             \
+    rtimer_clock_t edhoc_profile_drt_ = RTIMER_NOW() - (var##_rt);    \
+    uint32_t edhoc_profile_us_ =                                       \
+      (uint32_t)(((uint64_t)edhoc_profile_drt_ * 1000000u)            \
+                 / RTIMER_SECOND);                                    \
+    printf("PROFILE %s: %lu cycles %lu us\n", (label),                \
+           (unsigned long)edhoc_profile_delta_,                       \
+           (unsigned long)edhoc_profile_us_);                         \
   } while(0)
 
 #else /* !EDHOC_PROFILE_CYCLES */

@@ -22,7 +22,19 @@ time. Compare to the hardware line in `../BENCH-RESULTS-LOG.md`.
 
 ## First result (see ../BENCH-RESULTS-LOG.md)
 Emulator sw c5t median **956 ms** vs hardware **689 ms** ≈ **1.4×**, same tight sd
-(~42 ms). A consistent, calibratable offset (emulated cycle/RF timing vs silicon).
+(~42 ms).
+
+**Why (measured, not a calibration fudge):** radio loss is zero (UDGM 1.0/1.0),
+and the whole gap is the **responder's crypto**. `run-emul-profile.sh` builds
+both nodes with `EDHOC_PROFILE_CYCLES` and times every ECC op (rtimer µs — the
+emulator has no DWT, so cycles read 0). Each emulated nRF pays ~381 ms of uECC
+P-256; the responder's keygen+ECDH+sign (272 ms) sits on the client's critical
+path. On *hardware* the responder is a **native x86** server (crypto ≈ free), so
+only the client's 379 ms ECC counts: `379 + ~310 ms RF = 689 ms` exactly. The
+client ECC is cycle-identical hw↔emul and the RF floor matches to ~2 %. So the
+emulator is *more honest* (both peers constrained), not miscalibrated — a real
+device↔device EDHOC handshake is ~955 ms, not ~689 ms. See
+`run-emul-profile.sh` + `emul-profile.log`.
 
 ## The address gotcha (important)
 An emulated nRF node's IPv6 address is **FICR-derived**, NOT the native-cooja

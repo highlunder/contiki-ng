@@ -15,6 +15,11 @@ MODULES += os/lib
 CFLAGS += -I$(CONTIKI)/os/net/security/edhoc
 CFLAGS += -I$(CONTIKI)/local-tests/bench
 
+# Short build id stamped into the startup + final printout for record-keeping.
+# Defaults to the UTC build date; override FW_ID=. Clean-build to regenerate.
+FW_ID ?= $(shell date -u +%Y%m%d)
+CFLAGS += -DFW_BUILD_ID='"$(FW_ID)"'
+
 ifeq ($(LOCAL_TEST_DEBUG),1)
 CFLAGS += -DLOCAL_TEST_DEBUG=1
 endif

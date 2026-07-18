@@ -1,0 +1,23 @@
+{
+    "title": "dtls-x509 BENCH over TSCH on EMULATED nRF52840-DK (latency numbers, Contiki server)",
+    "timeout_ms": 300000,
+    "seed": 1,
+    "startup_delay_ms": 1000,
+    "radiomedium": {
+        "type": "udgm",
+        "tx_range": 55.0,
+        "interference_range": 110.0,
+        "success_ratio_tx": 1.0,
+        "success_ratio_rx": 1.0
+    },
+    "nodes": [
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/bench/emul/x509-dtls-server.nrf52840",      "id": 1, "x":  0.0, "y": 0.0 },
+        { "firmware": "/home/joel/gemini_workspace/contiki-ng/local-tests/bench/emul/dtls-x509-bench-emul.nrf52840", "id": 2, "x": 30.0, "y": 0.0 }
+    ],
+    "test": {
+        "description": "Server (node 1) = Contiki x509-native-dtls-server (RPL root + TSCH coordinator). Client (node 2) = dtls-x509-bench built -DBENCH_SERVER_IS_ROOT, 10 iters, short settle. UDGM lossless. Passes when the client prints its FINAL summary; the FINAL line carries the TSCH handshake-latency distribution (median/p95) to log alongside the CSMA hardware numbers.",
+        "validators": [
+            { "pattern": "BENCH dtls-x509-tsch-emul FINAL", "node": 2, "min_count": 1 }
+        ]
+    }
+}

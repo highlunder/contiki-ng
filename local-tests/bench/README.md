@@ -97,13 +97,18 @@ TSCH-built native responder. The CSMA variants run on the current gateway as-is.
 Bringing up the TSCH border-router + responder is the next step (in-emulator TSCH
 now works after the cooja-ng merge — see the TSCH-energy plan).
 
+## Crypto-vs-RF split — DONE (`EDHOC_PROFILE`)
+`edhoc-profile.h` reports per-op **rtimer µs** (as well as DWT cycles, which are
+0 in cooja-ng — no CYCCNT model). `emul/run-emul-profile.sh` builds client +
+responder with `-DEDHOC_PROFILE_CYCLES` and times every ECC op on both nodes.
+Measured split + the "why the emulator is 1.4× slower" finding (it's the
+emulated responder's crypto; the hw responder is a free native x86 server) are
+written up in **BENCH-RESULTS-LOG.md**. On hardware, rebuild any EDHOC bench
+`make … EDHOC_PROFILE=1` to get the same per-op lines (DWT cycles are real
+there).
+
 ## TODO — remaining experiments
 Same harness + loop pattern:
-- **`EDHOC_PROFILE=1` profiling variant** of the EDHOC benches — rebuild with
-  `EDHOC_PROFILE=1` so each iteration also prints per-op DWT cycles (ecc_* in
-  ecdh.c) + the crypto wall-clock. This measures the crypto-vs-RF split directly
-  (rather than inferring it from the sw-vs-CC310 whole-handshake difference, see
-  BENCH-RESULTS-LOG.md). Add these as `*-prof` firmwares to build-bench-rungs.sh.
 - `bench-edhoc-x509` (EDHOC + X.509 x5chain, scenario C).
 - `bench-enroll` — full EDHOC+OSCORE /crts+/sen CSR enrollment cycle.
 - Stand up the TSCH border-router + responder so the `-tsch` firmwares have a
