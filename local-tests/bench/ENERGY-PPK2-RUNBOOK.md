@@ -43,50 +43,59 @@ over USB" fight each other.
 blocks readable *while* measuring, which is what makes a capture traceable to a
 `fw:`/`test:` id.
 
-**Good news: no cutting or soldering is needed.** The bench board
-(photographed in `paper_space/tools/nRF52840-dk and PPK2.jpg`) is a **PCA10056
-v2.0.1, SN 683609980** — the same DK used for H1/H3 — and it carries a dedicated
-current-measurement path:
+**The insertion point is the P22 "nRF current measurement" header** on the left
+edge (see `paper_space/tools/nRF52840-DK layout.png`, Fig. 28; board is PCA10056
+v2.0.1, SN 683609980). Its two pins are named on the silkscreen:
 
-- a **`nRF ONLY | DEFAULT`** slide switch (top edge of the board), and
-- a **`nRF meas`** 2-pin header on the left edge (next to `VDD`), i.e. **P22**.
+- **`VDD`** — the board-supply side (fed from the regulator / `nRF power source`
+  switch, which sits between the J2 USB and the SoC) → **PPK2 `VIN`**
+- **`VDD_nRF`** — the nRF52840 side → **PPK2 `VOUT`**
 
-In `DEFAULT` the two P22 pins are connected and the board runs normally. Moving the
-switch to **`nRF ONLY`** breaks the nRF52840's supply out to that header so an
-ammeter can be inserted, leaving the interface MCU, LEDs and regulators powered
-separately — exactly the isolation this measurement needs. Confirm the switch/header
-semantics in the *nRF52840 DK User Guide* for v2.0.1 before the first capture, but
-there is no solder bridge to cut on this revision.
+**P22 is normally closed** — by a fitted **jumper** on some boards, or the **SB40**
+solder bridge beside it on others. **Inspect P22 before wiring:** if a jumper is
+present, remove it and connect the PPK2 across the two pins; if there is no jumper
+and SB40 is bridged, cut SB40 once to open the path. (An earlier draft of this
+runbook wrongly claimed the `nRF ONLY | DEFAULT` switch, SW6, does this — it does
+not; SW6 isolates the nRF power domain from the interface MCU and is a separate
+function. The ammeter goes in at P22.) Powering stays via J2 USB throughout; the
+PPK2 only measures.
 
 ## 3. Wiring (option A)
 
-Available cables (same photo): a **2-wire red/black** lead with 2-pin sockets, and an
-**8-way ribbon** with individual sockets — the PPK2's measurement and logic-port
+Available cables (photo `nRF52840-dk and PPK2.jpg`): a **2-wire red/black** lead
+with 2-pin sockets, and an **8-way ribbon** — the PPK2's measurement and logic-port
 cables respectively.
 
-1. DK powered from USB as usual (`nRF power source` switch on `VDD`, power switch ON).
-2. Slide **`nRF ONLY | DEFAULT` → `nRF ONLY`**.
-3. Across the **`nRF meas` (P22)** header, in **Ampere meter** mode:
-   **PPK2 `VIN` → the supply side**, **PPK2 `VOUT` → the nRF side**. Reversed, the
-   app reads ~0 mA — a harmless but confusing failure, so check this first if the
-   trace looks dead.
-4. **PPK2 `GND` → any DK `GND` pin** (several are silkscreened `GND` along both
-   edges). Ampere-meter mode needs this third connection; the 2-wire lead only
-   carries VIN/VOUT, so take GND from a spare ribbon wire.
-5. PPK2 logic port **`D0` → the marker GPIO** (§4) and a logic-port **`GND` → DK
-   `GND`**.
-6. PPK2 USB → host. In WSL: `usbipd attach --wsl --busid <ppk2>` (Nordic VID `1915`).
+1. Leave the **J2 USB** (short left edge, the J-Link/IF port) plugged in — it powers
+   the board and carries J-Link + the CDC serial. `nRF power source` switch on `VDD`,
+   Power switch ON.
+2. Open **P22** (remove its jumper, or cut SB40 — see §2).
+3. Across **P22**, in **Ampere meter** mode (2-wire red/black lead):
+   **PPK2 `VIN` → the `VDD` pin**, **PPK2 `VOUT` → the `VDD_nRF` pin**. Reversed, the
+   app reads ~0 mA or negative — harmless, just swap. Check this first if the trace
+   looks dead.
+4. **PPK2 `GND` → a DK `GND` pin.** All `GND` pins are common, so one connection is
+   electrically sufficient. Convenient choice: the **`GND` on the top header row that
+   also carries P1.10** — that row reads `P0.27 P0.26 P0.02 GND P1.15 … P1.10 …`, so
+   the `GND` sits ~5 pins left of the marker pin, serving as one common ground for
+   both the ammeter and the logic port.
+5. PPK2 logic **`D0` → `P1.10`** (§4/§ "Choosing the marker pin"); optionally a second
+   logic `GND` on the same top row for crisper edges (not required).
+6. PPK2 USB → host. In WSL: `usbipd attach --wsl --busid <ppk2>` (Nordic VID `1915`;
+   the dongle shares this VID, so match by busid).
 7. In the PPK2 app: **Ampere meter**, **100 kSa/s** (10 µs resolution — a ~20 ms
    CC310 op is ~2000 samples, plenty).
 
 ### Choosing the marker pin
 
-The DK **silkscreens the GPIO name next to every header pin** (`P0.03`, `P1.10`, …),
-so there is no need to know connector designators — pick a GPIO and find its label.
+The DK **silkscreens the GPIO name next to every header pin**, so there is no need
+to know connector designators — pick a GPIO and find its label.
 
 Use any **`P1.xx`** pin: port 1 is **entirely unused** by our firmware (verified
 against `arch/platform/nrf/nrf52840/dk/nrf52840-dk-def.h` — every peripheral is on
-port 0). **`P1.10`** is a good default.
+port 0). **`P1.10`** is the default: on the **top-edge header** (layout Fig. 28), in
+the row `… P1.12 P1.11 P1.10 P1.08 …` (note P1.09 is not broken out), with a `GND`
+on the same row just left of `P1.15`.
 
 Avoid, on port 0: `P0.06`/`P0.08` (UART0 TX/RX — the result blocks come out here),
 `P0.13`–`P0.16` (LEDs — they draw current and would pollute the DUT reading),
@@ -205,7 +214,7 @@ comparable to post-fix energy captures.
 ## 9. Prerequisites checklist
 
 - [ ] PPK2 attached to WSL (`usbipd attach --wsl --busid <id>`; Nordic VID `1915`)
-- [ ] `nRF ONLY | DEFAULT` switch → **`nRF ONLY`**; PPK2 across `nRF meas` (P22)
+- [ ] P22 opened (jumper removed, or SB40 cut); PPK2 VIN→`VDD`, VOUT→`VDD_nRF`
 - [x] Marker-pin firmware support added (§4, `bench-stats.h` + both benches); pin = `P1.10`
 - [ ] Rebuild the DUT firmware with `ENERGY_MARKER_PIN=10` and wire D0 → the `P1.10` header pin
 - [ ] Supply voltage decided and written down (3.0 V suggested)
