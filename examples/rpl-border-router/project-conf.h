@@ -46,6 +46,39 @@
 #ifndef QUEUEBUF_CONF_NUM
 #define QUEUEBUF_CONF_NUM             24
 #endif
+
+/* --- TSCH buffer over-provisioning for the certificate flight (TSCH builds only)
+ * -----------------------------------------------------------------------------
+ * As the RPL root / 6LoWPAN forwarder for a DTLS mutual-auth handshake, this
+ * router must RECEIVE + reassemble the client's ~11-fragment certificate record
+ * and QUEUE the server's back. On minimal-schedule TSCH the stock pools
+ * (per-neighbor TX queue 4-8, inbound 4, 6LoWPAN 12 buffers) are all smaller than
+ * one cert flight, so fragments are dropped and the handshake is "repeatedly
+ * lost". Enlarge to hold a full flight -- the border-router half of the same
+ * bump applied on the DK client (dtls-{x509,c509}-bench/project-conf.h). This is
+ * NEEDED ONLY by certificate DTLS; EDHOC (message-oriented) and PSK-DTLS complete
+ * over this router on the stock TSCH config, so the bump is transparent to them.
+ * See paper_space/LICE-followup/NOTES-robustness-under-loss.md (successor of the
+ * former PLAN-cd-robustness-tradeoff.md) + autoPKI.tex (§TSCH). */
+#if MAC_CONF_WITH_TSCH
+#ifndef TSCH_QUEUE_CONF_NUM_PER_NEIGHBOR
+#define TSCH_QUEUE_CONF_NUM_PER_NEIGHBOR 16
+#endif
+#ifndef TSCH_CONF_MAX_INCOMING_PACKETS
+#define TSCH_CONF_MAX_INCOMING_PACKETS   8
+#endif
+#ifndef SICSLOWPAN_CONF_FRAGMENT_BUFFERS
+#define SICSLOWPAN_CONF_FRAGMENT_BUFFERS 24
+#endif
+/* THE ROOT-CAUSE FIX (must match the DK bench): the default 6LoWPAN reassembly
+ * window is only 0.5 s (SICSLOWPAN_REASS_MAXAGE=8 -> MAXAGE*CLOCK_SECOND/16). On
+ * the slot-paced TSCH uplink the DK's ~11-fragment certificate flight dribbles in
+ * over >1 s, so this router discards the half-assembled datagram before it can
+ * forward it. 160 => a 10 s window. See dtls-x509-bench/project-conf.h. */
+#ifndef SICSLOWPAN_CONF_MAXAGE
+#define SICSLOWPAN_CONF_MAXAGE 160
+#endif
+#endif /* MAC_CONF_WITH_TSCH */
 #endif
 
 #ifndef WEBSERVER_CONF_CFS_CONNS
