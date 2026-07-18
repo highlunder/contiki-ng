@@ -47,6 +47,14 @@ tests/18-coap-lwm2m/leshan-server-demo*.jar
 
 # C509/EDHOC hardware test scratch artifacts (nRF52840-DK manual builds)
 *.nrf52840
+*.nrf
+*.nrf52840-dk
+*.nrf52840-dongle
+dfu/
 examples/c509-hw-test*/client_output_*.txt
 examples/c509-hw-test*/server_output_*.txt
 build-dk.sh
+# stray HW scratch (superseded by local-tests/bench/BENCH-RESULTS-LOG.md and the
+# per-dir flashing helpers); kept local, not versioned
+/flash.bat
+local-tests/hw_results.txt
