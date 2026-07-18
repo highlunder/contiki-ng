@@ -66,11 +66,15 @@
 
 /* Build with CRL_DIAG=1 to see TSCH association + RPL parent selection; the
  * default keeps the logs small enough to parse quickly. */
+/* LOG_CONF_LEVEL_MAC may be forced from the Makefile (MAC_DBG=1 -> DEBUG) to trace
+ * per-slot drift; only apply the defaults when it was not set on the command line. */
+#ifndef LOG_CONF_LEVEL_MAC
 #ifdef CRL_DIAG
 #define LOG_CONF_LEVEL_MAC LOG_LEVEL_INFO
 #define LOG_CONF_LEVEL_RPL LOG_LEVEL_INFO
 #else
 #define LOG_CONF_LEVEL_MAC LOG_LEVEL_WARN
+#endif
 #endif
 
 #endif /* PROJECT_CONF_H_ */

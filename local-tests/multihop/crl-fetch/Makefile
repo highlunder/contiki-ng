@@ -47,6 +47,20 @@ ifdef CRL_DIAG
   CFLAGS += -DCRL_DIAG=1
 endif
 
+# ORCHESTRA=1 swaps the 6TiSCH minimal single-shared-slot schedule for Orchestra's
+# per-node dedicated cells (same opt-in gate as the relay + EDHOC Makefiles), to test
+# whether a ≥2-hop delivery failure is specific to the minimal schedule.
+ifdef ORCHESTRA
+  MODULES += os/services/orchestra
+endif
+
+# MAC_DBG=1 raises the TSCH MAC log to DEBUG so per-slot drift (`dr <n>`) is printed --
+# used to check for the cooja-ng-ge RX-timestamp spike (`dr -10642`-class, ~170 ms)
+# that halts a 2-hop leaf's slot engine (see ORCHESTRA-MULTIHOP-INVESTIGATION.md).
+ifdef MAC_DBG
+  CFLAGS += -DLOG_CONF_LEVEL_MAC=LOG_LEVEL_DBG
+endif
+
 FW_ID ?= $(shell date -u +%Y%m%d)
 CFLAGS += -DFW_BUILD_ID='"$(FW_ID)"'
 

@@ -67,37 +67,97 @@ should therefore be explored at 256 (which works) rather than 1024.
 
 ## 4. BLOCKER — 2/3 hops (the headline is not yet measured)
 
-At ≥2 hops the client **associates, joins the DODAG, sends its DAO, becomes
-reachable — and then goes both deaf and mute within a few seconds** (last TX
-consistently ~43 s; deterministic). It is not a crash: the emulator reports the
-core idling in `platform_idle` with no scheduled wakeup, i.e. TSCH stopped
-scheduling slots, while the app keeps running and enqueuing. Packets then pile up
-until the global queuebuf pool is exhausted (`queue 2/8 8/8`), so not a single CoAP
-request is ever transmitted.
+**Re-characterised 2026-07-18** (correct emulator, committed config, verbose serial).
+The earlier "last TX ~43 s / *it follows the server*" notes below the line were from
+an older tuning and **do not describe the committed config** — they are kept struck
+through for provenance but superseded by the reproduced mechanism here.
 
-What has been established (each by direct experiment, not inference):
+### 4a. The reproduced mechanism (`emul-e10-c509-r100-b64-2hop-s1`, seed 1)
 
-- **Not the emulator or the tree**: the M1 `emul-c5t-2hop-tsch` baseline still
-  passes here (EDHOC finished at 86 s).
-- **Not the relay, and not EB starvation**: the relay associates, is reachable, and
-  keeps beaconing at the same ~4 s cadence in both the passing and failing runs.
-- **Not my client**: my client + the **M1 server** at 2 hops stays alive (still
-  transmitting at 191 s, DAG joined at 40 s).
-- **It follows the server**: the **M1 client** + **my server** also dies (38 s).
-- **Not the server's project-conf**: reproduced with no `project-conf.h` at all,
-  and with the root's RPL/TSCH knobs removed.
-- **Not the process lifetime**: reproduced with the server process kept alive.
-- **Not the CoAP block size**: reproduced at 64 and 256.
-- A root built **without** the CoAP module leaves the client alive — but that
-  comparison is not clean, because against a CoAP-less root the client never gets a
-  response and simply idles, so "alive" there may only mean "never did anything".
+Run in **cooja-ng-ge** (`build/test_runner`, the emulator `run-e10.py` uses; plain
+`cooja-ng` mis-maps the bare-`.nrf` relay to an MSP430 core — a real bug in *that*
+build's extension dispatch, but not the E10 path). Timeline, from the node-3 serial:
 
-So the fault is somewhere in *"the RPL root also serves CoAP"* × *"the client's TSCH
-time source is a relay"*. Note the working M1 server also serves CoAP, so it is an
-interaction rather than CoAP as such. Next candidates: compare the RPL DAG
-Configuration advertised by the two roots; instrument `tsch_slot_operation`
-rescheduling on the client at the moment it stops; check for a missed-rtimer
-(slot set in the past) hang.
+- associates ~17 s, joins the DODAG, becomes reachable ~45 s; **its uplink TX dies at
+  ~43 s** and never recovers (see 4a-bis for the exact instant);
+- the app only starts fetching at ~195 s, so the *first visible* symptom is the global
+  queuebuf pinning **8/8** at **224 s** (`queue 2/8 8/8`) and staying there for the rest
+  of the run — but that is just when the fetch load exposes an uplink that has been dead
+  since 43 s, not a fresh 224 s failure;
+- the client keeps *running* (app etimer fires, seqno climbs 156→174, printing failed
+  enqueues at 698 s) but executes only **147 M instructions vs 1230 M** on the other
+  two nodes — i.e. its **TSCH MAC stopped scheduling slots**, while the RTC-driven app
+  layer keeps ticking. Not a crash; a MAC stall.
+- **The server and relay are demonstrably healthy the whole run**: node 1 prints
+  `reachable=1` every 30 s to 690 s and never sees a GET; node 2 logs **zero** errors
+  and beacons to Beacon #205 / `reachable=1` at 700 s. **Only the client is sick.**
+
+### 4a-bis. Pinpointed — the same cooja-ng-ge RX-timestamp spike as the Orchestra failure
+
+Rebuilding the client with `MAC_DBG=1` (TSCH MAC at DEBUG, per-slot drift logged) gives
+the exact trigger — **identical to `ORCHESTRA-MULTIHOP-INVESTIGATION.md` (task #36)**:
+
+- node3's last **successful** TX (`status 0`) is at **42.618 s** (seqno 153 → parent
+  `…0002`); 7 sends total, all before 42.7 s;
+- at **43.034 s** node3 receives one anomalous frame with **`dr -4376`** (vs `±10–15`
+  every other slot — ~300× normal), preceded by **`!dl-miss RxBeforeAck 4294 173`** —
+  the same **`173`** (~170 ms) marker as task #36's `dr -10642` / `RxBeforeAck 10560 173`.
+  A ~170 ms offset is **physically impossible** at 10 ms slots on a real radio;
+- after that spike node3 emits **0** successful TX for the rest of the run. TX-only death;
+  RX stays alive. The queue then fills and the app times out.
+
+So E10's minimal-schedule 2-hop failure and the Orchestra 2-hop handshake failure
+(task #36) are **one and the same cooja-ng-ge RX-timestamp / ASN fidelity artifact** —
+a single impossible ~170 ms RX-drift sample that halts the 2-hop leaf's TSCH sync,
+**independent of schedule (minimal *and* Orchestra) and of credential (c5t, x5c, and this
+CoAP GET), and it hits both arms identically** — which is why 1 hop delivers and ≥2 does
+not. It is **not** a Contiki, C509, or app defect (task #36 disproved the three
+Contiki-side hypotheses); the fix target is the emulator, and the decisive cross-check is
+**real hardware** (the staged `hw-h6` multi-hop run on physical DKs), where faithful RX
+timestamps should not produce the spike.
+
+### 4b. Ruled out by direct experiment (this pass)
+
+- **Not hidden-terminal / RF collision.** node1(x=0)↔node3(x=100) are 100 m apart —
+  outside tx_range (55) but inside interference_range (110), a textbook hidden
+  terminal. Re-running with `interference_range=55` (removes the collision, keeps the
+  2-hop line) is **bit-identical**: same jam, same seqno 156→174, same **147,103,234**
+  client instructions. Interference plays **no** role.
+- **Not the relay, not EB starvation, not the server** (see 4a: both stay healthy).
+- **Not a Contiki MAC/schedule bug.** The M1 `emul-c5t-2hop-tsch` EDHOC baseline passes
+  here (it completes before ~43 s of sustained uplink and so misses the bad sample),
+  and task #36 disproved the three Contiki-side Orchestra hypotheses (duplicate-link
+  dedupe, `get_next_active_link` selection, adaptive-timesync). The trigger is a single
+  emulator-delivered RX sample (4a-bis), not stack logic.
+- **Not schedule-specific** (answers the Orchestra question): the *identical* spike halts
+  the leaf under **both** the 6TiSCH minimal single-shared-slot schedule (this experiment)
+  **and** Orchestra's dedicated cells (task #36). Leaving the minimal schedule does **not**
+  recover the ≥2-hop headline in the emulator, because the fault is below the scheduler.
+
+### 4c. Status — pinpointed to the emulator; the open step is the HW cross-check
+
+The mechanism is no longer open: it is the cooja-ng-ge RX-timestamp / ASN fidelity spike
+of 4a-bis (`dr -4376`, ~170 ms, at 43 s), the same class as the minimal-schedule
+"spurious rx_asn" artifact and task #36's Orchestra `dr -10642`. The one remaining step
+needs infrastructure this sandbox lacks: **re-run the 2-hop line on real hardware** (the
+staged `hw-h6` DK/dongle set) — with faithful RX timestamps the impossible ~170 ms sample
+should not occur, and the ≥2-hop C509 CRL fetch should complete (with X.509 failing first
+at the deeper hop counts, as its 57-block transfer already does one hop out — the actual
+headline). Until then the ≥2-hop **emulator** delivery numbers are not measurable and are
+**not reported**. The 1-hop headline (§2) and the size cross-check (§1) stand on their own
+and do not depend on this.
+
+<details><summary>Superseded (older tuning, retained for provenance)</summary>
+
+> At ≥2 hops the client associates, joins, sends its DAO, becomes reachable — and then
+> goes both deaf and mute within a few seconds (last TX ~43 s). Established then:
+> *not* the emulator/tree (M1 passes), *not* the relay/EB starvation, my client + M1
+> server stays alive (191 s), M1 client + my server dies (38 s) → "it follows the
+> server", not the server project-conf, not process lifetime, not block size. That
+> "follows the server" reading is **not reproduced** in the committed config (§4a: the
+> server is healthy and the client is the one that stalls).
+
+</details>
 
 Bugs already found and fixed while getting this far (all were harness faults, and
 **every "undelivered" result they produced was discarded**, not reported):
@@ -121,5 +181,15 @@ cd local-tests/multihop/crl-fetch
 ./run-e10.py --variants c509 x509 --r 100 --blocks 64 256 --hops 1 --seeds 1 7 13
 ./run-e10.py --summary          # CSV
 ```
+
+Run everything in **cooja-ng-ge** (`run-e10.py` already points there): plain `cooja-ng`
+mis-maps the bare-`.nrf` relay to an MSP430 core (its extension dispatch has no `.nrf`
+case), so the relay never runs as ARM — a bug in that build only.
+
+To re-observe the 43 s RX-timestamp spike (§4a-bis): rebuild the client with `MAC_DBG=1`
+(raises the TSCH MAC log to DEBUG), run a 2-hop config, and grep node 3 for `dr -` — one
+value is ~300× the rest (`dr -4376`), at its last on-air instant (~43 s), preceded by
+`!dl-miss RxBeforeAck … 173`. Cross-ref `ORCHESTRA-MULTIHOP-INVESTIGATION.md` (same
+artifact under Orchestra, `dr -10642`).
 
 SECURITY NOTICE: Test credentials only. Never use in production.
