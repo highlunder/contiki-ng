@@ -42,7 +42,13 @@
  * bounded CoAP give-up (~9 s) so it only catches true stalls; the backoff is capped
  * low so several attempts fit the budget. */
 #define EDHOC_CONF_TIMEOUT 10000
+/* Quiet EDHOC by default so trace/info I/O does not inflate the timed enrollment
+ * (Exp H2). -DENROLL_DEBUG restores full EDHOC logging. */
+#ifdef ENROLL_DEBUG
 #define LOG_CONF_LEVEL_EDHOC LOG_LEVEL_INFO
+#else
+#define LOG_CONF_LEVEL_EDHOC LOG_LEVEL_ERR
+#endif
 
 /* Multi-hop over TSCH (built with MULTIHOP_CONNECT_DELAY_S>0): tolerate the
  * emulator's spurious one-slotframe ASN-drift eviction so a relay-sourced node stays

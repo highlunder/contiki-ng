@@ -86,7 +86,13 @@
 
 #include "sys/log.h"
 #define LOG_MODULE "OscoreCrts-Sv"
+/* Quiet by default so the CA node's console I/O does not add latency to the timed
+ * enrollment round-trip (Exp H2). -DENROLL_DEBUG restores the full trace. */
+#ifdef ENROLL_DEBUG
 #define LOG_LEVEL  LOG_LEVEL_INFO
+#else
+#define LOG_LEVEL  LOG_LEVEL_ERR
+#endif
 
 #ifndef OSCORE_UDP_PORT
 #define OSCORE_UDP_PORT 5686

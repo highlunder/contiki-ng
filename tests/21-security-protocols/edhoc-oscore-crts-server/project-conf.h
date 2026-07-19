@@ -21,6 +21,11 @@
 
 /* Conservative handshake timeout for emulated and real HW alike. */
 #define EDHOC_CONF_TIMEOUT 100000
+/* Quiet EDHOC by default (Exp H2 timing); -DENROLL_DEBUG restores full logging. */
+#ifdef ENROLL_DEBUG
 #define LOG_CONF_LEVEL_EDHOC LOG_LEVEL_INFO
+#else
+#define LOG_CONF_LEVEL_EDHOC LOG_LEVEL_ERR
+#endif
 
 #endif /* PROJECT_CONF_H_ */

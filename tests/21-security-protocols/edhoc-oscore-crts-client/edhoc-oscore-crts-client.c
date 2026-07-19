@@ -60,7 +60,15 @@
 
 #include "sys/log.h"
 #define LOG_MODULE "OscoreCrts-Cl"
+/* Quiet by default so blocking console I/O does not inflate the timed enrollment
+ * (Exp H2 wall-clock). Verdict lines are raw printf() below, so they survive the
+ * silenced log level (and the emul validators still match). -DENROLL_DEBUG restores
+ * the full progress trace. */
+#ifdef ENROLL_DEBUG
 #define LOG_LEVEL  LOG_LEVEL_INFO
+#else
+#define LOG_LEVEL  LOG_LEVEL_ERR
+#endif
 
 #ifndef OSCORE_UDP_PORT
 #define OSCORE_UDP_PORT 5686
@@ -225,7 +233,7 @@ oscore_response_callback(struct simple_udp_connection *c,
   if(client_state == CLIENT_STATE_AWAIT_CRTS) {
     if(code != COAP_CODE_CONTENT || payload == NULL) {
       LOG_WARN("/crts: unexpected response code 0x%02x or empty payload\n", code);
-      LOG_INFO("=== EDHOC OSCORE enroll end-to-end test FAILED ===\n");
+      printf("=== EDHOC OSCORE enroll end-to-end test FAILED ===\n");
       client_state = CLIENT_STATE_NONE;
       g_enroll_failed = true;
       process_poll(&edhoc_oscore_crts_client);
@@ -236,7 +244,7 @@ oscore_response_callback(struct simple_udp_connection *c,
     /* X.509 DER CA cert (bare): confirm the full DER flight reassembled. */
     if(!der_seq_complete(payload, payload_len)) {
       LOG_ERR("/crts: X.509 DER CA cert malformed/incomplete (%zu bytes)\n", payload_len);
-      LOG_INFO("=== EDHOC OSCORE enroll end-to-end test FAILED (crts) ===\n");
+      printf("=== EDHOC OSCORE enroll end-to-end test FAILED (crts) ===\n");
       client_state = CLIENT_STATE_NONE;
       g_enroll_failed = true;
       process_poll(&edhoc_oscore_crts_client);
@@ -250,7 +258,7 @@ oscore_response_callback(struct simple_udp_connection *c,
 
     if(c509_chain_decode(payload, payload_len, chain_entries, 4, &n_certs) != 0) {
       LOG_ERR("c509_chain_decode failed\n");
-      LOG_INFO("=== EDHOC OSCORE enroll end-to-end test FAILED ===\n");
+      printf("=== EDHOC OSCORE enroll end-to-end test FAILED ===\n");
       client_state = CLIENT_STATE_NONE;
       g_enroll_failed = true;
       process_poll(&edhoc_oscore_crts_client);
@@ -273,7 +281,7 @@ oscore_response_callback(struct simple_udp_connection *c,
     }
 
     if(!all_valid || n_certs == 0) {
-      LOG_INFO("=== EDHOC OSCORE enroll end-to-end test FAILED (crts) ===\n");
+      printf("=== EDHOC OSCORE enroll end-to-end test FAILED (crts) ===\n");
       client_state = CLIENT_STATE_NONE;
       return;
     }
@@ -285,7 +293,7 @@ oscore_response_callback(struct simple_udp_connection *c,
     g_csr_len = build_and_sign_csr(&client_key, g_csr, sizeof(g_csr));
     if(g_csr_len == 0) {
       LOG_ERR("CSR build/sign failed\n");
-      LOG_INFO("=== EDHOC OSCORE enroll end-to-end test FAILED ===\n");
+      printf("=== EDHOC OSCORE enroll end-to-end test FAILED ===\n");
       client_state = CLIENT_STATE_NONE;
       g_enroll_failed = true;
       process_poll(&edhoc_oscore_crts_client);
@@ -303,7 +311,7 @@ oscore_response_callback(struct simple_udp_connection *c,
     if(code != COAP_CODE_CREATED || payload == NULL || payload_len < 2 + 64) {
       LOG_WARN("/sen: unexpected response code 0x%02x or short payload (%zu bytes)\n",
                code, payload_len);
-      LOG_INFO("=== EDHOC OSCORE enroll end-to-end test FAILED (sen) ===\n");
+      printf("=== EDHOC OSCORE enroll end-to-end test FAILED (sen) ===\n");
       client_state = CLIENT_STATE_NONE;
       g_enroll_failed = true;
       process_poll(&edhoc_oscore_crts_client);
@@ -314,11 +322,11 @@ oscore_response_callback(struct simple_udp_connection *c,
     /* X.509 DER issued cert: confirm the full DER flight reassembled. */
     if(der_seq_complete(payload, payload_len)) {
       LOG_INFO("/sen: received complete X.509 DER issued cert (%zu bytes)\n", payload_len);
-      LOG_INFO("=== EDHOC OSCORE enroll end-to-end test: TEST PASSED ===\n");
+      printf("=== EDHOC OSCORE enroll end-to-end test: TEST PASSED ===\n");
       g_enroll_done = true;
     } else {
       LOG_INFO("/sen: X.509 DER issued cert malformed/incomplete (%zu bytes)\n", payload_len);
-      LOG_INFO("=== EDHOC OSCORE enroll end-to-end test: TEST FAILED (sen) ===\n");
+      printf("=== EDHOC OSCORE enroll end-to-end test: TEST FAILED (sen) ===\n");
       g_enroll_failed = true;
     }
 #else
@@ -332,11 +340,11 @@ oscore_response_callback(struct simple_udp_connection *c,
     if(c509_csr_verify_pop(payload, tbs_len, ca_pub_key, sizeof(ca_pub_key),
                             sig, 64) == 0) {
       LOG_INFO("/sen: issued %zu-byte cert verified against CA public key\n", payload_len);
-      LOG_INFO("=== EDHOC OSCORE enroll end-to-end test: TEST PASSED ===\n");
+      printf("=== EDHOC OSCORE enroll end-to-end test: TEST PASSED ===\n");
       g_enroll_done = true;
     } else {
       LOG_INFO("/sen: issued cert signature verification FAILED\n");
-      LOG_INFO("=== EDHOC OSCORE enroll end-to-end test: TEST FAILED (sen) ===\n");
+      printf("=== EDHOC OSCORE enroll end-to-end test: TEST FAILED (sen) ===\n");
       g_enroll_failed = true;
     }
 #endif
@@ -667,7 +675,7 @@ PROCESS_THREAD(edhoc_oscore_crts_client, ev, data)
                        ENROLL_RETX_T0 << (enroll_attempt < 3 ? enroll_attempt : 3));
           } else {
             LOG_ERR("Enrollment %s retransmit budget exhausted\n", what);
-            LOG_INFO("=== EDHOC OSCORE enroll end-to-end test FAILED (timeout) ===\n");
+            printf("=== EDHOC OSCORE enroll end-to-end test FAILED (timeout) ===\n");
             g_enroll_failed = true;
           }
         }
