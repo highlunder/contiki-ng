@@ -51,8 +51,18 @@ Notes:
 
 ## Status
 - **RoT core (`ra-rot`) + host test: done (8/8).**
-- **Secure veneer (`tz-attest`) + example: written**, following the validated
-  `tz-radio` secure-service pattern; the TrustZone firmware **build + on-device run is
-  the nRF5340-DK bring-up step** (P2a/P2c in `P2-TRUSTZONE-PLAN.md`).
+- **TrustZone firmware builds** (secure + normal, nRF5340, GCC 13.2). The build caught
+  and fixed three real bugs: a secure-gateway (`cmse_nonsecure_entry`) may only take
+  register args, so the many-arg veneer was reworked to a single `tz_attest_request_t*`;
+  missing `contiki.h` / `ra-binder.h` includes; and `trustzone_init_event` is
+  secure-only, so the normal world settles on a timer instead of gating on it.
+- **cooja-ng does NOT model TrustZone-M** (its ARM core notes TrustZone "on demand", and
+  there is no `.nrf5340` board), so the merged image cannot run there. The
+  **secure/normal split runtime is an nRF5340-DK step** (P2a/P2c). But the RoT flow was
+  validated on emulated ARM: `../cooja-selftest/` runs `ra-rot` measure + sign + appraise
+  + tamper-detection on an emulated nRF52840 in cooja-ng (**3/3 PASS**, Evidence 140 B),
+  proving the codec + os/lib SHA-256 + Monocypher run correctly on real ARM.
+- **Remaining (nRF5340-DK):** flash the merged hex, confirm `TZ-ATTEST P2 PASSED`, add
+  the on-device tamper test, wire the CC312/uECC signer + sealed key generation.
 
 SECURITY NOTICE: Test vectors only. Never use in production.

@@ -31,20 +31,31 @@
 int tz_attest_public_key(uint8_t out[32]);
 
 /**
- * \brief Produce a signed Evidence COSE_Sign1 for the given public inputs. The
- *        secure world measures the NS image, builds the EAT with that measurement,
- *        binds it to \p binder as external_aad, and signs with the secure-resident
- *        attestation key.
- * \param nonce   the Verifier nonce (from EAD_2).
- * \param ueid    the entity unique id claim.
- * \param binder  attestation_binder_m3, computed by the normal world from the
- *                (public) EDHOC message_1/message_2 + ID_CRED_I.
- * \param out     Evidence output buffer (NS memory).
- * \return 0 on success (Evidence length in \p *out_len), non-zero on error.
+ * \brief Evidence request, passed by the normal world to the secure world.
+ *
+ *   A secure-gateway veneer (cmse_nonsecure_entry) may only take register-passed
+ *   arguments, so all inputs/outputs are marshaled through this single struct
+ *   (which lives in NS memory; the secure world validates it and every pointer
+ *   field before use).
  */
-int tz_attest_build_evidence(const uint8_t *nonce, size_t noncelen,
-                             const uint8_t *ueid, size_t ueidlen,
-                             const uint8_t *binder, size_t binderlen,
-                             uint8_t *out, size_t out_sz, size_t *out_len);
+typedef struct {
+  const uint8_t *nonce;   /**< Verifier nonce (from EAD_2). */
+  size_t noncelen;
+  const uint8_t *ueid;    /**< entity unique id claim. */
+  size_t ueidlen;
+  const uint8_t *binder;  /**< attestation_binder_m3 (NS-computed, public). */
+  size_t binderlen;
+  uint8_t *out;           /**< Evidence output buffer (NS memory). */
+  size_t out_sz;
+  size_t out_len;         /**< OUT: Evidence length written. */
+} tz_attest_request_t;
+
+/**
+ * \brief Produce a signed Evidence COSE_Sign1. The secure world measures the NS
+ *        image, builds the EAT with that measurement, binds it to \p req->binder
+ *        as external_aad, and signs with the secure-resident attestation key.
+ * \return 0 on success (Evidence length in \p req->out_len), non-zero on error.
+ */
+int tz_attest_build_evidence(tz_attest_request_t *req);
 
 #endif /* TZ_ATTEST_H_ */

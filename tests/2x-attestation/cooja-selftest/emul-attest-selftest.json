@@ -1,0 +1,27 @@
+{
+  "title": "RA attestation self-test on emulated nRF52840 (cooja-ng)",
+  "timeout_ms": 180000,
+  "seed": 1,
+  "startup_delay_ms": 1000,
+  "radiomedium": {
+    "type": "udgm",
+    "tx_range": 50.0,
+    "interference_range": 100.0,
+    "success_ratio_tx": 1.0,
+    "success_ratio_rx": 1.0
+  },
+  "nodes": [
+    {
+      "firmware": "/home/joel/gemini_workspace/contiki-ng/tests/2x-attestation/cooja-selftest/build/nrf/nrf52840/dk/attest-selftest.nrf",
+      "id": 1,
+      "x": 0.0,
+      "y": 0.0
+    }
+  ],
+  "test": {
+    "description": "Single emulated nRF52840 runs the RA Root-of-Trust flow (measure + sign Evidence + appraise + tamper detection) at boot. No radio needed; the attestation runs in the first process. PASS banner = the codec + os/lib SHA-256 + Monocypher Ed25519 run correctly on ARM.",
+    "validators": [
+      { "pattern": "ATTEST SELFTEST PASSED", "node": 1, "min_count": 1 }
+    ]
+  }
+}

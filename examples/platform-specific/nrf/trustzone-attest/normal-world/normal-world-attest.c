@@ -60,17 +60,28 @@ PROCESS_THREAD(normal_attest_process, ev, data)
   static uint8_t pk[32];
   static size_t evlen;
   static int ok;
+  static struct etimer et;
 
   PROCESS_BEGIN();
-  PROCESS_WAIT_EVENT_UNTIL(ev == trustzone_init_event);
+
+  /* Let the secure world finish initializing (its veneers must be ready). The
+   * normal world does not gate on trustzone_init_event -- that is secure-only. */
+  etimer_set(&et, 2 * CLOCK_SECOND);
+  PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 
   /* Normal world computes the (public) attestation binder from the transcript. */
   ra_binder_m3(binder, msg1, sizeof(msg1), msg2, sizeof(msg2), id_cred_i, 4);
 
   /* Secure world measures this image + signs Evidence. */
-  ok = (tz_attest_build_evidence(nonce, sizeof(nonce), ueid, sizeof(ueid),
-                                 binder, sizeof(binder),
-                                 evidence, sizeof(evidence), &evlen) == 0);
+  {
+    static tz_attest_request_t req;
+    req.nonce = nonce; req.noncelen = sizeof(nonce);
+    req.ueid = ueid; req.ueidlen = sizeof(ueid);
+    req.binder = binder; req.binderlen = sizeof(binder);
+    req.out = evidence; req.out_sz = sizeof(evidence);
+    ok = (tz_attest_build_evidence(&req) == 0);
+    evlen = req.out_len;
+  }
   LOG_INFO("tz_attest_build_evidence: %s (%u bytes)\n", ok ? "ok" : "FAIL",
            (unsigned)evlen);
   ok = ok && (tz_attest_public_key(pk) == 0);

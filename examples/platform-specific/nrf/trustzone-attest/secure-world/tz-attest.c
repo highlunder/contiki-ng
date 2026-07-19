@@ -17,12 +17,14 @@
  *
  * \author Joel Hoglund <joel.hoglund@ri.se>
  */
+#include "contiki.h"
 #include "tz-attest.h"
 #include "trustzone/tz-api.h"
 #include "region_defs.h"
 
 #include "ra-rot.h"
 #include "ra-cose.h"
+#include "ra-binder.h"
 #include "monocypher-ed25519.h"
 
 #include <arm_cmse.h>
@@ -78,31 +80,35 @@ tz_attest_public_key(uint8_t out[32])
 }
 /*---------------------------------------------------------------------------*/
 CC_TRUSTZONE_SECURE_CALL int
-tz_attest_build_evidence(const uint8_t *nonce, size_t noncelen,
-                         const uint8_t *ueid, size_t ueidlen,
-                         const uint8_t *binder, size_t binderlen,
-                         uint8_t *out, size_t out_sz, size_t *out_len)
+tz_attest_build_evidence(tz_attest_request_t *req)
 {
   ra_rot_target_t target;
+  tz_attest_request_t r;
   size_t local_len;
 
+  /* Validate + snapshot the request struct itself (it lives in NS memory). */
+  if(cmse_check_address_range(req, sizeof(*req), CMSE_NONSECURE) == NULL) {
+    LOG_ERR("build_evidence: invalid NS request\n");
+    return -1;
+  }
+  r = *req; /* copy scalars locally to avoid TOCTOU on the lengths */
+
   /* Bound-check against the secure staging buffers. */
-  if(noncelen > sizeof(sec_nonce) || ueidlen > sizeof(sec_ueid) ||
-     binderlen > sizeof(sec_binder)) {
+  if(r.noncelen > sizeof(sec_nonce) || r.ueidlen > sizeof(sec_ueid) ||
+     r.binderlen > sizeof(sec_binder)) {
     return -1;
   }
   /* Validate EVERY normal-world pointer lies in NS memory (anti-confused-deputy). */
-  if(cmse_check_address_range((void *)nonce, noncelen, CMSE_NONSECURE) == NULL ||
-     cmse_check_address_range((void *)ueid, ueidlen, CMSE_NONSECURE) == NULL ||
-     cmse_check_address_range((void *)binder, binderlen, CMSE_NONSECURE) == NULL ||
-     cmse_check_address_range(out_len, sizeof(*out_len), CMSE_NONSECURE) == NULL ||
-     cmse_check_address_range(out, out_sz, CMSE_NONSECURE) == NULL) {
+  if(cmse_check_address_range((void *)r.nonce, r.noncelen, CMSE_NONSECURE) == NULL ||
+     cmse_check_address_range((void *)r.ueid, r.ueidlen, CMSE_NONSECURE) == NULL ||
+     cmse_check_address_range((void *)r.binder, r.binderlen, CMSE_NONSECURE) == NULL ||
+     cmse_check_address_range(r.out, r.out_sz, CMSE_NONSECURE) == NULL) {
     LOG_ERR("build_evidence: invalid NS pointer\n");
     return -1;
   }
-  memcpy(sec_nonce, nonce, noncelen);
-  memcpy(sec_ueid, ueid, ueidlen);
-  memcpy(sec_binder, binder, binderlen);
+  memcpy(sec_nonce, r.nonce, r.noncelen);
+  memcpy(sec_ueid, r.ueid, r.ueidlen);
+  memcpy(sec_binder, r.binder, r.binderlen);
   ensure_keys();
 
   /* The measurement target is the normal-world application image region. The RoT
@@ -111,16 +117,16 @@ tz_attest_build_evidence(const uint8_t *nonce, size_t noncelen,
   target.image_len = (size_t)IMAGE_NS_CODE_SIZE;
 
   if(ra_rot_build_evidence(&target, ra_cose_protected_eddsa, 3,
-                           sec_nonce, noncelen, sec_ueid, ueidlen,
-                           sec_binder, binderlen,
+                           sec_nonce, r.noncelen, sec_ueid, r.ueidlen,
+                           sec_binder, r.binderlen,
                            sec_evidence, sizeof(sec_evidence), &local_len,
                            rot_sign, NULL) != 0) {
     return -1;
   }
-  if(local_len > out_sz) {
+  if(local_len > r.out_sz) {
     return -1;
   }
-  memcpy(out, sec_evidence, local_len);
-  *out_len = local_len;
+  memcpy(r.out, sec_evidence, local_len);
+  req->out_len = local_len; /* write the length back to the NS request */
   return 0;
 }
