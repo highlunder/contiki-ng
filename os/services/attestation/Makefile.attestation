@@ -1,0 +1,6 @@
+# Remote Attestation over EDHOC (draft-ietf-lake-ra) service.
+#
+# Source files (ra-cbor.c, ra-cose.c, ra-eat.c, ra-ead.c, ra-binder.c) are
+# collected automatically by Makefile.include's MODULES_SOURCES wildcard, so no
+# explicit source list is needed here. The module is self-contained (no mbedTLS /
+# c509 dependency) at P0; P1 adds the EDHOC binder derivation + a signing backend.
