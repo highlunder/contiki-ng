@@ -18,16 +18,21 @@ The hex files live in WSL. DKs are flashed **Windows-side** with `nrfjprog`
 (PowerShell); dongles are DFU-flashed **WSL-side** with `nrfutil`. Read the
 **client/leaf DK serial** (115200) for the result block.
 
-### DK firmware — PowerShell (`nrfjprog`), absolute paths
-From Windows, the WSL tree is a UNC path. Set it once (replace `<distro>`, from
-`wsl -l -q` — usually `Ubuntu`), and list the connected DK serial numbers:
+### DK firmware — PowerShell (`nrfjprog`), by board label
+**DK-A = SN `683609980`, DK-B = SN `1050212677`** (`nrfjprog --ids` to confirm).
+Easiest: dot-source `flash-dk.ps1` (edit its `<distro>` line if not `Ubuntu`) and
+flash by label — it targets the right `--snr` and, for H6, prints the WSL relay cmds:
 ```powershell
-$C = "\\wsl.localhost\<distro>\home\joel\gemini_workspace\contiki-ng"
-nrfjprog --ids            # -> the SN(s); one DK is 683609980
+. \\wsl.localhost\Ubuntu\home\joel\gemini_workspace\contiki-ng\local-tests\bench\flash-dk.ps1
+Flash-Enroll c509      # H2 C509 arm  (A=server, B=client)
+Flash-Enroll x509      # H2 X.509 arm
+Flash-H6 c5t 3         # H6 c5t arm at 3 hops (A=root, B=leaf) + relay commands
+Flash-H6 x5c 3         # H6 x5c arm
 ```
-Flash a DK (repeat per board, targeting its `--snr`):
+Or the raw form (WSL tree is a UNC path; `$C` = repo root):
 ```powershell
-nrfjprog -f NRF52 --snr <SN> --program "$C\<hex-subpath>" --chiperase --reset
+$C = "\\wsl.localhost\Ubuntu\home\joel\gemini_workspace\contiki-ng"
+nrfjprog -f NRF52 --snr 683609980 --program "$C\<hex-subpath>" --chiperase --reset
 ```
 If `nrfjprog` rejects the UNC path, copy first:
 `Copy-Item "$C\<hex-subpath>" $env:TEMP\fw.hex; nrfjprog -f NRF52 --snr <SN> --program $env:TEMP\fw.hex --chiperase --reset`
