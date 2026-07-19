@@ -16,6 +16,7 @@ draft's Appendix A, with no EDHOC or hardware dependency yet.
 | `ra-binder.{c,h}` | §5.3.3.1 | attestation binder: `attest_info` + **H_12 (SHA-256) + HKDF-Expand** (`binder_m3`) |
 | `ra-attester.{c,h}` | §5.3.3 | build a transcript-bound signed Evidence (pluggable signer) |
 | `ra-verifier.{c,h}` | §8.1 | appraise Evidence: nonce + transcript binder + signature + reference value (pluggable verifier) |
+| `ra-edhoc-glue.{c,h}` | §5.3 | RP appraisal of raw EAD-value Evidence + the app EDHOC-handler pattern (decoupled from EDHOC) |
 
 ## Status (P0 done, P1 crypto core done)
 - **P0 (codec):** the encoders/decoders; KAT reproduces Appendix A byte-for-byte
@@ -28,11 +29,17 @@ draft's Appendix A, with no EDHOC or hardware dependency yet.
   anti-relay, and the full Attester→Verifier flow (sign + appraise + all negative
   cases) using Monocypher Ed25519 as the test backend. The module compiles + links
   under the Contiki build.
-- **P1b (EDHOC integration, next):** register the RA EAD handlers with the Contiki
-  EDHOC impl (`edhoc_register_ead_handler`), pull the real message_1/message_2 +
-  ID_CRED_I from the EDHOC context, wire an on-device signer/verifier (uECC/CC310,
-  or `c509-rev-verify` for the RP), and run the (I,BG) flow over a live handshake in
-  cooja-ng. See `CONTIKI-PORT-PLAN.md` §5, §7.
+- **P1b (EDHOC glue, done):** `ra-edhoc-glue` appraises the raw Evidence bytes an
+  EDHOC EAD_3 item carries, with the app-side handler-registration pattern documented
+  in `ra-edhoc-glue.h` (kept decoupled from EDHOC so the module stays self-contained).
+  Validated standalone (`build-native-p1b.sh`, 4/4): Attester builds Evidence → RP
+  `ra_glue_appraise` → PASS; relayed-transcript and stale-nonce both abort.
+- **P1b live run (next):** build EDHOC client (Attester) + server (RP) apps that
+  capture message_1/message_2 + ID_CRED_I, call `ra_attester_build_evidence` with a
+  signer (uECC/CC310) and pass Evidence as `edhoc_generate_message_3` auth_data, and
+  register `ra_glue_appraise` via `edhoc_register_ead_handler`; run the (I,BG) flow in
+  cooja-ng. Watch the EDHOC EAD_3 buffer limit (the lakers finding #4 analog). See
+  `CONTIKI-PORT-PLAN.md` §5, §7 and `P2-TRUSTZONE-PLAN.md`.
 - **Crypto backend is pluggable, not built in:** on-device the signer is a platform
   RoT (uECC/CC310, or the nRF5340 TrustZone secure world in P2); the tests supply
   Monocypher. The measurement is a stand-in until the RoT measures the real image.
