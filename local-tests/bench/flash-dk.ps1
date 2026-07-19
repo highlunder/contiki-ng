@@ -16,6 +16,11 @@
 # --- DK board label -> J-Link serial number -------------------------------
 $Global:DK = @{ A = "683609980"; B = "1050212677" }
 
+# Optional: pin each DK's J-Link VCOM port here to skip auto-detect (most reliable).
+# List them with Show-DKPorts, then e.g.  $DKPORT.A = 'COM5'; $DKPORT.B = 'COM13'
+# NB: the console is the *J-Link* CDC UART port, NOT the nRF-USB CDC port.
+$Global:DKPORT = @{ A = ''; B = '' }
+
 # --- WSL repo root as seen from Windows (edit <distro> if not Ubuntu:  wsl -l -q)
 $Global:C = "\\wsl.localhost\Ubuntu\home\joel\gemini_workspace\contiki-ng"
 
@@ -46,16 +51,40 @@ function Flash-DK {
     }
 }
 
+# List the present J-Link CDC UART (VCOM) ports with the info that identifies the board.
+function Show-DKPorts {
+    Get-PnpDevice -Class Ports -PresentOnly -ErrorAction SilentlyContinue |
+      Where-Object { $_.FriendlyName -match 'JLink' } |
+      ForEach-Object {
+        $parent = (Get-PnpDeviceProperty -InstanceId $_.InstanceId `
+                   -KeyName 'DEVPKEY_Device_Parent' -ErrorAction SilentlyContinue).Data
+        [pscustomobject]@{
+            Port     = [regex]::Match($_.FriendlyName,'\((COM\d+)\)').Groups[1].Value
+            Name     = $_.FriendlyName
+            Parent   = $parent            # contains the J-Link serial number
+        }
+      } | Format-Table -AutoSize
+}
+
 # Map a J-Link serial number to its "JLink CDC UART Port (COMx)" -> COMx.
+# Only considers J-Link VCOM ports (excludes the nRF-USB CDC and other COM devices).
 function Get-DKPort {
     param([Parameter(Mandatory)][string]$Sn)
-    Get-PnpDevice -Class Ports -PresentOnly -ErrorAction SilentlyContinue | ForEach-Object {
+    Get-PnpDevice -Class Ports -PresentOnly -ErrorAction SilentlyContinue |
+      Where-Object { $_.FriendlyName -match 'JLink' } | ForEach-Object {
         $parent = (Get-PnpDeviceProperty -InstanceId $_.InstanceId `
                    -KeyName 'DEVPKEY_Device_Parent' -ErrorAction SilentlyContinue).Data
         if (($_.InstanceId -match $Sn) -or ($parent -match $Sn)) {
             if ($_.FriendlyName -match '\((COM\d+)\)') { $Matches[1] }
         }
     } | Select-Object -First 1
+}
+
+# Resolve the port for a board: explicit map ($DKPORT) first, then SN auto-detect.
+function Resolve-DKPort {
+    param([Parameter(Mandatory)][ValidateSet('A','B')][string]$Board)
+    if ($DKPORT[$Board]) { return $DKPORT[$Board] }
+    return (Get-DKPort $DK[$Board])
 }
 
 # Read a serial port, reopening automatically when the DK re-enumerates. Ctrl+C stops.
@@ -89,11 +118,12 @@ function Flash-Read {
         [int]$Baud = 115200
     )
     Flash-DK $Board $Hex
-    if (-not $Port) { $Port = Get-DKPort $DK[$Board] }
+    if (-not $Port) { $Port = Resolve-DKPort $Board }
     if (-not $Port) {
-        Write-Warning ("Could not auto-detect the COM port for DK-$Board (SN $($DK[$Board])). " +
-            "Re-run with -Port COMx. Present ports: " +
-            (([System.IO.Ports.SerialPort]::GetPortNames()) -join ', '))
+        Write-Warning ("Could not resolve the J-Link VCOM port for DK-$Board (SN $($DK[$Board])). " +
+            "Run Show-DKPorts, then set `$DKPORT.$Board = 'COMx' (or pass -Port COMx). " +
+            "The console is the JLink CDC UART port, not the nRF-USB CDC.")
+        Show-DKPorts
         return
     }
     Start-Sleep -Seconds 2                                 # let the --reset re-enumerate
@@ -150,4 +180,5 @@ function H6-Read {
 Write-Host "Loaded. Flash: Flash-Enroll <c509|x509>, Flash-H6 <c5t|x5c> <1-3>, Flash-DK <A|B> <hex>." -ForegroundColor Green
 Write-Host "A locked board (error -90) auto-recovers on first flash; or run Recover-DK <A|B> manually." -ForegroundColor Green
 Write-Host "Flash+read: Enroll-Read <c509|x509>, H6-Read <c5t|x5c> <1-3>, Flash-Read <A|B> <hex>, Read-COM COMx." -ForegroundColor Green
+Write-Host "Ports: Show-DKPorts lists the J-Link VCOMs; pin them with `$DKPORT.A/.B = 'COMx' (NOT the nRF-USB CDC)." -ForegroundColor Green
 Write-Host "DK A=$($DK.A)  B=$($DK.B)" -ForegroundColor Green
