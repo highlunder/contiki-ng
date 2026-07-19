@@ -30,6 +30,9 @@
 #define RA_BINDER_M4_EXPORTER_LABEL 2
 #define RA_BINDER_M4_EXPORTER_CONTEXT "attestation"
 
+/** SHA-256 output length (EDHOC cipher suite 0-3 hash). */
+#define RA_BINDER_HASH_LEN 32
+
 /**
  * \brief Encode attest_info = [ H_12, "attestation", ID_CRED_I ].
  * \param id_cred_i  raw CBOR encoding of ID_CRED_I (embedded verbatim).
@@ -38,5 +41,24 @@
 int ra_binder_attest_info(uint8_t *out, size_t out_sz, size_t *out_len,
                           const uint8_t *h12, size_t h12len,
                           const uint8_t *id_cred_i, size_t idlen);
+
+/**
+ * \brief Compute H_12 = H(H(message_1), message_2) (SHA-256), per the documented
+ *        interpretation SHA256( bstr(SHA256(message_1)) || message_2 ) -- kept in
+ *        lock-step with the Rust reference impl pending a WG test vector.
+ */
+void ra_binder_h12(uint8_t h12[RA_BINDER_HASH_LEN],
+                   const uint8_t *message_1, size_t m1len,
+                   const uint8_t *message_2, size_t m2len);
+
+/**
+ * \brief Compute attestation_binder_m3 = HKDF-Expand(PRK=0^32, attest_info, 32),
+ *        attest_info = [ H_12, "attestation", ID_CRED_I ], from the real EDHOC
+ *        message_1/message_2 transcript. \return 0 on success, -1 on encode error.
+ */
+int ra_binder_m3(uint8_t binder[RA_BINDER_HASH_LEN],
+                 const uint8_t *message_1, size_t m1len,
+                 const uint8_t *message_2, size_t m2len,
+                 const uint8_t *id_cred_i, size_t idlen);
 
 #endif /* RA_BINDER_H */

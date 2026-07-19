@@ -1,0 +1,3 @@
+#ifndef CONTIKI_CONF_STUB_H
+#define CONTIKI_CONF_STUB_H
+#endif
