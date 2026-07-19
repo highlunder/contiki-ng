@@ -19,16 +19,31 @@ $Global:DK = @{ A = "683609980"; B = "1050212677" }
 # --- WSL repo root as seen from Windows (edit <distro> if not Ubuntu:  wsl -l -q)
 $Global:C = "\\wsl.localhost\Ubuntu\home\joel\gemini_workspace\contiki-ng"
 
+# Unlock a DK with readback/AP protection enabled (full erase + disable APPROTECT).
+# Needed once for a board that reports error -90 / "Access protection is enabled".
+function Recover-DK {
+    param([Parameter(Mandatory)][ValidateSet('A','B')][string]$Board)
+    $sn = $DK[$Board]
+    Write-Host "== DK-$Board  (SN $sn)  RECOVER  (erase + disable APPROTECT)" -ForegroundColor Magenta
+    nrfjprog -f NRF52 --snr $sn --recover
+}
+
 function Flash-DK {
     param(
         [Parameter(Mandatory)][ValidateSet('A','B')][string]$Board,
-        [Parameter(Mandatory)][string]$Hex   # relative to $C, or an absolute path
+        [Parameter(Mandatory)][string]$Hex,   # relative to $C, or an absolute path
+        [switch]$NoRecover                     # skip the auto-recover-and-retry on failure
     )
     $sn = $DK[$Board]
     $path = if (Test-Path -LiteralPath $Hex) { $Hex } else { Join-Path $C $Hex }
     if (-not (Test-Path -LiteralPath $path)) { Write-Error "hex not found: $path"; return }
     Write-Host "== DK-$Board  (SN $sn)  <-  $path" -ForegroundColor Cyan
     nrfjprog -f NRF52 --snr $sn --program $path --chiperase --reset
+    if ($LASTEXITCODE -ne 0 -and -not $NoRecover) {
+        Write-Host "  program failed (exit $LASTEXITCODE) -- likely readback protection; recovering + retrying..." -ForegroundColor Yellow
+        Recover-DK $Board
+        nrfjprog -f NRF52 --snr $sn --program $path --chiperase --reset
+    }
 }
 
 # Map a J-Link serial number to its "JLink CDC UART Port (COMx)" -> COMx.
@@ -133,5 +148,6 @@ function H6-Read {
 }
 
 Write-Host "Loaded. Flash: Flash-Enroll <c509|x509>, Flash-H6 <c5t|x5c> <1-3>, Flash-DK <A|B> <hex>." -ForegroundColor Green
+Write-Host "A locked board (error -90) auto-recovers on first flash; or run Recover-DK <A|B> manually." -ForegroundColor Green
 Write-Host "Flash+read: Enroll-Read <c509|x509>, H6-Read <c5t|x5c> <1-3>, Flash-Read <A|B> <hex>, Read-COM COMx." -ForegroundColor Green
 Write-Host "DK A=$($DK.A)  B=$($DK.B)" -ForegroundColor Green

@@ -46,6 +46,11 @@ nrfjprog -f NRF52 --snr 683609980 --program "$C\<hex-subpath>" --chiperase --res
 If `nrfjprog` rejects the UNC path, copy first:
 `Copy-Item "$C\<hex-subpath>" $env:TEMP\fw.hex; nrfjprog -f NRF52 --snr <SN> --program $env:TEMP\fw.hex --chiperase --reset`
 
+**Locked board (error -90, "Access protection is enabled"):** the DK has APPROTECT
+on — unlock once with `nrfjprog -f NRF52 --snr <SN> --recover` (full erase + disable
+protection), then flash. `flash-dk.ps1` does this automatically on the first failed
+flash (or `Recover-DK <A|B>`).
+
 ### Dongle firmware — WSL (`nrfutil` DFU), absolute paths
 Per `reference_nrf_dongle_dfu`: dongle to bootloader (press the **side** RESET →
 pulsing red = `1915:521F`), then from **Windows admin PowerShell**
