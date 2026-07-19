@@ -13,14 +13,38 @@ end-to-end operation *timing* (Fig 5) and delivery under a real multi-hop mesh.
 Crypto is software P-256 (uECC) + SHA-256 throughout; **CC310 not required** (the
 `bench-edhoc-*-cc310-*` handshake hexes add the accelerated column if wanted).
 
-## Boards & flashing
-| board | role | flash |
-|---|---|---|
-| nRF52840-**DK** | root/CA/server, leaf/DUT/client | `nrfjprog --program <hex> --chiperase -r` (J-Link) |
-| nRF52840-**dongle** | H6 relays only | `nrfutil` DFU (see `reference_nrf_dongle_dfu` / H6 runbook) |
+## Boards & flashing (WSL build / split flashing)
+The hex files live in WSL. DKs are flashed **Windows-side** with `nrfjprog`
+(PowerShell); dongles are DFU-flashed **WSL-side** with `nrfutil`. Read the
+**client/leaf DK serial** (115200) for the result block.
 
-Read the **client/leaf DK serial** (115200) for the result block. Server/root and
-relays need no serial.
+### DK firmware — PowerShell (`nrfjprog`), absolute paths
+From Windows, the WSL tree is a UNC path. Set it once (replace `<distro>`, from
+`wsl -l -q` — usually `Ubuntu`), and list the connected DK serial numbers:
+```powershell
+$C = "\\wsl.localhost\<distro>\home\joel\gemini_workspace\contiki-ng"
+nrfjprog --ids            # -> the SN(s); one DK is 683609980
+```
+Flash a DK (repeat per board, targeting its `--snr`):
+```powershell
+nrfjprog -f NRF52 --snr <SN> --program "$C\<hex-subpath>" --chiperase --reset
+```
+If `nrfjprog` rejects the UNC path, copy first:
+`Copy-Item "$C\<hex-subpath>" $env:TEMP\fw.hex; nrfjprog -f NRF52 --snr <SN> --program $env:TEMP\fw.hex --chiperase --reset`
+
+### Dongle firmware — WSL (`nrfutil` DFU), absolute paths
+Per `reference_nrf_dongle_dfu`: dongle to bootloader (press the **side** RESET →
+pulsing red = `1915:521F`), then from **Windows admin PowerShell**
+`usbipd list` → `usbipd attach --wsl --busid <b>`; in WSL `ls /dev/ttyACM*`.
+Then (native WSL paths):
+```bash
+nrfutil pkg generate --hw-version 52 --sd-req 0x00 --debug-mode \
+  --application /home/joel/gemini_workspace/contiki-ng/local-tests/multihop/fw-hw/relay-r2-dongle.hex \
+  /tmp/relay-r2.zip
+nrfutil dfu usb-serial -pkg /tmp/relay-r2.zip -p /dev/ttyACM0
+```
+(Re-flashing re-enumerates the dongle → the usbipd attach drops; re-attach for the
+next one. Same commands for `relay-r3-dongle.hex`.)
 
 ---
 
