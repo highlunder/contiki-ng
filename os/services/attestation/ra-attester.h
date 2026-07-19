@@ -46,4 +46,20 @@ int ra_attester_build_evidence(uint8_t *out, size_t out_sz, size_t *out_len,
                                const uint8_t *id_cred_i, size_t idlen,
                                ra_sign_fn sign, void *sign_ctx);
 
+/**
+ * \brief Same as ra_attester_build_evidence() but with a *precomputed*
+ *        attestation binder supplied by the caller. Used by the TrustZone Root of
+ *        Trust (P2): the normal world computes the binder from the public EDHOC
+ *        transcript and passes it into the secure world, which measures + signs.
+ * \return 0 on success (Evidence length in \p *out_len), -1 on error.
+ */
+int ra_attester_build_evidence_with_binder(uint8_t *out, size_t out_sz, size_t *out_len,
+                                           const uint8_t *protected, size_t plen,
+                                           const uint8_t *nonce, size_t noncelen,
+                                           const uint8_t *ueid, size_t ueidlen,
+                                           uint64_t content_format,
+                                           const uint8_t *measurement, size_t measlen,
+                                           const uint8_t *binder, size_t binderlen,
+                                           ra_sign_fn sign, void *sign_ctx);
+
 #endif /* RA_ATTESTER_H */
