@@ -29,6 +29,15 @@ Flash-Enroll x509      # H2 X.509 arm
 Flash-H6 c5t 3         # H6 c5t arm at 3 hops (A=root, B=leaf) + relay commands
 Flash-H6 x5c 3         # H6 x5c arm
 ```
+Or **flash-and-read** — flashes, then opens the DUT console with auto-reconnect
+across the DK reset (Ctrl+C to stop); needs the per-session `Bypass` above:
+```powershell
+Enroll-Read c509       # flashes both DKs, then reads DK-B (client) -> [ENROLL-TIMING ...]
+H6-Read c5t 3          # flashes A(root); prompts to DFU relays; flashes+reads B(leaf)
+Read-COM COM4          # just read a port (no flash)
+```
+The reader auto-detects the DK's COM port from its J-Link SN; if that fails it lists
+the present ports — pass `-Port COMx` (e.g. `Flash-Read B <hex> -Port COM7`).
 Or the raw form (WSL tree is a UNC path; `$C` = repo root):
 ```powershell
 $C = "\\wsl.localhost\Ubuntu\home\joel\gemini_workspace\contiki-ng"
