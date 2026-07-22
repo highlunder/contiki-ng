@@ -2089,10 +2089,25 @@ int x509_encode_csr(uint8_t *buffer, size_t size, size_t *offset,
                     if (cbor_decode_next(&pks_ctx, &cert_v) != CBOR_ERR_NONE) return -1;
                     if (!(cert_v.type == CBOR_TYPE_SIMPLE && cert_v.val == 22)) {
                         /* Non-null: re-parse and encode embedded cert */
-                        pks_ctx.offset = cert_start;
-                        if (cbor_skip_item(&pks_ctx) != CBOR_ERR_NONE) return -1;
-                        const uint8_t *cert_bytes = pks_ctx.buffer + cert_start;
-                        size_t cert_bytes_len = pks_ctx.offset - cert_start;
+                        const uint8_t *cert_bytes;
+                        size_t cert_bytes_len;
+                        if (cert_v.type == CBOR_TYPE_BSTR) {
+                            /* draft-ietf-cose-cbor-encoded-cert-20:
+                             * PrivateKeyPossessionStatement.cert : C509CertData =
+                             * bytes .cbor C509Certificate — the embedded cert is a
+                             * byte string wrapping the CBOR array. Unwrap to its
+                             * content (cbor_decode_next already points ptr/val at
+                             * the payload, past the bstr header). */
+                            cert_bytes = cert_v.ptr;
+                            cert_bytes_len = (size_t)cert_v.val;
+                        } else {
+                            /* draft-19 and earlier: the embedded C509Certificate is
+                             * placed directly (no bytes .cbor wrapper). */
+                            pks_ctx.offset = cert_start;
+                            if (cbor_skip_item(&pks_ctx) != CBOR_ERR_NONE) return -1;
+                            cert_bytes = pks_ctx.buffer + cert_start;
+                            cert_bytes_len = pks_ctx.offset - cert_start;
+                        }
                         c509_cert_t emb_cert;
                         if (c509_parse_cert(&emb_cert, cert_bytes, cert_bytes_len) == CBOR_ERR_NONE) {
                             if (x509_encode_full_cert(pks_outer, sizeof(pks_outer), &pks_outer_off, &emb_cert) != 0)
