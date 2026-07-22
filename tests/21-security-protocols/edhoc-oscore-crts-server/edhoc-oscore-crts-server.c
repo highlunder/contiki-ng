@@ -124,6 +124,16 @@ static const uint8_t issued_serial[] = { 0x05 };
  * (the CA signs with fresh randomness, so re-issuing would differ). A single
  * entry suffices for the one-client enrollment test; generalise to a small LRU
  * for a multi-client CA. */
+/* Under -DENROLL_BENCH the client loops N enrollments; the CSR can repeat
+ * byte-for-byte across iterations (fixed subject/key + deterministic sig), which
+ * would hit this cache and skip the CA's issuance work on iterations 2..N,
+ * biasing the /sen timing DOWN. Disable the cache in bench builds so every
+ * iteration does a full, timed issuance. */
+#ifdef ENROLL_BENCH
+#define ENROLL_SEN_CACHE 0
+#else
+#define ENROLL_SEN_CACHE 1
+#endif
 static uint8_t g_last_csr[256];
 static size_t  g_last_csr_len = 0;
 #ifdef ENROLL_X509
@@ -231,7 +241,7 @@ oscore_request_callback(struct simple_udp_connection *c,
     /* /sen (Phase 3.2): req_payload is a C509 Type-3 CSR. Verify its PoP
      * self-signature, then issue a new Type-2 cert for the CSR's
      * subject/key. */
-    if(g_last_csr_len != 0 && g_last_csr_len == req_payload_len &&
+    if(ENROLL_SEN_CACHE && g_last_csr_len != 0 && g_last_csr_len == req_payload_len &&
        memcmp(req_payload, g_last_csr, req_payload_len) == 0) {
       /* Idempotent retransmit of a CSR we already issued: return the cached
        * cert (no duplicate issuance). */

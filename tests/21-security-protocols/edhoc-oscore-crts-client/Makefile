@@ -20,6 +20,16 @@ vpath c509-csr-parse.c $(CONTIKI)/os/services/c509
 CONTIKI_SOURCEFILES += c509-chain.c c509-csr-build.c c509-csr-parse.c
 CFLAGS += -I$(CONTIKI)/os/services/c509
 
+# Shared Welford benchmark harness (mean/median/p95/sd over ENROLL_ITERS runs).
+CFLAGS += -I$(CONTIKI)/local-tests/bench
+ENROLL_ITERS ?= 20
+CFLAGS += -DENROLL_ITERS=$(ENROLL_ITERS)
+# ENROLL_BENCH=1: statistical-benchmark build (loop N iters; the server disables
+# its /sen idempotency cache to time a full issuance each iteration).
+ifdef ENROLL_BENCH
+  CFLAGS += -DENROLL_BENCH=1
+endif
+
 CFLAGS += -DuECC_OPTIMIZATION_LEVEL=4
 CFLAGS += -DuECC_SQUARE_FUNC=1
 # restart-on-failure Phase 2.5: bound the CoAP retransmit budget for the (small,

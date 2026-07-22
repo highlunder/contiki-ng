@@ -39,6 +39,7 @@
 #include "edhoc-cred-c509.h"
 #include "edhoc-trust-store.h"
 #include "oscore.h"
+#include "bench-stats.h"     /* Welford stats: mean/median/p95/sd over N iters */
 #include "c509-chain.h"
 #include "c509_registry.h"
 #include "c509-csr-build.h"
@@ -139,11 +140,9 @@ static volatile bool g_advanced = false;      /* callback advanced the FSM */
 static volatile bool g_enroll_done = false;
 static volatile bool g_enroll_failed = false;
 
-/* Enrollment wall-clock instrumentation (Exp H2, on real silicon). clock_time()
- * is fine here -- the flow is multi-second and the C509-vs-X.509 gap is expected
- * in seconds -- and it is wrap-safe over the duration (unlike the 16 us rtimer).
- * Split: EDHOC handshake vs the post-handshake /crts+/sen enrollment. */
-static clock_time_t g_t_start, g_t_edhoc;
+/* Enrollment wall-clock instrumentation (Exp H2, on real silicon). Timed with
+ * RTIMER via bench-stats (wrap-safe us), split into the EDHOC handshake vs the
+ * post-handshake /crts+/sen enrollment, aggregated over ENROLL_ITERS runs. */
 #ifndef FW_BUILD_ID
 #define FW_BUILD_ID "unstamped"
 #endif
@@ -523,6 +522,27 @@ build_and_sign_csr(const cose_key_t *key, uint8_t *csr_buf, size_t csr_buf_size)
 #endif
 }
 /*---------------------------------------------------------------------------*/
+/* Statistical enrollment benchmark (Exp H2): repeat the full EDHOC + /crts + /sen
+ * enrollment ENROLL_ITERS times and keep incremental (Welford) stats, so the FINAL
+ * lines alone give n / mean / median / p95 / sd / min / max. A single functional
+ * pass (the old single-shot) is ENROLL_ITERS=1. */
+#ifndef ENROLL_ITERS
+#define ENROLL_ITERS 20
+#endif
+/* Per-iteration hard cap on the EDHOC handshake so a stuck iteration cannot hang
+ * the whole run on the protocol's internal retry budget. */
+#ifndef ENROLL_HS_DEADLINE_S
+#define ENROLL_HS_DEADLINE_S 30
+#endif
+/* dbg flag stamped into the FINAL line: 1 = verbose logging compiled in (inflates
+ * timing), 0 = quiet. Mirrors the bench convention so a pasted result is never
+ * silently mis-read. */
+#ifdef ENROLL_DEBUG
+#define ENROLL_DBG 1
+#else
+#define ENROLL_DBG 0
+#endif
+
 PROCESS(edhoc_oscore_crts_client, "EDHOC OSCORE /crts Client");
 AUTOSTART_PROCESSES(&edhoc_oscore_crts_client);
 /*---------------------------------------------------------------------------*/
@@ -530,7 +550,30 @@ PROCESS_THREAD(edhoc_oscore_crts_client, ev, data)
 {
   static struct etimer timer;
   static struct etimer retx_timer;
+  static struct etimer hs_deadline;
+  static struct etimer settle;
   static uint8_t enroll_attempt;
+  static unsigned iter;
+  static bool hs_ok, iter_ok;
+  /* Three metrics, each with its own incremental stats + samples buffer for the
+   * median/p95: total enrollment, the EDHOC handshake, and the post-handshake
+   * /crts+/sen exchange. */
+  static bench_stats_t st_total, st_edhoc, st_crtssen;
+  static uint32_t s_total[ENROLL_ITERS], s_edhoc[ENROLL_ITERS], s_crtssen[ENROLL_ITERS];
+  static rtimer_clock_t rt_start, rt_edhoc, rt_end;
+  static cose_key_t server_key;
+
+  /* CA trust anchor (same for every iteration). */
+  static const cose_key_t ca_anchor = {
+    .kty = 2, .crv = 1,
+    .ecc = {
+      .priv = { 0 },
+      .pub  = {
+        .x = C509_NATIVE_CA_PUB_X,
+        .y = C509_NATIVE_CA_PUB_Y
+      }
+    }
+  };
 
   PROCESS_BEGIN();
 
@@ -559,153 +602,180 @@ PROCESS_THREAD(edhoc_oscore_crts_client, ev, data)
   PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
 #endif
 
-  edhoc_error_t result = edhoc_create_key_list();
-  if(result != EDHOC_SUCCESS) {
-    LOG_ERR("edhoc_create_key_list: %d\n", result);
-    PROCESS_EXIT();
-  }
+  printf("[ENROLL-BENCH] starting arm:%s fw:%s iters:%d\n",
+         ENROLL_ARM, FW_BUILD_ID, ENROLL_ITERS);
+  bench_stats_init(&st_total);
+  bench_stats_init(&st_edhoc);
+  bench_stats_init(&st_crtssen);
 
-  /* Own key (Initiator): cert pre-provisioned so the c5t hash can be computed. */
-  memcpy(&client_key, &auth_c509_native_client_template, sizeof(cose_key_t));
-  c509_native_client_attach_cert(&client_key);
+  for(iter = 0; iter < ENROLL_ITERS; iter++) {
+    /* Recover before each iteration: RPL churn or a prior failure may have dropped
+     * the route -- wait until the root is reachable again. */
+    while(!NETSTACK_ROUTING.node_is_reachable()) {
+      etimer_set(&timer, CLOCK_SECOND * 2);
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
+    }
 
-  /* Peer key (Responder): cert pre-provisioned so received hash can be resolved. */
-  static cose_key_t server_key;
-  memcpy(&server_key, &auth_c509_native_server_template, sizeof(cose_key_t));
-  memset(server_key.ecc.priv, 0, sizeof(server_key.ecc.priv));
-  c509_native_server_attach_cert(&server_key);
+    /* (Re)build the credential key list each iteration -- edhoc_create_key_list
+     * re-initialises it, a clean per-iteration setup (mirrors edhoc-c5t-bench). */
+    if(edhoc_create_key_list() != EDHOC_SUCCESS) {
+      LOG_ERR("edhoc_create_key_list failed\n");
+      break;
+    }
+    /* Own key (Initiator): cert pre-provisioned so the c5t hash can be computed. */
+    memcpy(&client_key, &auth_c509_native_client_template, sizeof(cose_key_t));
+    c509_native_client_attach_cert(&client_key);
+    /* Peer key (Responder): cert pre-provisioned so received hash can be resolved. */
+    memcpy(&server_key, &auth_c509_native_server_template, sizeof(cose_key_t));
+    memset(server_key.ecc.priv, 0, sizeof(server_key.ecc.priv));
+    c509_native_server_attach_cert(&server_key);
+    if(edhoc_add_key(&client_key) != EDHOC_SUCCESS ||
+       edhoc_add_key(&server_key) != EDHOC_SUCCESS) {
+      LOG_ERR("Failed to add EDHOC keys\n");
+      break;
+    }
+    edhoc_set_c509_trust_store(&ca_anchor, 1);
+    edhoc_set_cert_validator(edhoc_c509_validate_chain, NULL);
 
-  if(edhoc_add_key(&client_key) != EDHOC_SUCCESS ||
-     edhoc_add_key(&server_key) != EDHOC_SUCCESS) {
-    LOG_ERR("Failed to add EDHOC keys\n");
-    PROCESS_EXIT();
-  }
-
-  /* Register CA trust store and chain validator.
-   * The validator is invoked after hash lookup resolves the peer's cert,
-   * and again, explicitly, on each /crts CertificateChain element. */
-  static const cose_key_t ca_anchor = {
-    .kty = 2, .crv = 1,
-    .ecc = {
-      .priv = { 0 },
-      .pub  = {
-        .x = C509_NATIVE_CA_PUB_X,
-        .y = C509_NATIVE_CA_PUB_Y
+    /* --- timed EDHOC handshake --- */
+    hs_ok = false;
+    iter_ok = false;
+    oscore_ready = false;
+    g_enroll_done = false;
+    g_enroll_failed = false;
+    enroll_attempt = 0;
+    rt_start = bench_time_now();       /* H2: enrollment wall-clock starts */
+    edhoc_client_run();
+    etimer_set(&hs_deadline, CLOCK_SECOND * ENROLL_HS_DEADLINE_S);
+    while(1) {
+      PROCESS_WAIT_EVENT();
+      int8_t ret = edhoc_client_callback(ev, data);
+      if(ret > 0) { rt_edhoc = bench_time_now(); hs_ok = true; break; }
+      if(ret < 0) { LOG_ERR("EDHOC failure: %d\n", ret); break; }
+      if(etimer_expired(&hs_deadline)) {
+        LOG_ERR("enroll: handshake deadline (%d s)\n", ENROLL_HS_DEADLINE_S);
+        break;
       }
     }
-  };
-  edhoc_set_c509_trust_store(&ca_anchor, 1);
-  edhoc_set_cert_validator(edhoc_c509_validate_chain, NULL);
 
-  g_t_start = clock_time();          /* H2: enrollment wall-clock starts */
-  edhoc_client_run();
-
-  while(1) {
-    PROCESS_WAIT_EVENT();
-    int8_t ret = edhoc_client_callback(ev, data);
-    if(ret > 0) {
-      g_t_edhoc = clock_time();      /* H2: EDHOC handshake done */
+    if(hs_ok) {
       LOG_INFO("EDHOC finished\n");
-
       oscore_ctx_t edhoc_out;
-      if(edhoc_exporter_oscore(&edhoc_out, edhoc_ctx) < 0) {
-        LOG_ERR("edhoc_exporter_oscore failed\n");
-        break;
-      }
-      print_oscore_ctx(&edhoc_out);
+      if(edhoc_exporter_oscore(&edhoc_out, edhoc_ctx) >= 0 &&
+         oscore_derive_context(&client_oscore, &edhoc_out) >= 0) {
+        oscore_ready = true;
 
-      if(oscore_derive_context(&client_oscore, &edhoc_out) < 0) {
-        LOG_ERR("oscore_derive_context failed\n");
-        break;
-      }
-      oscore_print_context(&client_oscore);
-      oscore_ready = true;
-
-      static coap_endpoint_t server_ep;
-      coap_endpoint_parse(SERVER_EP, strlen(SERVER_EP), &server_ep);
+        static coap_endpoint_t server_ep;
+        coap_endpoint_parse(SERVER_EP, strlen(SERVER_EP), &server_ep);
 #ifdef EDHOC_CONF_SERVER_FROM_ROOT
-      /* /crts + /sen target = RPL root (the CA/responder); resolve dynamically
-       * to match the EDHOC handshake fix (platform-derived node addressing). */
-      {
-        uip_ipaddr_t enroll_root_ipaddr;
-        if(NETSTACK_ROUTING.get_root_ipaddr(&enroll_root_ipaddr)) {
-          uip_ipaddr_copy(&server_ep.ipaddr, &enroll_root_ipaddr);
-        }
-      }
-#endif /* EDHOC_CONF_SERVER_FROM_ROOT */
-      uip_ipaddr_copy(&saved_server_addr, &server_ep.ipaddr);
-
-      etimer_set(&timer, CLOCK_SECOND / 2);
-      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
-
-      /* Enrollment with restart-on-failure: send /crts, then retransmit the
-       * outstanding request (fresh OSCORE PIV) on a response timeout, bounded
-       * by ENROLL_MAX_RETX with exponential backoff. The callback advances the
-       * state machine (/crts -> /sen -> done) and polls us; g_advanced resets
-       * the timer for each new step. */
-      client_state = CLIENT_STATE_AWAIT_CRTS;
-      g_advanced = false;
-      g_enroll_done = false;
-      g_enroll_failed = false;
-      enroll_attempt = 0;
-      send_oscore_request(&saved_server_addr);
-      etimer_set(&retx_timer, ENROLL_RETX_T0);
-
-      while(!g_enroll_done && !g_enroll_failed) {
-        PROCESS_WAIT_EVENT();
-        if(g_advanced) {
-          g_advanced = false;
-          enroll_attempt = 0;
-          etimer_set(&retx_timer, ENROLL_RETX_T0);
-          continue;
-        }
-        if(etimer_expired(&retx_timer)) {
-          const char *what = (client_state == CLIENT_STATE_AWAIT_CRTS) ? "/crts" : "/sen";
-          if(enroll_attempt < ENROLL_MAX_RETX) {
-            enroll_attempt++;
-            LOG_WARN("Enrollment %s response timeout — retransmit attempt %u\n",
-                     what, enroll_attempt);
-            if(client_state == CLIENT_STATE_AWAIT_CRTS) {
-              send_oscore_request(&saved_server_addr);
-            } else if(client_state == CLIENT_STATE_AWAIT_SEN) {
-              send_oscore_post_request(&saved_server_addr, g_csr, g_csr_len);
-            }
-            /* exponential backoff, capped at 8*T0 */
-            etimer_set(&retx_timer,
-                       ENROLL_RETX_T0 << (enroll_attempt < 3 ? enroll_attempt : 3));
-          } else {
-            LOG_ERR("Enrollment %s retransmit budget exhausted\n", what);
-            printf("=== EDHOC OSCORE enroll end-to-end test FAILED (timeout) ===\n");
-            g_enroll_failed = true;
+        /* /crts + /sen target = RPL root (the CA/responder); resolve dynamically
+         * to match the EDHOC handshake fix (platform-derived node addressing). */
+        {
+          uip_ipaddr_t enroll_root_ipaddr;
+          if(NETSTACK_ROUTING.get_root_ipaddr(&enroll_root_ipaddr)) {
+            uip_ipaddr_copy(&server_ep.ipaddr, &enroll_root_ipaddr);
           }
         }
-      }
+#endif /* EDHOC_CONF_SERVER_FROM_ROOT */
+        uip_ipaddr_copy(&saved_server_addr, &server_ep.ipaddr);
 
-      /* H2 enrollment wall-clock: EDHOC handshake vs post-handshake /crts+/sen,
-       * one self-identifying block (fw + arm stamped). clock_time() ticks are
-       * CLOCK_SECOND per second. */
-      {
-        clock_time_t t_end = clock_time();
-        uint32_t edhoc_ms =
-          (uint32_t)((uint64_t)(g_t_edhoc - g_t_start) * 1000 / CLOCK_SECOND);
-        uint32_t enroll_ms =
-          (uint32_t)((uint64_t)(t_end - g_t_edhoc) * 1000 / CLOCK_SECOND);
-        uint32_t total_ms =
-          (uint32_t)((uint64_t)(t_end - g_t_start) * 1000 / CLOCK_SECOND);
-        printf("[ENROLL-TIMING fw:%s arm:%s ok:%d] edhoc_ms=%lu crts_sen_ms=%lu "
-               "total_ms=%lu\n", FW_BUILD_ID, ENROLL_ARM, g_enroll_done ? 1 : 0,
-               (unsigned long)edhoc_ms, (unsigned long)enroll_ms,
-               (unsigned long)total_ms);
+        etimer_set(&timer, CLOCK_SECOND / 2);
+        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
+
+        /* Enrollment with restart-on-failure: send /crts, then retransmit the
+         * outstanding request (fresh OSCORE PIV) on a response timeout, bounded
+         * by ENROLL_MAX_RETX with exponential backoff. The callback advances the
+         * state machine (/crts -> /sen -> done) and polls us; g_advanced resets
+         * the timer for each new step. */
+        client_state = CLIENT_STATE_AWAIT_CRTS;
+        g_advanced = false;
+        send_oscore_request(&saved_server_addr);
+        etimer_set(&retx_timer, ENROLL_RETX_T0);
+
+        while(!g_enroll_done && !g_enroll_failed) {
+          PROCESS_WAIT_EVENT();
+          if(g_advanced) {
+            g_advanced = false;
+            enroll_attempt = 0;
+            etimer_set(&retx_timer, ENROLL_RETX_T0);
+            continue;
+          }
+          if(etimer_expired(&retx_timer)) {
+            const char *what = (client_state == CLIENT_STATE_AWAIT_CRTS) ? "/crts" : "/sen";
+            if(enroll_attempt < ENROLL_MAX_RETX) {
+              enroll_attempt++;
+              LOG_WARN("Enrollment %s response timeout — retransmit attempt %u\n",
+                       what, enroll_attempt);
+              if(client_state == CLIENT_STATE_AWAIT_CRTS) {
+                send_oscore_request(&saved_server_addr);
+              } else if(client_state == CLIENT_STATE_AWAIT_SEN) {
+                send_oscore_post_request(&saved_server_addr, g_csr, g_csr_len);
+              }
+              /* exponential backoff, capped at 8*T0 */
+              etimer_set(&retx_timer,
+                         ENROLL_RETX_T0 << (enroll_attempt < 3 ? enroll_attempt : 3));
+            } else {
+              LOG_ERR("Enrollment %s retransmit budget exhausted\n", what);
+              printf("=== EDHOC OSCORE enroll end-to-end test FAILED (timeout) ===\n");
+              g_enroll_failed = true;
+            }
+          }
+        }
+        if(g_enroll_done) {
+          rt_end = bench_time_now();
+          iter_ok = true;
+        }
+      } else {
+        LOG_ERR("OSCORE context derivation failed\n");
       }
-      break;
     }
-    if(ret < 0) {
-      LOG_ERR("EDHOC failure: %d\n", ret);
-      break;
+
+    /* Record this iteration. Split: total, EDHOC handshake, and /crts+/sen. */
+    if(iter_ok) {
+      uint32_t total_us   = bench_elapsed_us(rt_start, rt_end);
+      uint32_t edhoc_us   = bench_elapsed_us(rt_start, rt_edhoc);
+      uint32_t crtssen_us = bench_elapsed_us(rt_edhoc, rt_end);
+      s_total[st_total.n]       = total_us;
+      s_edhoc[st_edhoc.n]       = edhoc_us;
+      s_crtssen[st_crtssen.n]   = crtssen_us;
+      bench_stats_add_us(&st_total,   total_us,   enroll_attempt);
+      bench_stats_add_us(&st_edhoc,   edhoc_us,   0);
+      bench_stats_add_us(&st_crtssen, crtssen_us, enroll_attempt);
+      printf("[ENROLL-TIMING fw:%s arm:%s iter:%u ok:1] edhoc_ms=%lu.%03lu "
+             "crts_sen_ms=%lu.%03lu total_ms=%lu.%03lu\n",
+             FW_BUILD_ID, ENROLL_ARM, iter,
+             BENCH_MS_INT(edhoc_us),   BENCH_MS_FRAC(edhoc_us),
+             BENCH_MS_INT(crtssen_us), BENCH_MS_FRAC(crtssen_us),
+             BENCH_MS_INT(total_us),   BENCH_MS_FRAC(total_us));
+    } else {
+      bench_stats_add_fail(&st_total);
+      bench_stats_add_fail(&st_edhoc);
+      bench_stats_add_fail(&st_crtssen);
+      printf("[ENROLL-TIMING fw:%s arm:%s iter:%u ok:0]\n",
+             FW_BUILD_ID, ENROLL_ARM, iter);
     }
+
+    edhoc_client_close();
+
+    /* Settle before the next iteration; longer after a failure so RPL/ETX can heal
+     * before hammering the link again. */
+    etimer_set(&settle, CLOCK_SECOND * (iter_ok ? 3 : 8));
+    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&settle));
   }
 
-  edhoc_client_close();
+  /* Three self-contained result lines (copy for the run's statistics). Integer-only
+   * reduction from the stored samples -- robust on the cooja-ng emulator's soft-float
+   * `double` path (which corrupts the Welford mean) and exact on real HW alike. */
+  bench_stats_print_final_int("enroll-total-"   ENROLL_ARM, s_total,
+                              st_total.n,   st_total.fail,   0, bench_rpl_hops(), ENROLL_DBG);
+  bench_stats_print_final_int("enroll-edhoc-"   ENROLL_ARM, s_edhoc,
+                              st_edhoc.n,   st_edhoc.fail,   0, bench_rpl_hops(), ENROLL_DBG);
+  bench_stats_print_final_int("enroll-crtssen-" ENROLL_ARM, s_crtssen,
+                              st_crtssen.n, st_crtssen.fail, 0, bench_rpl_hops(), ENROLL_DBG);
+  printf("=== ENROLL-BENCH %s DONE: %lu ok / %lu fail of %d ===\n",
+         ENROLL_ARM, (unsigned long)st_total.n, (unsigned long)st_total.fail,
+         ENROLL_ITERS);
+
   LOG_INFO("Client done\n");
   PROCESS_END();
 }

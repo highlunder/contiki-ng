@@ -305,6 +305,58 @@ bench_stats_print_final(const char *label, const bench_stats_t *s,
          dbg);
 }
 
+/*
+ * Integer-only variant of bench_stats_print_final: computes mean / median / p95 /
+ * sd / min / max entirely from the `samples` array (first `n` successful durations,
+ * us) with uint64 arithmetic and the integer sqrt -- NO doubles. Same line format
+ * (and same label/hops/dbg semantics) as bench_stats_print_final, so it is a
+ * drop-in for it. Prefer this where the platform's soft-float `double` path is
+ * unreliable (e.g. the cooja-ng nRF emulator mis-emulates __aeabi_ddiv for some
+ * operands, yielding a bogus Welford mean while the integer min/max/median stay
+ * correct); the exact integer reduction is safe on both the emulator and real HW.
+ * `fail`/`get_fail` are passed through for the printed counters. Sorts `samples`.
+ *
+ * Overflow envelope: x <= ~4.3e9 us (uint32 max); sum of n<=BENCH_ITERS samples and
+ * sum of squared deviations both stay far inside uint64 for realistic n and ms-scale
+ * durations.
+ */
+static inline void
+bench_stats_print_final_int(const char *label, uint32_t *samples, uint32_t n,
+                            uint32_t fail, uint32_t get_fail, int hops, int dbg)
+{
+  uint32_t mean = 0, median = 0, p95 = 0, sd = 0, mn = 0, mx = 0;
+  if(n > 0) {
+    uint64_t sum = 0;
+    uint32_t i;
+    bench_sort_u32(samples, n);
+    for(i = 0; i < n; i++) { sum += samples[i]; }
+    mean = (uint32_t)((sum + n / 2) / n);       /* rounded integer mean */
+    median = (n & 1u) ? samples[n / 2]
+                      : (samples[n / 2 - 1] + samples[n / 2]) / 2;
+    p95 = bench_percentile_us(samples, n, 95);
+    mn = samples[0];
+    mx = samples[n - 1];
+    if(n >= 2) {
+      uint64_t ss = 0;
+      for(i = 0; i < n; i++) {
+        int64_t dv = (int64_t)samples[i] - (int64_t)mean;
+        ss += (uint64_t)(dv * dv);
+      }
+      sd = (uint32_t)bench_isqrt64(ss / (n - 1));   /* sample stddev (n-1) */
+    }
+  }
+  printf("[BENCH %s FINAL] n=%lu fail=%lu get_fail=%lu mean=%lu.%03lu median=%lu.%03lu "
+         "p95=%lu.%03lu sd=%lu.%03lu min=%lu.%03lu max=%lu.%03lu hops=%d dbg=%d (ms)\n",
+         label, (unsigned long)n, (unsigned long)fail, (unsigned long)get_fail,
+         BENCH_MS_INT(mean),   BENCH_MS_FRAC(mean),
+         BENCH_MS_INT(median), BENCH_MS_FRAC(median),
+         BENCH_MS_INT(p95),    BENCH_MS_FRAC(p95),
+         BENCH_MS_INT(sd),     BENCH_MS_FRAC(sd),
+         BENCH_MS_INT(mn),     BENCH_MS_FRAC(mn),
+         BENCH_MS_INT(mx),     BENCH_MS_FRAC(mx),
+         hops, dbg);
+}
+
 /* Approximate radio hops to the RPL root, as DAG_RANK(rank) - 1; -1 if not in a
  * DAG. Uses RPL-lite curr_instance; RPL runs over both CSMA and TSCH.
  *

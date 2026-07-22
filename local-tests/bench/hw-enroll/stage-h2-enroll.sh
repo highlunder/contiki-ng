@@ -13,6 +13,9 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 CONTIKI=$(cd "$HERE/../../.." && pwd)
 ARM=${ARM:-/home/joel/toolchains/arm-gcc/bin}
 FW_ID=${FW_ID:-$(date -u +%Y%m%d)}
+# Statistical benchmark: N looped enrollments with mean/median/p95/sd (Exp H2).
+# ENROLL_ITERS=1 reproduces the old single functional pass.
+ENROLL_ITERS=${ENROLL_ITERS:-20}
 CLIENT=tests/21-security-protocols/edhoc-oscore-crts-client
 SERVER=tests/21-security-protocols/edhoc-oscore-crts-server
 
@@ -26,7 +29,8 @@ build_one() {
   echo "=== $outname ==="
   make -C "$CONTIKI/$appdir" TARGET=nrf BOARD=nrf52840/dk clean >/dev/null 2>&1 || true
   make -C "$CONTIKI/$appdir" TARGET=nrf BOARD=nrf52840/dk MAKE_MAC=MAKE_MAC_TSCH \
-      LDFLAGS_WERROR= FW_ID="$FW_ID" "$@" $TC >/dev/null
+      LDFLAGS_WERROR= FW_ID="$FW_ID" ENROLL_BENCH=1 ENROLL_ITERS="$ENROLL_ITERS" \
+      "$@" $TC >/dev/null
   "$ARM/arm-none-eabi-objcopy" -O ihex \
       "$CONTIKI/$appdir/build/nrf/nrf52840/dk/$appname.nrf" "$HERE/$outname.hex"
   echo "    -> $HERE/$outname.hex"

@@ -23,6 +23,12 @@ CFLAGS += -I$(CONTIKI)/os/services/c509
 CFLAGS += -DuECC_OPTIMIZATION_LEVEL=4
 CFLAGS += -DuECC_SQUARE_FUNC=1
 
+# ENROLL_BENCH=1: disable the /sen idempotency cache so each of the client's N
+# looped enrollments triggers a full (timed) CA issuance. See the .c comment.
+ifdef ENROLL_BENCH
+  CFLAGS += -DENROLL_BENCH=1
+endif
+
 # X.509-DER enrollment trial (build ENROLL_X509=1): /crts + /sen return full X.509
 # DER certs (~380 B) instead of the compact C509 forms, to measure the X.509-sized
 # enrollment flights over multi-hop. See the .c and X509-ENROLL-WRAPPING.md.

@@ -5,14 +5,30 @@ build+self-sign a CSR on-device, submit it, verify the issued cert) timed on rea
 hardware, C509 vs the fully-dynamic X.509 arm. Closes the "real hardware" side of
 the enrollment experiment (tasks #19/#33 were native + cooja only).
 
-The client (`edhoc-oscore-crts-client`) is instrumented (2026-07-17) to print one
-self-identifying block splitting the EDHOC handshake from the post-handshake
-enrollment:
+The client (`edhoc-oscore-crts-client`) is a **statistical benchmark** (2026-07-22):
+it repeats the whole enrollment `ENROLL_ITERS` times (default **20**; the server's
+`/sen` idempotency cache is disabled under `-DENROLL_BENCH` so every iteration does a
+full CA issuance) and keeps incremental stats. Timed with **RTIMER** (µs, wrap-safe).
+Per iteration it prints one self-identifying block splitting the EDHOC handshake from
+the post-handshake enrollment:
 ```
-[ENROLL-TIMING fw:<id> arm:c509|x509 ok:1] edhoc_ms=.. crts_sen_ms=.. total_ms=..
+[ENROLL-TIMING fw:<id> arm:c509|x509 iter:<i> ok:1] edhoc_ms=.. crts_sen_ms=.. total_ms=..
 ```
-`clock_time()` based (multi-second flow, wrap-safe; ~8 ms resolution — ample where
-the arms differ by ~0.1 s).
+and at the end three copy-paste result lines (mean / median / p95 / sd / min / max),
+one per metric — the FINAL line alone is the whole result:
+```
+[BENCH enroll-total-<arm>   FINAL] n=20 fail=0 mean=.. median=.. p95=.. sd=.. min=.. max=.. (ms)
+[BENCH enroll-edhoc-<arm>   FINAL] ...
+[BENCH enroll-crtssen-<arm> FINAL] ...
+=== ENROLL-BENCH <arm> DONE: <ok> ok / <fail> fail of 20 ===
+```
+Stats are computed with an **integer-only** reduction from the stored samples
+(`bench_stats_print_final_int`), avoiding the cooja-ng emulator's soft-float `double`
+bug (it corrupts a Welford running mean while integer min/max/median stay correct);
+exact on real HW alike. Build a single functional pass with `ENROLL_ITERS=1`.
+
+> **Reading window:** 20 iterations ≈ 20 × ~6 s + ~70 s TSCH association ≈ **3–4 min**;
+> read the client for at least 300 s so the FINAL lines are captured.
 
 **SECURITY NOTICE: Test credentials only. Never use in production.**
 
