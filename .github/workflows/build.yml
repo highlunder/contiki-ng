@@ -36,7 +36,7 @@ jobs:
         fail-fast: false
         matrix:
             os: [ ubuntu-latest, macos-15-intel ]
-            test: [ documentation, compile-base, compile-arm-ports, rpl-lite, rpl-classic, renode-simulation, simulation-base, ipv6, ieee802154, tun-rpl-br, script-base, native-runs, ipv6-nbr, coap-lwm2m, packet-parsing, security-protocols, nat64-standalone ]
+            test: [ documentation, compile-base, compile-arm-ports, rpl-lite, rpl-classic, renode-simulation, simulation-base, ipv6, ieee802154, tun-rpl-br, script-base, native-runs, ipv6-nbr, coap-lwm2m, packet-parsing, nat64-standalone, security-protocols ]
             exclude:
               # Renode tests done by Linux (more CI runners available).
               - os: macos-15-intel
@@ -209,12 +209,12 @@ jobs:
         # Check outcome of the test
         ./tests/check-test.sh `pwd`/tests/??-${{ matrix.test }}
 
-    # Pre-install a Java 21 on macOS to avoid 503 responses in Gradle.
-    - name: Setup Java 21
+    # Pre-install a Java 25 on macOS to avoid 503 responses in Gradle.
+    - name: Setup Java 25
       if: matrix.os == 'macos-15-intel'
       uses: actions/setup-java@v5
       with:
-        java-version: 21
+        java-version: 25
         distribution: 'zulu'
 
     - name: Execute tests
